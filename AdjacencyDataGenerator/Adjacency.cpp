@@ -10,6 +10,9 @@
 	MessageString += "\n";
 
 #define ELEMENT_LENGTH 4
+
+
+
 inline int BytesToUnsignedIntegerLittleEndian(Byte* Src, int Offset)
 {
 	return static_cast<int>(static_cast<Byte>(Src[Offset]) |
@@ -81,6 +84,7 @@ bool AdjacencyProcesser::GetReady(std::string& FilePath)
 		Context->TriangleNum = IndicesLength / 3;
 		Context->CurrentFacePos = 0;
 		Context->CurrentIndexPos = 0;
+		Context->CurrentTrianglePos = 0;
 
 		WRITE_MESSAGE_DIGIT("Mesh: ", i);
 		WRITE_MESSAGE_DIGIT("Triangle: ", Context->TriangleNum);
@@ -107,6 +111,8 @@ bool AdjacencyProcesser::GetReady(std::string& FilePath)
 	return true;
 }
 
+#define DEBUG_1 1
+#define DEBUG_2 0
 
 void* AdjacencyProcesser::RunFunc(void* SourceData, double* OutProgressPerRun)
 {
@@ -126,59 +132,87 @@ void* AdjacencyProcesser::RunFunc(void* SourceData, double* OutProgressPerRun)
 	adj.face1 = FaceId;
 	adj.set1 = true;
 
-	std::map<Edge, AdjFace>::iterator it1;
+	std::unordered_map<Edge, AdjFace>::iterator it1;
 	it1 = Src->EdgeList.find(e1);
-	if (it1 != Src->EdgeList.end())
+	if (Src->EdgeList.count(e1) != 0)
 	{
+#if DEBUG_1
 		if (it1->second.set2 == true)
 		{
 			ErrorString += "A edge has more than 2 face.\n";
-			ErrorString += "Edge: " + std::to_string(e1.v1) + ", " + std::to_string(e1.v2) + "\n";
-			ErrorString += "Face: " + std::to_string(FaceId) + "\n";
+			ErrorString += "Edge 1: " + std::to_string(e1.v1) + ", " + std::to_string(e1.v2) + " H " + std::to_string(e1.hash) + "\n";
+			ErrorString += "Edge 2: " + std::to_string(it1->first.v1) + ", " + std::to_string(it1->first.v2) + " H " + std::to_string(it1->first.hash) + "\n";
 		}
+#endif
 		it1->second.face2 = FaceId;
 		it1->second.set2 = true;
+
+#if DEBUG_2
+		ErrorString += "Write Edge: Found " + std::to_string(e1.v1) + ", " + std::to_string(e1.v2) + " | " + std::to_string(it1->second.face1) + ", " + std::to_string(it1->second.face2) + "\n";
+#endif
 	}
 	else
 	{
-		Src->EdgeList.insert(std::map<Edge, AdjFace>::value_type(e1, adj));
+		Src->EdgeList.insert(std::unordered_map<Edge, AdjFace>::value_type(e1, adj));
+#if DEBUG_2
+		ErrorString += "Write Edge: NOTFound " + std::to_string(e1.v1) + ", " + std::to_string(e1.v2) + " | " + std::to_string(adj.face1) + ", " + std::to_string(adj.face2) + "\n";
+#endif
 	}
 
-	std::map<Edge, AdjFace>::iterator it2 = Src->EdgeList.find(e2);
+	std::unordered_map<Edge, AdjFace>::iterator it2 = Src->EdgeList.find(e2);
 	if (it2 != Src->EdgeList.end())
 	{
+#if DEBUG_1
 		if (it2->second.set2 == true)
 		{
 			ErrorString += "A edge has more than 2 face.\n";
-			ErrorString += "Edge: " + std::to_string(e2.v1) + ", " + std::to_string(e2.v2) + "\n";
-			ErrorString += "Face: " + std::to_string(FaceId) + "\n";
+			ErrorString += "Edge 1: " + std::to_string(e2.v1) + ", " + std::to_string(e2.v2) + " H " + std::to_string(e2.hash) + "\n";
+			ErrorString += "Edge 2: " + std::to_string(it2->first.v1) + ", " + std::to_string(it2->first.v2) + " H " + std::to_string(it2->first.hash) + "\n";
 		}
+#endif
 		it2->second.face2 = FaceId;
 		it2->second.set2 = true;
+#if DEBUG_2
+		ErrorString += "Write Edge: Found " + std::to_string(e2.v1) + ", " + std::to_string(e2.v2) + " | " + std::to_string(it2->second.face1) + ", " + std::to_string(it2->second.face2) + "\n";
+#endif
 	}
 	else
 	{
-		Src->EdgeList.insert(std::map<Edge, AdjFace>::value_type(e2, adj));
+		Src->EdgeList.insert(std::unordered_map<Edge, AdjFace>::value_type(e2, adj));
+#if DEBUG_2
+		ErrorString += "Write Edge: NOTFound " + std::to_string(e2.v1) + ", " + std::to_string(e2.v2) + " | " + std::to_string(adj.face1) + ", " + std::to_string(adj.face2) + "\n";
+#endif
 	}
 
-	std::map<Edge, AdjFace>::iterator it3 = Src->EdgeList.find(e3);
+	std::unordered_map<Edge, AdjFace>::iterator it3 = Src->EdgeList.find(e3);
 	if (it3 != Src->EdgeList.end())
 	{
+#if DEBUG_1
 		if (it3->second.set2 == true)
 		{
 			ErrorString += "A edge has more than 2 face.\n";
-			ErrorString += "Edge: " + std::to_string(e3.v1) + ", " + std::to_string(e3.v2) + "\n";
-			ErrorString += "Face: " + std::to_string(FaceId) + "\n";
+			ErrorString += "Edge 1: " + std::to_string(e3.v1) + ", " + std::to_string(e3.v2) + " H " + std::to_string(e3.hash) + "\n";
+			ErrorString += "Edge 2: " + std::to_string(it3->first.v1) + ", " + std::to_string(it3->first.v2) + " H " + std::to_string(it3->first.hash) + "\n";
 		}
+#endif
 		it3->second.face2 = FaceId;
 		it3->second.set2 = true;
+#if DEBUG_2
+		ErrorString += "Write Edge: Found " + std::to_string(e3.v1) + ", " + std::to_string(e3.v2) + " | " + std::to_string(it3->second.face1) + ", " + std::to_string(it3->second.face2) + "\n";
+#endif
 	}
 	else
 	{
-		Src->EdgeList.insert(std::map<Edge, AdjFace>::value_type(e3, adj));
+		Src->EdgeList.insert(std::unordered_map<Edge, AdjFace>::value_type(e3, adj));
+#if DEBUG_2
+		ErrorString += "Write Edge: NOTFound " + std::to_string(e3.v1) + ", " + std::to_string(e3.v2) + " | " + std::to_string(adj.face1) + ", " + std::to_string(adj.face2) + "\n";
+#endif
 	}
 
 	Src->FaceList.push_back(Face(x, y, z));
+
+
+
 	Src->CurrentFacePos++;
 	
 	double Step = 1.0 / Src->TriangleNum;

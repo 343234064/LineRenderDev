@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <string>
+#include <fstream>
 #include "Adjacency.h"
 
 #define LINE_STRING "================================"
@@ -30,7 +31,7 @@ int main(int argc, char** argv)
         std::cout << FilePath.c_str() << std::endl;
     }
     //temp
-    FilePath = "F:\\OutlineDev\\LineRenderDev\\LineRenderDev\\Assets\\Models\\SphereAndTorus.triangles";
+    FilePath = "F:\\OutlineDev\\LineRenderDev\\LineRenderDev\\Assets\\Models\\WoodPen.triangles";
     
     if (FilePath.size() == 0)
     {
@@ -80,6 +81,14 @@ int main(int argc, char** argv)
             std::cout << ContextList[i]->EdgeList.size() << std::endl;
             std::cout << LINE_STRING << std::endl;
         }
+
+        /*
+        std::ofstream outfile("face.txt", std::ios::out);
+        for (int i = 0; i < ContextList[0]->FaceList.size(); i++)
+        {
+            outfile << ContextList[0]->FaceList[i].x << "," << ContextList[0]->FaceList[i].y << "," << ContextList[0]->FaceList[i].z << std::endl;
+        }
+        outfile.close();*/
     }
 
     if (!SilentMode) {
