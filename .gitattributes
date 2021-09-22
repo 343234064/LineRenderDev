@@ -1,0 +1,4 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+*.triangle filter=lfs diff=lfs merge=lfs -text
+F:/OutlineDev/LineRenderDev/AdjacencyDataGenerator filter=lfs diff=lfs merge=lfs -text
