@@ -30,4 +30,15 @@
 *.exe
 *.out
 *.app
-Artifacts
+x64
+.vs
+/LineRenderDev/Logs
+/LineRenderDev/Library/Artifacts
+/LineRenderDev/Library/ShaderCache
+/LineRenderDev/Library/TempArtifacts
+/LineRenderDev/Library/StateCache
+/LineRenderDev/Library/PackageCache
+*.log
+*.pdb
+*.iobj
+*.ipdb
