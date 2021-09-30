@@ -295,7 +295,11 @@ void ThreadProcesser::AddData(void* Data)
 
 void ThreadProcesser::Clear()
 {
-	if (IsWorking()) return;
+	if (IsWorking()) 
+	{
+		Stop();
+	}
+	::Sleep(1.0);
 
 	QuestList.clear();
 	ResultList = std::queue<void*>();

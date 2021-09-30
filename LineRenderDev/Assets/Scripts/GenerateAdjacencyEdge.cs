@@ -24,45 +24,6 @@ public class MeshData
 
     ~MeshData()
     {
-        Triangles.Dispose();
-    }
-
-    ////////////////////////////////////////////////////
-    /// <Job>
-    /// 
-    ////////////////////////////////////////////////////
-    public NativeArray<int> Triangles;
-    private JobHandle WorkerHandle;
-
-    //[BurstCompile]
-    private struct InternalWorker : IJobParallelFor
-    {
-        [ReadOnly] public NativeArray<int> Triangles;
-
-        public void Execute(int i)
-        {
-            Debug.Log(Triangles[i]);
-        }
-    }
-
-    public void GenerateAdjacency(StreamWriter writer)
-    {
-        /*
-        this.Triangles = new NativeArray<int>(this.MeshObj.triangles, Allocator.Persistent);
-
-
-        InternalWorker Worker = new InternalWorker()
-        {
-            Triangles = this.Triangles
-        };
-
-        WorkerHandle = Worker.Schedule(this.Triangles.Length, 1);
-
-        WorkerHandle.Complete();
-
-
-        Triangles.Dispose();
-        */
     }
 }
 
@@ -125,19 +86,31 @@ public class GenerateAdjacencyEdge : ScriptableObject
         }
     }
 
-    static void WirteIntToMemmoryBuffer(MemoryStream memStream, int value)
+    static void WriteIntToMemmoryBuffer(MemoryStream memStream, int value)
     {
         byte[] valueInBytes= BitConverter.GetBytes(value);
         memStream.Write(valueInBytes, 0, valueInBytes.Length);
         return ;
     }
 
-    static void WirteLongToMemmoryBuffer(MemoryStream memStream, long value)
+    static void WriteLongToMemmoryBuffer(MemoryStream memStream, long value)
     {
         byte[] valueInBytes = BitConverter.GetBytes(value);
         memStream.Write(valueInBytes, 0, valueInBytes.Length);
         return;
     }
+
+    static void WriteVector3ToMemmoryBuffer(MemoryStream memStream, Vector3 value)
+    {
+        byte[] valueInBytes = new byte[sizeof(float) * 3];
+        Buffer.BlockCopy(BitConverter.GetBytes(value.x), 0, valueInBytes, 0 * sizeof(float), sizeof(float));
+        Buffer.BlockCopy(BitConverter.GetBytes(value.y), 0, valueInBytes, 1 * sizeof(float), sizeof(float));
+        Buffer.BlockCopy(BitConverter.GetBytes(value.z), 0, valueInBytes, 2 * sizeof(float), sizeof(float));
+
+        memStream.Write(valueInBytes, 0, valueInBytes.Length);
+        return;
+    }
+
 
     [MenuItem("Tools/Create Adjacency Data")]
     static void GenerateAdjacencyData()
@@ -150,18 +123,21 @@ public class GenerateAdjacencyEdge : ScriptableObject
         {
             filename = filename.Substring(0, dotIndex);
         }
-        filename += ".triangles";
-        Debug.Log(filename);
+        String triangle_filename = filename;
+        String vertex_filename = filename;
+        triangle_filename += ".triangles";
+        vertex_filename += ".vertices";
+        Debug.Log(triangle_filename);
+        Debug.Log(vertex_filename);
 
-        FileStream writer = new FileStream(filename, FileMode.Create);
-        MemoryStream memStream = new MemoryStream();
-
+        FileStream triangle_writer = new FileStream(triangle_filename, FileMode.Create);
+        MemoryStream triangle_memStream = new MemoryStream();
 
         // head 
         // 4 bytes: num of mesh
         // 4 bytes: strip per element
-        WirteIntToMemmoryBuffer(memStream, MeshList.Count);
-        WirteIntToMemmoryBuffer(memStream, sizeof(int));
+        WriteIntToMemmoryBuffer(triangle_memStream, MeshList.Count);
+        WriteIntToMemmoryBuffer(triangle_memStream, sizeof(int));
 
         foreach (MeshData CurrentMeshData in MeshList)
         {
@@ -180,21 +156,49 @@ public class GenerateAdjacencyEdge : ScriptableObject
             }
 
             // head of block 
-            // 4 bytes: num of triangles
-            WirteIntToMemmoryBuffer(memStream, CurrentMeshData.MeshObj.triangles.Length);
+            // 4 bytes: num of triangle list
+            WriteIntToMemmoryBuffer(triangle_memStream, CurrentMeshData.MeshObj.triangles.Length);
             // elements
-            byte[] result = new byte[CurrentMeshData.MeshObj.triangles.Length * sizeof(int)];
-            Buffer.BlockCopy(CurrentMeshData.MeshObj.triangles, 0, result, 0, result.Length);
-            memStream.Write(result, 0, result.Length);
-            Debug.Log("Write Bytes length : " + result.Length);
-
+            byte[] result1 = new byte[CurrentMeshData.MeshObj.triangles.Length * sizeof(int)];
+            Buffer.BlockCopy(CurrentMeshData.MeshObj.triangles, 0, result1, 0, result1.Length);
+            triangle_memStream.Write(result1, 0, result1.Length);
+            Debug.Log("Triangle Write Bytes length : " + result1.Length);
 
         }
 
-        memStream.WriteTo(writer);
+        triangle_memStream.WriteTo(triangle_writer);
+        triangle_memStream.Close();
+        triangle_writer.Close();
 
-        memStream.Close();
-        writer.Close();
+        Debug.Log("=================================================");
+        FileStream vertex_writer = new FileStream(vertex_filename, FileMode.Create);
+        MemoryStream vertex_memStream = new MemoryStream();
+
+        // head 
+        // 4 bytes: num of mesh
+        // 4 bytes: strip per element
+        WriteIntToMemmoryBuffer(vertex_memStream, MeshList.Count);
+        WriteIntToMemmoryBuffer(vertex_memStream, sizeof(float));
+
+        foreach (MeshData CurrentMeshData in MeshList)
+        {
+            // head of block 
+            // 4 bytes: num of vertex list
+            WriteIntToMemmoryBuffer(vertex_memStream, CurrentMeshData.MeshObj.vertices.Length);
+
+            byte[] result2 = new byte[CurrentMeshData.MeshObj.vertices.Length * sizeof(float) * 3];
+            // elements
+            foreach (Vector3 vertex in CurrentMeshData.MeshObj.vertices)
+            {
+                WriteVector3ToMemmoryBuffer(vertex_memStream, vertex);
+                Debug.Log(vertex.x + "," + vertex.y + "," + vertex.z);
+            } 
+            
+            Debug.Log("Vertex Write Bytes length : " + result2.Length);
+        }
+        vertex_memStream.WriteTo(vertex_writer);
+        vertex_memStream.Close();
+        vertex_writer.Close();
 
         MeshList.Clear();
     }

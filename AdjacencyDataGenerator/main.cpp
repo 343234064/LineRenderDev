@@ -4,6 +4,7 @@
 #include <iostream>
 #include <string>
 #include <fstream>
+#include <filesystem>
 #include "Adjacency.h"
 
 #define LINE_STRING "================================"
@@ -11,6 +12,7 @@
 int main(int argc, char** argv)
 {
     bool SilentMode = false;
+    bool NeedMergeDuplicateVertex = true;
     std::string FilePath;
     std::cout << LINE_STRING << std::endl;
     if (argc == 1)
@@ -31,7 +33,7 @@ int main(int argc, char** argv)
         std::cout << FilePath.c_str() << std::endl;
     }
     //temp
-    FilePath = "F:\\OutlineDev\\LineRenderDev\\LineRenderDev\\Assets\\Models\\WoodPen.triangles";
+    FilePath = "F:\\OutlineDev\\LineRenderDev\\LineRenderDev\\Assets\\Models\\BoxAndBox.triangles";//SphereAndTorus WoodPen BoxAndBox
     
     if (FilePath.size() == 0)
     {
@@ -42,7 +44,105 @@ int main(int argc, char** argv)
 
     {
         AdjacencyProcesser Processer;
-        bool Success = Processer.GetReady(FilePath);
+        bool Success = false;
+
+        /*****Pass 0*****/////////////////////////////////////////////////////////////////////////////////////////
+        if (NeedMergeDuplicateVertex)
+        {
+            std::filesystem::path VertexFilePath = FilePath;
+            VertexFilePath.replace_extension(std::filesystem::path("vertices"));
+            Success = Processer.GetReady0(VertexFilePath);
+
+            
+            std::cout << LINE_STRING << std::endl;
+            std::cout << Processer.GetMessageString() << std::endl;
+            std::cout << LINE_STRING << std::endl;
+
+
+            if (Success) {
+                double Progress = 0.0;
+                while (true) {
+                    std::cout << "Generate Vertex Map....... " << Progress * 100.0 << " %                                                             \r";
+                    std::cout.flush();
+
+                    if (Progress >= 1.0) break;
+
+                    Progress = Processer.GetProgress();
+                }
+                std::cout << std::endl;
+
+                while (true)
+                {
+                    if (Processer.IsWorking())
+                        Processer.GetProgress();
+                    else
+                        break;
+                }
+            }
+
+            std::string& ErrorString = Processer.GetErrorString();
+            if (ErrorString.size() > 0) {
+                std::cout << LINE_STRING << std::endl;
+                std::cout << "Something get error, please see error0.log." << std::endl;
+                std::cout << LINE_STRING << std::endl;
+
+                Processer.DumpErrorString(0);
+            }
+            std::cout << "Generate Vertex Map Completed." << std::endl;
+
+            std::vector<VertexContext*> ContextList = Processer.GetVertexContextList();
+            VertexContext* Context = ContextList[0];
+
+            ContextList[0]->DumpIndexMap();
+            ContextList[0]->DumpVertexList();
+        }
+        /*****Pass 0*****/////////////////////////////////////////////////////////////////////////////////////////
+        /*****Pass 1*****/////////////////////////////////////////////////////////////////////////////////////////
+        /*
+        bool Success = Processer.GetReady1(FilePath);
+        std::cout << LINE_STRING << std::endl;
+        std::cout << Processer.GetMessageString() << std::endl;
+        std::cout << LINE_STRING << std::endl;
+
+        if (Success) {
+            double Progress = 0.0;
+            while (true) {
+                std::cout << "Generate Face And Edge Data....... " << Progress * 100.0 << " %                                                             \r";
+                std::cout.flush();
+
+                if (Progress >= 1.0) break;
+
+                Progress = Processer.GetProgress();
+            }
+            std::cout << std::endl;
+
+            while (true)
+            {
+                if (Processer.IsWorking())
+                    Processer.GetProgress();
+                else
+                    break;
+            }
+        }
+        
+        std::string& ErrorString = Processer.GetErrorString();
+        if (ErrorString.size() > 0) {
+            std::cout << LINE_STRING << std::endl;
+            std::cout << "Something get error, please see error1.log." << std::endl;
+            std::cout << LINE_STRING << std::endl;
+
+            Processer.DumpErrorString(1);
+        }
+        std::cout << "Generate Face And Edge Data Completed." << std::endl;
+        */
+        /*****Pass 1*****/////////////////////////////////////////////////////////////////////////////////////////
+
+
+        /*****Pass 2*****/////////////////////////////////////////////////////////////////////////////////////////
+        /*
+        std::cout << LINE_STRING << std::endl;
+        std::cout << "Begin Generate Adjacency Data..." << std::endl;
+        Success = Processer.GetReady2();
 
         std::cout << LINE_STRING << std::endl;
         std::cout << Processer.GetMessageString() << std::endl;
@@ -51,7 +151,7 @@ int main(int argc, char** argv)
         if (Success) {
             double Progress = 0.0;
             while (true) {
-                std::cout << "Processing....... " << Progress * 100.0 << " %                                                             \r";
+                std::cout << "Generate Adjacency Data....... " << Progress * 100.0 << " %                                                             \r";
                 std::cout.flush();
 
                 if (Progress >= 1.0) break;
@@ -69,26 +169,30 @@ int main(int argc, char** argv)
             }
         }
 
-        std::cout << LINE_STRING << std::endl;
-        std::cout << Processer.GetErrorString() << std::endl;
-        std::cout << LINE_STRING << std::endl;
+        ErrorString = Processer.GetErrorString();
+        if (ErrorString.size() > 0) {
+            std::cout << LINE_STRING << std::endl;
+            std::cout << "Something get error, please see error2.log." << std::endl;
+            std::cout << LINE_STRING << std::endl;
 
-        // temp
-        std::vector<SourceContext*>& ContextList = Processer.GetContextList();
-        for (int i = 0; i < ContextList.size(); i++) {
-            std::cout << LINE_STRING << std::endl;
-            std::cout << ContextList[i]->FaceList.size() << std::endl;
-            std::cout << ContextList[i]->EdgeList.size() << std::endl;
-            std::cout << LINE_STRING << std::endl;
+            Processer.DumpErrorString(2);
         }
 
+        std::cout << "Generate Adjacency Data Completed." << std::endl;
+        */
+        /*****Pass 2*****/////////////////////////////////////////////////////////////////////////////////////////
+
+
+        ///////////////////////
+        
         /*
-        std::ofstream outfile("face.txt", std::ios::out);
-        for (int i = 0; i < ContextList[0]->FaceList.size(); i++)
-        {
-            outfile << ContextList[0]->FaceList[i].x << "," << ContextList[0]->FaceList[i].y << "," << ContextList[0]->FaceList[i].z << std::endl;
-        }
-        outfile.close();*/
+        std::vector<SourceContext*> ContextList = Processer.GetContextList();
+        SourceContext* Context = ContextList[0];
+
+        ContextList[0]->DumpEdgeList();
+        ContextList[0]->DumpFaceList();
+        ContextList[0]->DumpAdjacencyFaceList();
+        */
     }
 
     if (!SilentMode) {
