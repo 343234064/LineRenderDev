@@ -129,9 +129,9 @@ void* AdjacencyProcesser::RunFunc0(void* SourceData, double* OutProgressPerRun)
 {
 	VertexContext* Src = (VertexContext*)SourceData;
 
-	uint x = BytesToFloatLittleEndian(Src->BytesData, Src->CurrentVertexPos); Src->CurrentVertexPos += VER_ELEMENT_LENGTH;
-	uint y = BytesToFloatLittleEndian(Src->BytesData, Src->CurrentVertexPos); Src->CurrentVertexPos += VER_ELEMENT_LENGTH;
-	uint z = BytesToFloatLittleEndian(Src->BytesData, Src->CurrentVertexPos); Src->CurrentVertexPos += VER_ELEMENT_LENGTH;
+	float x = BytesToFloatLittleEndian(Src->BytesData, Src->CurrentVertexPos); Src->CurrentVertexPos += VER_ELEMENT_LENGTH;
+	float y = BytesToFloatLittleEndian(Src->BytesData, Src->CurrentVertexPos); Src->CurrentVertexPos += VER_ELEMENT_LENGTH;
+	float z = BytesToFloatLittleEndian(Src->BytesData, Src->CurrentVertexPos); Src->CurrentVertexPos += VER_ELEMENT_LENGTH;
 
 	Vertex3 v = Vertex3(x, y, z);
 	uint VertexId = Src->CurrentVertexId;
@@ -160,7 +160,7 @@ void* AdjacencyProcesser::RunFunc0(void* SourceData, double* OutProgressPerRun)
 }
 
 
-bool AdjacencyProcesser::GetReady1(std::filesystem::path& FilePath)
+bool AdjacencyProcesser::GetReady1(std::filesystem::path& FilePath, bool NeedMergeDuplicateVertex)
 {
 	if (AsyncProcesser == nullptr)
 	{
@@ -168,7 +168,14 @@ bool AdjacencyProcesser::GetReady1(std::filesystem::path& FilePath)
 	}
 	else
 	{
-		Clear();
+		if(!NeedMergeDuplicateVertex)
+			Clear();
+		else
+		{
+			AsyncProcesser->Clear();
+			ErrorString = "";
+			MessageString = "";
+		}
 	}
 
 
@@ -228,6 +235,14 @@ bool AdjacencyProcesser::GetReady1(std::filesystem::path& FilePath)
 		Context->TriangleNum = IndicesLength / 3;
 		Context->CurrentFacePos = 0;
 		Context->CurrentIndexPos = 0;
+		if (!NeedMergeDuplicateVertex)
+		{
+			VertexContext* VertexData = new VertexContext();
+			VertexContextList.push_back(VertexData);
+			Context->VertexData = VertexData;
+		}
+		else
+			Context->VertexData = VertexContextList[i];
 
 		WRITE_MESSAGE_DIGIT("Mesh: ", i);
 		WRITE_MESSAGE_DIGIT("Triangle: ", Context->TriangleNum);
@@ -267,9 +282,23 @@ void* AdjacencyProcesser::RunFunc1(void* SourceData, double* OutProgressPerRun)
 
 	uint FaceId = Src->CurrentFacePos;
 
-	Edge e1 = Edge(x, y);
-	Edge e2 = Edge(y, z);
-	Edge e3 = Edge(z, x);
+	std::unordered_map<uint, uint>& IndexMap = Src->VertexData->IndexMap;
+	std::unordered_map<uint, uint>::iterator it;
+	uint actual_x = x, actual_y = y, actual_z = z;
+	it = IndexMap.find(x);
+	if (it != IndexMap.end()) x = it->second;
+	it = IndexMap.find(y);
+	if (it != IndexMap.end()) y = it->second;
+	it = IndexMap.find(z);
+	if (it != IndexMap.end()) z = it->second;
+
+	Index ix(x, actual_x);
+	Index iy(y, actual_y);
+	Index iz(z, actual_z);
+
+	Edge e1 = Edge(ix, iy);
+	Edge e2 = Edge(iy, iz);
+	Edge e3 = Edge(iz, ix);
 
 	FacePair adj = FacePair();
 	adj.face1 = FaceId;
@@ -277,14 +306,14 @@ void* AdjacencyProcesser::RunFunc1(void* SourceData, double* OutProgressPerRun)
 
 	std::unordered_map<Edge, FacePair>::iterator it1;
 	it1 = Src->EdgeList.find(e1);
-	if (Src->EdgeList.count(e1) != 0)
+	if (it1 != Src->EdgeList.end())
 	{
 #if DEBUG_1
 		if (it1->second.set2 == true)
 		{
 			ErrorString += "A edge has more than 2 face. Face Id : " + std::to_string(FaceId) + "\n";
-			ErrorString += "Edge 1: " + std::to_string(e1.v1) + ", " + std::to_string(e1.v2) + " H " + std::to_string(e1.hash) + "\n";
-			ErrorString += "Edge 2: " + std::to_string(it1->first.v1) + ", " + std::to_string(it1->first.v2) + " H " + std::to_string(it1->first.hash) + "\n";
+			ErrorString += "Edge 1: " + std::to_string(e1.v1.actual_value) + ", " + std::to_string(e1.v2.actual_value) + " H " + std::to_string(e1.hash) + "\n";
+			ErrorString += "Edge 2: " + std::to_string(it1->first.v1.actual_value) + ", " + std::to_string(it1->first.v2.actual_value) + " H " + std::to_string(it1->first.hash) + "\n";
 		}
 		else
 #endif
@@ -294,14 +323,14 @@ void* AdjacencyProcesser::RunFunc1(void* SourceData, double* OutProgressPerRun)
 		}
 
 #if DEBUG_2
-		ErrorString += "Write Edge: Found " + std::to_string(e1.v1) + ", " + std::to_string(e1.v2) + " | " + std::to_string(it1->second.face1) + ", " + std::to_string(it1->second.face2) + "\n";
+		ErrorString += "Write Edge: Found " + std::to_string(e1.v1.actual_value) + ", " + std::to_string(e1.v2.actual_value) + " | " + std::to_string(it1->second.face1) + ", " + std::to_string(it1->second.face2) + "\n";
 #endif
 	}
 	else
 	{
 		Src->EdgeList.insert(std::unordered_map<Edge, FacePair>::value_type(e1, adj));
 #if DEBUG_2
-		ErrorString += "Write Edge: NOTFound " + std::to_string(e1.v1) + ", " + std::to_string(e1.v2) + " | " + std::to_string(adj.face1) + ", " + std::to_string(adj.face2) + "\n";
+		ErrorString += "Write Edge: NOTFound " + std::to_string(e1.v1.actual_value) + ", " + std::to_string(e1.v2.actual_value) + " | " + std::to_string(adj.face1) + ", " + std::to_string(adj.face2) + "\n";
 #endif
 	}
 
@@ -312,8 +341,8 @@ void* AdjacencyProcesser::RunFunc1(void* SourceData, double* OutProgressPerRun)
 		if (it2->second.set2 == true)
 		{
 			ErrorString += "A edge has more than 2 face. Face Id : " + std::to_string(FaceId) + "\n";
-			ErrorString += "Edge 1: " + std::to_string(e2.v1) + ", " + std::to_string(e2.v2) + " H " + std::to_string(e2.hash) + "\n";
-			ErrorString += "Edge 2: " + std::to_string(it2->first.v1) + ", " + std::to_string(it2->first.v2) + " H " + std::to_string(it2->first.hash) + "\n";
+			ErrorString += "Edge 1: " + std::to_string(e2.v1.actual_value) + ", " + std::to_string(e2.v2.actual_value) + " H " + std::to_string(e2.hash) + "\n";
+			ErrorString += "Edge 2: " + std::to_string(it2->first.v1.actual_value) + ", " + std::to_string(it2->first.v2.actual_value) + " H " + std::to_string(it2->first.hash) + "\n";
 		}
 		else
 #endif
@@ -322,14 +351,14 @@ void* AdjacencyProcesser::RunFunc1(void* SourceData, double* OutProgressPerRun)
 			it2->second.set2 = true;
 		}
 #if DEBUG_2
-		ErrorString += "Write Edge: Found " + std::to_string(e2.v1) + ", " + std::to_string(e2.v2) + " | " + std::to_string(it2->second.face1) + ", " + std::to_string(it2->second.face2) + "\n";
+		ErrorString += "Write Edge: Found " + std::to_string(e2.v1.actual_value) + ", " + std::to_string(e2.v2.actual_value) + " | " + std::to_string(it2->second.face1) + ", " + std::to_string(it2->second.face2) + "\n";
 #endif
 	}
 	else
 	{
 		Src->EdgeList.insert(std::unordered_map<Edge, FacePair>::value_type(e2, adj));
 #if DEBUG_2
-		ErrorString += "Write Edge: NOTFound " + std::to_string(e2.v1) + ", " + std::to_string(e2.v2) + " | " + std::to_string(adj.face1) + ", " + std::to_string(adj.face2) + "\n";
+		ErrorString += "Write Edge: NOTFound " + std::to_string(e2.v1.actual_value) + ", " + std::to_string(e2.v2.actual_value) + " | " + std::to_string(adj.face1) + ", " + std::to_string(adj.face2) + "\n";
 #endif
 	}
 
@@ -340,8 +369,8 @@ void* AdjacencyProcesser::RunFunc1(void* SourceData, double* OutProgressPerRun)
 		if (it3->second.set2 == true)
 		{
 			ErrorString += "A edge has more than 2 face. Face Id : " + std::to_string(FaceId) + "\n";
-			ErrorString += "Edge 1: " + std::to_string(e3.v1) + ", " + std::to_string(e3.v2) + " H " + std::to_string(e3.hash) + "\n";
-			ErrorString += "Edge 2: " + std::to_string(it3->first.v1) + ", " + std::to_string(it3->first.v2) + " H " + std::to_string(it3->first.hash) + "\n";
+			ErrorString += "Edge 1: " + std::to_string(e3.v1.actual_value) + ", " + std::to_string(e3.v2.actual_value) + " H " + std::to_string(e3.hash) + "\n";
+			ErrorString += "Edge 2: " + std::to_string(it3->first.v1.actual_value) + ", " + std::to_string(it3->first.v2.actual_value) + " H " + std::to_string(it3->first.hash) + "\n";
 		}
 		else
 #endif
@@ -350,18 +379,18 @@ void* AdjacencyProcesser::RunFunc1(void* SourceData, double* OutProgressPerRun)
 			it3->second.set2 = true;
 		}
 #if DEBUG_2
-		ErrorString += "Write Edge: Found " + std::to_string(e3.v1) + ", " + std::to_string(e3.v2) + " | " + std::to_string(it3->second.face1) + ", " + std::to_string(it3->second.face2) + "\n";
+		ErrorString += "Write Edge: Found " + std::to_string(e3.v1.actual_value) + ", " + std::to_string(e3.v2.actual_value) + " | " + std::to_string(it3->second.face1) + ", " + std::to_string(it3->second.face2) + "\n";
 #endif
 	}
 	else
 	{
 		Src->EdgeList.insert(std::unordered_map<Edge, FacePair>::value_type(e3, adj));
 #if DEBUG_2
-		ErrorString += "Write Edge: NOTFound " + std::to_string(e3.v1) + ", " + std::to_string(e3.v2) + " | " + std::to_string(adj.face1) + ", " + std::to_string(adj.face2) + "\n";
+		ErrorString += "Write Edge: NOTFound " + std::to_string(e3.v1.actual_value) + ", " + std::to_string(e3.v2.actual_value) + " | " + std::to_string(adj.face1) + ", " + std::to_string(adj.face2) + "\n";
 #endif
 	}
 
-	Src->FaceList.push_back(Face(x, y, z));
+	Src->FaceList.push_back(Face(ix, iy, iz));
 
 
 
@@ -442,13 +471,13 @@ void* AdjacencyProcesser::RunFunc2(void* SourceData, double* OutProgressPerRun)
 			FacePair& adj = it1->second;
 			if (adj.set1 && adj.face1 != FaceId)
 			{
-				NewFace.xy_adj = Src->FaceList[adj.face1].GetOppositePoint(e1.v1, e1.v2);
+				NewFace.xy_adj = Src->FaceList[adj.face1].GetOppositePoint(e1.v1.value, e1.v2.value);
 				NewFace.set1 = true;
 				Src->FaceList[adj.face1].set1 = true;
 			}
 			else if(adj.set2 && adj.face2 != FaceId)
 			{
-				NewFace.xy_adj = Src->FaceList[adj.face2].GetOppositePoint(e1.v1, e1.v2);
+				NewFace.xy_adj = Src->FaceList[adj.face2].GetOppositePoint(e1.v1.value, e1.v2.value);
 				NewFace.set1 = true;
 				Src->FaceList[adj.face2].set1 = true;
 			}
@@ -456,8 +485,8 @@ void* AdjacencyProcesser::RunFunc2(void* SourceData, double* OutProgressPerRun)
 #if DEBUG_3
 		else
 		{
-			ErrorString += "Find Edge Error. Current Face: " + std::to_string(FaceId) + " | " + std::to_string(CurrentFace.x) + "," + std::to_string(CurrentFace.y) + "," + std::to_string(CurrentFace.z) + "\n";
-			ErrorString += "Edge: " + std::to_string(e1.v1) + ", " + std::to_string(e1.v2) + "\n";
+			ErrorString += "Find Edge Error. Current Face: " + std::to_string(FaceId) + " | " + std::to_string(CurrentFace.x.actual_value) + "," + std::to_string(CurrentFace.y.actual_value) + "," + std::to_string(CurrentFace.z.actual_value) + "\n";
+			ErrorString += "Edge: " + std::to_string(e1.v1.actual_value) + ", " + std::to_string(e1.v2.actual_value) + "\n";
 		}
 #endif
 
@@ -467,13 +496,13 @@ void* AdjacencyProcesser::RunFunc2(void* SourceData, double* OutProgressPerRun)
 			FacePair& adj = it2->second;
 			if (adj.set1 && adj.face1 != FaceId)
 			{
-				NewFace.yz_adj = Src->FaceList[adj.face1].GetOppositePoint(e2.v1, e2.v2);
+				NewFace.yz_adj = Src->FaceList[adj.face1].GetOppositePoint(e2.v1.value, e2.v2.value);
 				NewFace.set2 = true;
 				Src->FaceList[adj.face1].set1 = true;
 			}
 			else if (adj.set2 && adj.face2 != FaceId)
 			{
-				NewFace.yz_adj = Src->FaceList[adj.face2].GetOppositePoint(e2.v1, e2.v2);
+				NewFace.yz_adj = Src->FaceList[adj.face2].GetOppositePoint(e2.v1.value, e2.v2.value);
 				NewFace.set2 = true;
 				Src->FaceList[adj.face2].set1 = true;
 			}
@@ -481,8 +510,8 @@ void* AdjacencyProcesser::RunFunc2(void* SourceData, double* OutProgressPerRun)
 #if DEBUG_3
 		else
 		{
-			ErrorString += "Find Edge Error. Current Face: " + std::to_string(FaceId) + " | " + std::to_string(CurrentFace.x) + "," + std::to_string(CurrentFace.y) + "," + std::to_string(CurrentFace.z) + "\n";
-			ErrorString += "Edge: " + std::to_string(e2.v1) + ", " + std::to_string(e2.v2) + "\n";
+			ErrorString += "Find Edge Error. Current Face: " + std::to_string(FaceId) + " | " + std::to_string(CurrentFace.x.actual_value) + "," + std::to_string(CurrentFace.y.actual_value) + "," + std::to_string(CurrentFace.z.actual_value) + "\n";
+			ErrorString += "Edge: " + std::to_string(e2.v1.actual_value) + ", " + std::to_string(e2.v2.actual_value) + "\n";
 		}
 #endif
 
@@ -492,13 +521,13 @@ void* AdjacencyProcesser::RunFunc2(void* SourceData, double* OutProgressPerRun)
 			FacePair& adj = it3->second;
 			if (adj.set1 && adj.face1 != FaceId)
 			{
-				NewFace.zx_adj = Src->FaceList[adj.face1].GetOppositePoint(e3.v1, e3.v2);
+				NewFace.zx_adj = Src->FaceList[adj.face1].GetOppositePoint(e3.v1.value, e3.v2.value);
 				NewFace.set3 = true;
 				Src->FaceList[adj.face1].set1 = true;
 			}
 			else if (adj.set2 && adj.face2 != FaceId)
 			{
-				NewFace.zx_adj = Src->FaceList[adj.face2].GetOppositePoint(e3.v1, e3.v2);
+				NewFace.zx_adj = Src->FaceList[adj.face2].GetOppositePoint(e3.v1.value, e3.v2.value);
 				NewFace.set3 = true;
 				Src->FaceList[adj.face2].set1 = true;
 			}
@@ -506,8 +535,8 @@ void* AdjacencyProcesser::RunFunc2(void* SourceData, double* OutProgressPerRun)
 #if DEBUG_3
 		else
 		{
-			ErrorString += "Find Edge Error. Current Face: " + std::to_string(FaceId) + " | " + std::to_string(CurrentFace.x) + "," + std::to_string(CurrentFace.y) + "," + std::to_string(CurrentFace.z) + "\n";
-			ErrorString += "Edge: " + std::to_string(e3.v1) + ", " + std::to_string(e3.v2) + "\n";
+			ErrorString += "Find Edge Error. Current Face: " + std::to_string(FaceId) + " | " + std::to_string(CurrentFace.x.actual_value) + "," + std::to_string(CurrentFace.y.actual_value) + "," + std::to_string(CurrentFace.z.actual_value) + "\n";
+			ErrorString += "Edge: " + std::to_string(e3.v1.actual_value) + ", " + std::to_string(e3.v2.actual_value) + "\n";
 		}
 #endif
 

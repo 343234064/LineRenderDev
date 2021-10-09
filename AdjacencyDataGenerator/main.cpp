@@ -90,16 +90,20 @@ int main(int argc, char** argv)
             }
             std::cout << "Generate Vertex Map Completed." << std::endl;
 
+            /*
             std::vector<VertexContext*> ContextList = Processer.GetVertexContextList();
             VertexContext* Context = ContextList[0];
 
             ContextList[0]->DumpIndexMap();
             ContextList[0]->DumpVertexList();
+            ContextList[0]->DumpRawVertexList();
+            */
         }
         /*****Pass 0*****/////////////////////////////////////////////////////////////////////////////////////////
+
         /*****Pass 1*****/////////////////////////////////////////////////////////////////////////////////////////
-        /*
-        bool Success = Processer.GetReady1(FilePath);
+        std::filesystem::path TriangleFilePath = FilePath;
+        Success = Processer.GetReady1(TriangleFilePath, NeedMergeDuplicateVertex);
         std::cout << LINE_STRING << std::endl;
         std::cout << Processer.GetMessageString() << std::endl;
         std::cout << LINE_STRING << std::endl;
@@ -134,12 +138,13 @@ int main(int argc, char** argv)
             Processer.DumpErrorString(1);
         }
         std::cout << "Generate Face And Edge Data Completed." << std::endl;
-        */
+
+
         /*****Pass 1*****/////////////////////////////////////////////////////////////////////////////////////////
 
 
         /*****Pass 2*****/////////////////////////////////////////////////////////////////////////////////////////
-        /*
+
         std::cout << LINE_STRING << std::endl;
         std::cout << "Begin Generate Adjacency Data..." << std::endl;
         Success = Processer.GetReady2();
@@ -179,20 +184,19 @@ int main(int argc, char** argv)
         }
 
         std::cout << "Generate Adjacency Data Completed." << std::endl;
-        */
         /*****Pass 2*****/////////////////////////////////////////////////////////////////////////////////////////
 
 
         ///////////////////////
         
-        /*
-        std::vector<SourceContext*> ContextList = Processer.GetContextList();
+     
+        std::vector<SourceContext*> ContextList = Processer.GetTriangleContextList();
         SourceContext* Context = ContextList[0];
 
         ContextList[0]->DumpEdgeList();
         ContextList[0]->DumpFaceList();
         ContextList[0]->DumpAdjacencyFaceList();
-        */
+      
     }
 
     if (!SilentMode) {

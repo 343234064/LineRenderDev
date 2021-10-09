@@ -44,41 +44,87 @@ struct Vertex3
 		hash = HashCombine2(std::hash<float>()(x), std::hash<float>()(y));
 		hash = HashCombine2(hash, std::hash<float>()(z));
 	}
+
+	bool operator==(const Vertex3& other) const
+	{
+		return (x == other.x && y == other.y && z == other.z);
+	}
+
+	bool operator!=(const Vertex3& other) const
+	{
+		return !(*this == other);
+	}
+
+
 	float x;
 	float y;
 	float z;
 	size_t hash;
 };
 
+struct Index
+{
+	Index() :
+		value(0), actual_value(0)
+	{}
+	Index(uint _value, uint _actual_value):
+		value(_value), actual_value(_actual_value)
+	{}
+
+	bool operator<(const Index& other) const
+	{
+		return (value < other.value);
+	}
+
+	bool operator==(const Index& other) const
+	{
+		return (value == other.value);
+	}
+
+	bool operator!=(const Index& other) const
+	{
+		return !(*this == other);
+	}
+
+	Index operator=(const uint other)
+	{
+		value = other;
+		actual_value = other;
+		return *this;
+	}
+
+	uint value;
+	uint actual_value;
+};
 
 struct Face
 {
-	Face(uint _x, uint _y, uint _z):
+	explicit Face(Index _x, Index _y, Index _z):
 		x(_x), y(_y), z(_z), set1(false) {}
-	uint x;
-	uint y;
-	uint z;
+	Index x;
+	Index y;
+	Index z;
 	bool set1;
 
 	uint GetOppositePoint(uint v1, uint  v2)
 	{
-		if (v1 == x)
+		if (v1 == x.value)
 		{
-			if (v2 == y) return z;
-			else if (v2 == z) return y;
+			if (v2 == y.value) return z.value;
+			else if (v2 == z.value) return y.value;
 		}
-		else if (v1 == y)
+		else if (v1 == y.value)
 		{
-			if (v2 == x) return z;
-			else if (v2 == z) return x;
+			if (v2 == x.value) return z.value;
+			else if (v2 == z.value) return x.value;
 		}
-		else if(v1 == z)
+		else if(v1 == z.value)
 		{
-			if (v2 == x) return y;
-			else if (v2 == y) return x;
+			if (v2 == x.value) return y.value;
+			else if (v2 == y.value) return x.value;
 		}
 
-		return x;
+		return x.value;
 	}
 };
 
@@ -98,19 +144,21 @@ struct FacePair
 class Edge
 {
 public:
-	Edge(size_t _hash, uint _v1 = 0, uint _v2 = 0):
-		hash(_hash), v1(_v1), v2(_v2) 
-	{}
-
-	Edge(uint _v1 = 0, uint _v2 = 0) :
+	Edge(uint _v1, uint _v2, uint _actual_v1, uint _actual_v2) :
+		v1(_v1, _actual_v1), v2(_v2, _actual_v2)
+	{
+		hash = HashCombine(std::min(v1.value, v2.value), std::max(v1.value, v2.value));
+	}
+	Edge(Index _v1, Index _v2) :
 		v1(_v1), v2(_v2)
 	{
-		hash = HashCombine(std::min(v1, v2), std::max(v1, v2));
+		hash = HashCombine(std::min(v1.value, v2.value), std::max(v1.value, v2.value));
 	}
+
 
 	bool operator==(const Edge& other) const
 	{
-		return (v1 == other.v1 && v2 == other.v2) || (v1 == other.v2 && v2 == other.v1);
+		return (v1.value == other.v1.value && v2.value == other.v2.value) || (v1.value == other.v2.value && v2.value == other.v1.value);
 	}
 
 	bool operator!=(const Edge& other) const
@@ -119,10 +167,8 @@ public:
 	}
 
 	size_t hash;
-	uint v1;
-	uint v2;
-	Vertex3 ver1;
-	Vertex3 ver2;
+	Index v1;
+	Index v2;
 };
 
 namespace std {
@@ -146,7 +192,7 @@ namespace std {
 struct AdjFace
 {
 	AdjFace() :
-		x(0), y(0), z(0), xy_adj(0), yz_adj(0), zx_adj(0),
+		x(0, 0), y(0, 0), z(0, 0), xy_adj(0, 0), yz_adj(0, 0), zx_adj(0, 0),
 		set1(false),
 		set2(false),
 		set3(false)
@@ -155,21 +201,21 @@ struct AdjFace
 		x(face.x),
 		y(face.y),
 		z(face.z),
-		xy_adj(0),
-		yz_adj(0),
-		zx_adj(0),
+		xy_adj(0, 0),
+		yz_adj(0, 0),
+		zx_adj(0, 0),
 		set1(false),
 		set2(false),
 		set3(false)
 	{}
 
-	uint x;
-	uint y;
-	uint z;
+	Index x;
+	Index y;
+	Index z;
 
-	uint xy_adj;
-	uint yz_adj;
-	uint zx_adj;
+	Index xy_adj;
+	Index yz_adj;
+	Index zx_adj;
 
 	bool set1;
 	bool set2;
@@ -214,6 +260,16 @@ struct VertexContext
 		}
 		OutFile.close();
 	}
+
+	void DumpRawVertexList()
+	{
+		std::ofstream OutFile("RawVertexList.txt", std::ios::out);
+		for (std::vector<Vertex3>::iterator it = RawVertex.begin(); it != RawVertex.end(); it++)
+		{
+			OutFile << "Vertex : " << it->x << "," << it->y << "," << it->z  << std::endl;
+		}
+		OutFile.close();
+	}
 };
 
 struct SourceContext
@@ -224,7 +280,9 @@ struct SourceContext
 		IndicesLength(0),
 		TriangleNum(0),
 		CurrentFacePos(0),
-		CurrentIndexPos(0) {}
+		CurrentIndexPos(0),
+		VertexData(nullptr)
+	{}
 
 	Byte* BytesData;
 	std::vector<Face> FaceList;
@@ -237,12 +295,14 @@ struct SourceContext
 	uint CurrentFacePos;
 	uint CurrentIndexPos;
 
+	VertexContext* VertexData;
+
 	void DumpFaceList()
 	{
 		std::ofstream OutFile("FaceList.txt", std::ios::out);
 		for (std::vector<Face>::iterator it = FaceList.begin(); it != FaceList.end(); it++)
 		{
-			OutFile << "Face: " << it->x << ", " << it->y << ", " << it->z << std::endl;
+			OutFile << "Face: " << it->x.actual_value << ", " << it->y.actual_value << ", " << it->z.actual_value << std::endl;
 		}
 		OutFile.close();
 	}
@@ -252,7 +312,7 @@ struct SourceContext
 		std::ofstream OutFile("EdgeList.txt", std::ios::out);
 		for (std::unordered_map<Edge, FacePair>::iterator it = EdgeList.begin(); it != EdgeList.end(); it++)
 		{
-			OutFile << "Edge: " << it->first.v1 << ", " << it->first.v2 << "|" << "(" << it->second.face1 << "," << it->second.set1 << ") " << "(" << it->second.face2 << "," << it->second.set2 << ")" << std::endl;
+			OutFile << "Edge: " << it->first.v1.actual_value << ", " << it->first.v2.actual_value << "|" << "(" << it->second.face1 << "," << it->second.set1 << ") " << "(" << it->second.face2 << "," << it->second.set2 << ")" << std::endl;
 		}
 		OutFile.close();
 	}
@@ -262,7 +322,8 @@ struct SourceContext
 		std::ofstream OutFile("AdjList.txt", std::ios::out);
 		for (std::vector<AdjFace>::iterator it = AdjacencyFaceList.begin(); it != AdjacencyFaceList.end(); it++)
 		{
-			OutFile << "AdjFace: " << it->x << ", " << it->y << ", " << it->z << " | " << it->xy_adj << "(" << it->set1 << ") " << it->yz_adj << "(" << it->set2 << ") " << it->zx_adj << "(" << it->set3 << ") " << std::endl;
+			OutFile << "AdjFace: " << it->x.actual_value << ", " << it->y.actual_value << ", " << it->z.actual_value << " | " 
+				<< it->xy_adj.actual_value << "(" << it->set1 << ") " << it->yz_adj.actual_value << "(" << it->set2 << ") " << it->zx_adj.actual_value << "(" << it->set3 << ") " << std::endl;
 		}
 		OutFile.close();
 	}
@@ -318,7 +379,7 @@ public:
 	void* RunFunc0(void* SourceData, double* OutProgressPerRun);
 
 	//Pass 1
-	bool GetReady1(std::filesystem::path& FilePath);
+	bool GetReady1(std::filesystem::path& FilePath, bool NeedMergeDuplicateVertex = false);
 	void* RunFunc1(void* SourceData, double* OutProgressPerRun);
 	
 	//Pass 2
@@ -397,6 +458,7 @@ public:
 			}
 			VertexContextList.clear();
 		}
+		AsyncProcesser->Clear();
 
 		ErrorString = "";
 		MessageString = "";
