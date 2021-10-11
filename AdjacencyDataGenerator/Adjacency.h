@@ -2,6 +2,7 @@
 
 #include "ThreadProcesser.h"
 #include <unordered_map>
+#include <queue>
 #include <fstream>
 #include <filesystem>
 
@@ -100,31 +101,33 @@ struct Index
 struct Face
 {
 	explicit Face(Index _x, Index _y, Index _z):
-		x(_x), y(_y), z(_z), set1(false) {}
+		x(_x), y(_y), z(_z), IsRead(false), BlackWhite(0) {}
 	Index x;
 	Index y;
 	Index z;
-	bool set1;
 
-	uint GetOppositePoint(uint v1, uint  v2)
+	bool IsRead;
+	int BlackWhite;
+
+	Index GetOppositePoint(Index v1, Index  v2)
 	{
-		if (v1 == x.value)
+		if (v1.value == x.value)
 		{
-			if (v2 == y.value) return z.value;
-			else if (v2 == z.value) return y.value;
+			if (v2.value == y.value) return z;
+			else if (v2.value == z.value) return y;
 		}
-		else if (v1 == y.value)
+		else if (v1.value == y.value)
 		{
-			if (v2 == x.value) return z.value;
-			else if (v2 == z.value) return x.value;
+			if (v2.value == x.value) return z;
+			else if (v2.value == z.value) return x;
 		}
-		else if(v1 == z.value)
+		else if(v1.value == z.value)
 		{
-			if (v2 == x.value) return y.value;
-			else if (v2 == y.value) return x.value;
+			if (v2.value == x.value) return y;
+			else if (v2.value == y.value) return x;
 		}
 
-		return x.value;
+		return x;
 	}
 };
 
@@ -192,34 +195,35 @@ namespace std {
 struct AdjFace
 {
 	AdjFace() :
-		x(0, 0), y(0, 0), z(0, 0), xy_adj(0, 0), yz_adj(0, 0), zx_adj(0, 0),
-		set1(false),
-		set2(false),
-		set3(false)
-	{}
-	AdjFace(const Face& face):
+		x(0, 0), y(0, 0), z(0, 0)
+	{
+		adjPoint[0] = 0;
+		adjPoint[1] = 0;
+		adjPoint[2] = 0;
+		hasAdjFace[0] = false;
+		hasAdjFace[1] = false;
+		hasAdjFace[2] = false;
+	}
+	AdjFace(const Face& face) :
 		x(face.x),
 		y(face.y),
-		z(face.z),
-		xy_adj(0, 0),
-		yz_adj(0, 0),
-		zx_adj(0, 0),
-		set1(false),
-		set2(false),
-		set3(false)
-	{}
+		z(face.z)
+	{
+		adjPoint[0] = 0;
+		adjPoint[1] = 0;
+		adjPoint[2] = 0;
+		hasAdjFace[0] = false;
+		hasAdjFace[1] = false;
+		hasAdjFace[2] = false;
+	}
 
 	Index x;
 	Index y;
 	Index z;
 
-	Index xy_adj;
-	Index yz_adj;
-	Index zx_adj;
-
-	bool set1;
-	bool set2;
-	bool set3;
+	// xy, yz, zx
+	Index adjPoint[3]; 
+	bool hasAdjFace[3];
 };
 
 struct VertexContext
@@ -287,7 +291,10 @@ struct SourceContext
 	Byte* BytesData;
 	std::vector<Face> FaceList;
 	std::unordered_map<Edge, FacePair> EdgeList;
+
+	std::queue<int> FaceIdPool;
 	std::vector<AdjFace> AdjacencyFaceList;
+
 	uint TotalLength;
 	uint IndicesLength;
 	uint TriangleNum;
@@ -323,7 +330,7 @@ struct SourceContext
 		for (std::vector<AdjFace>::iterator it = AdjacencyFaceList.begin(); it != AdjacencyFaceList.end(); it++)
 		{
 			OutFile << "AdjFace: " << it->x.actual_value << ", " << it->y.actual_value << ", " << it->z.actual_value << " | " 
-				<< it->xy_adj.actual_value << "(" << it->set1 << ") " << it->yz_adj.actual_value << "(" << it->set2 << ") " << it->zx_adj.actual_value << "(" << it->set3 << ") " << std::endl;
+				<< it->adjPoint[0].actual_value << "(" << it->hasAdjFace[0] << ") " << it->adjPoint[1].actual_value << "(" << it->hasAdjFace[1] << ") " << it->adjPoint[2].actual_value << "(" << it->hasAdjFace[2] << ") " << std::endl;
 		}
 		OutFile.close();
 	}
@@ -464,6 +471,19 @@ public:
 		MessageString = "";
 	}
 
+private:
+	bool HandleAdjacencyFace(
+		const uint CurrentFaceId,
+		const Edge& EdgeToSearch,
+		uint EdgeIndex,
+		SourceContext* Src,
+		uint* OutAdjFaceId, AdjFace* OutAdjFace);
+	bool QueryAdjacencyFace(
+		const uint CurrentFaceId,
+		const Edge& EdgeToSearch,
+		uint EdgeIndex,
+		SourceContext* Src,
+		uint* OutAdjFaceId);
 private:
 	ThreadProcesser* AsyncProcesser;
 	std::string ErrorString;

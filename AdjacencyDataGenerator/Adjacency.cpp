@@ -98,7 +98,7 @@ bool AdjacencyProcesser::GetReady0(std::filesystem::path& VertexFilePath)
 		Context->VertexLength = vertexLength;
 		Context->CurrentVertexPos = 0;
 		Context->CurrentVertexId = 0;
-
+		Context->RawVertex.reserve(vertexLength);
 
 		WRITE_MESSAGE_DIGIT("Mesh: ", i);
 		WRITE_MESSAGE_DIGIT("Vertex: ", Context->VertexLength);
@@ -136,7 +136,7 @@ void* AdjacencyProcesser::RunFunc0(void* SourceData, double* OutProgressPerRun)
 	Vertex3 v = Vertex3(x, y, z);
 	uint VertexId = Src->CurrentVertexId;
 
-	Src->RawVertex.push_back(v);
+	Src->RawVertex.emplace_back(v);
 
 	std::unordered_map<Vertex3, uint>::iterator it = Src->VertexList.find(v);
 	if (it == Src->VertexList.end())
@@ -243,6 +243,8 @@ bool AdjacencyProcesser::GetReady1(std::filesystem::path& FilePath, bool NeedMer
 		}
 		else
 			Context->VertexData = VertexContextList[i];
+
+		Context->FaceList.reserve(Context->TriangleNum);
 
 		WRITE_MESSAGE_DIGIT("Mesh: ", i);
 		WRITE_MESSAGE_DIGIT("Triangle: ", Context->TriangleNum);
@@ -390,7 +392,7 @@ void* AdjacencyProcesser::RunFunc1(void* SourceData, double* OutProgressPerRun)
 #endif
 	}
 
-	Src->FaceList.push_back(Face(ix, iy, iz));
+	Src->FaceList.emplace_back(Face(ix, iy, iz));
 
 
 
@@ -430,6 +432,14 @@ bool AdjacencyProcesser::GetReady2()
 	{	
 		TriangleContextList[i]->CurrentFacePos = 0;
 		TriangleContextList[i]->CurrentIndexPos = 0;
+
+		if (TriangleContextList[i]->FaceList.size() >= 1) {
+			TriangleContextList[i]->FaceList[0].BlackWhite = 1;
+			TriangleContextList[i]->FaceIdPool.push(0);
+
+			TriangleContextList[i]->AdjacencyFaceList.reserve(TriangleContextList[i]->FaceList.size());
+		}
+
 		AsyncProcesser->AddData((void*)TriangleContextList[i]);
 	}
 
@@ -451,105 +461,205 @@ bool AdjacencyProcesser::GetReady2()
 
 #define DEBUG_3 1
 
+
+bool AdjacencyProcesser::HandleAdjacencyFace(
+	const uint CurrentFaceId,
+	const Edge& EdgeToSearch,
+	uint EdgeIndex, 
+	SourceContext* Src,
+	uint* OutAdjFaceId, AdjFace* OutAdjFace)
+{
+	bool HasAdjFace = false;
+	std::unordered_map<Edge, FacePair>::iterator it = Src->EdgeList.find(EdgeToSearch);
+	if (it != Src->EdgeList.end())
+	{
+		FacePair& adj = it->second;
+		if (adj.set1 && adj.face1 != CurrentFaceId)
+		{
+			OutAdjFace->adjPoint[EdgeIndex] = Src->FaceList[adj.face1].GetOppositePoint(EdgeToSearch.v1, EdgeToSearch.v2);
+			OutAdjFace->hasAdjFace[EdgeIndex] = true;
+			*OutAdjFaceId = adj.face1;
+			HasAdjFace = true;
+		}
+		else if (adj.set2 && adj.face2 != CurrentFaceId)
+		{
+			OutAdjFace->adjPoint[EdgeIndex] = Src->FaceList[adj.face2].GetOppositePoint(EdgeToSearch.v1, EdgeToSearch.v2);
+			OutAdjFace->hasAdjFace[EdgeIndex] = true;
+			*OutAdjFaceId = adj.face2;
+			HasAdjFace = true;
+		}
+	}
+#if DEBUG_3
+	else
+	{
+		ErrorString += "Find Edge Error. Current Face: " + std::to_string(CurrentFaceId) + " | " + std::to_string(OutAdjFace->x.actual_value) + "," + std::to_string(OutAdjFace->y.actual_value) + "," + std::to_string(OutAdjFace->z.actual_value) + "\n";
+		ErrorString += "Edge: " + std::to_string(EdgeToSearch.v1.actual_value) + ", " + std::to_string(EdgeToSearch.v2.actual_value) + "\n";
+	}
+#endif
+
+	return HasAdjFace;
+}
+
+
+bool AdjacencyProcesser::QueryAdjacencyFace(
+	const uint CurrentFaceId,
+	const Edge& EdgeToSearch,
+	uint EdgeIndex,
+	SourceContext* Src,
+	uint* OutAdjFaceId)
+{
+	bool HasAdjFace = false;
+	std::unordered_map<Edge, FacePair>::iterator it = Src->EdgeList.find(EdgeToSearch);
+	if (it != Src->EdgeList.end())
+	{
+		FacePair& adj = it->second;
+		if (adj.set1 && adj.face1 != CurrentFaceId)
+		{
+			*OutAdjFaceId = adj.face1;
+			HasAdjFace = true;
+		}
+		else if (adj.set2 && adj.face2 != CurrentFaceId)
+		{
+			*OutAdjFaceId = adj.face2;
+			HasAdjFace = true;
+		}
+	}
+#if DEBUG_3
+	else
+	{
+		ErrorString += "Find Edge Error. Current Face: " + std::to_string(CurrentFaceId) + "\n";
+		ErrorString += "Edge: " + std::to_string(EdgeToSearch.v1.actual_value) + ", " + std::to_string(EdgeToSearch.v2.actual_value) + "\n";
+	}
+#endif
+
+	return HasAdjFace;
+}
+
 void* AdjacencyProcesser::RunFunc2(void* SourceData, double* OutProgressPerRun)
 {
 	SourceContext* Src = (SourceContext*)SourceData;
 
-	uint FaceId = Src->CurrentFacePos;
-	Face& CurrentFace = Src->FaceList[FaceId];
+	if (!Src->FaceIdPool.empty()) {
+		int CurrentFaceId = Src->FaceIdPool.front();
 
-	if (CurrentFace.set1 == false) {
-		AdjFace NewFace(CurrentFace);
+		Face& CurrentFace = Src->FaceList[CurrentFaceId];
 
-		Edge e1 = Edge(CurrentFace.x, CurrentFace.y);
-		Edge e2 = Edge(CurrentFace.y, CurrentFace.z);
-		Edge e3 = Edge(CurrentFace.z, CurrentFace.x);
+		
+		if (!CurrentFace.IsRead)
+		{
+			Edge xy(CurrentFace.x, CurrentFace.y);
+			Edge yz(CurrentFace.y, CurrentFace.z);
+			Edge zx(CurrentFace.z, CurrentFace.x);
 
-		std::unordered_map<Edge, FacePair>::iterator it1 = Src->EdgeList.find(e1);
-		if (it1 != Src->EdgeList.end())
-		{
-			FacePair& adj = it1->second;
-			if (adj.set1 && adj.face1 != FaceId)
-			{
-				NewFace.xy_adj = Src->FaceList[adj.face1].GetOppositePoint(e1.v1.value, e1.v2.value);
-				NewFace.set1 = true;
-				Src->FaceList[adj.face1].set1 = true;
-			}
-			else if(adj.set2 && adj.face2 != FaceId)
-			{
-				NewFace.xy_adj = Src->FaceList[adj.face2].GetOppositePoint(e1.v1.value, e1.v2.value);
-				NewFace.set1 = true;
-				Src->FaceList[adj.face2].set1 = true;
-			}
-		}
-#if DEBUG_3
-		else
-		{
-			ErrorString += "Find Edge Error. Current Face: " + std::to_string(FaceId) + " | " + std::to_string(CurrentFace.x.actual_value) + "," + std::to_string(CurrentFace.y.actual_value) + "," + std::to_string(CurrentFace.z.actual_value) + "\n";
-			ErrorString += "Edge: " + std::to_string(e1.v1.actual_value) + ", " + std::to_string(e1.v2.actual_value) + "\n";
-		}
-#endif
+			uint xy_adj_face_id = 0;
+			uint yz_adj_face_id = 0;
+			uint zx_adj_face_id = 0;
 
-		std::unordered_map<Edge, FacePair>::iterator it2 = Src->EdgeList.find(e2);
-		if (it2 != Src->EdgeList.end())
-		{
-			FacePair& adj = it2->second;
-			if (adj.set1 && adj.face1 != FaceId)
+			if (CurrentFace.BlackWhite == 1)
 			{
-				NewFace.yz_adj = Src->FaceList[adj.face1].GetOppositePoint(e2.v1.value, e2.v2.value);
-				NewFace.set2 = true;
-				Src->FaceList[adj.face1].set1 = true;
-			}
-			else if (adj.set2 && adj.face2 != FaceId)
-			{
-				NewFace.yz_adj = Src->FaceList[adj.face2].GetOppositePoint(e2.v1.value, e2.v2.value);
-				NewFace.set2 = true;
-				Src->FaceList[adj.face2].set1 = true;
-			}
-		}
-#if DEBUG_3
-		else
-		{
-			ErrorString += "Find Edge Error. Current Face: " + std::to_string(FaceId) + " | " + std::to_string(CurrentFace.x.actual_value) + "," + std::to_string(CurrentFace.y.actual_value) + "," + std::to_string(CurrentFace.z.actual_value) + "\n";
-			ErrorString += "Edge: " + std::to_string(e2.v1.actual_value) + ", " + std::to_string(e2.v2.actual_value) + "\n";
-		}
-#endif
+				AdjFace NewAdjFace(CurrentFace);
 
-		std::unordered_map<Edge, FacePair>::iterator it3 = Src->EdgeList.find(e3);
-		if (it3 != Src->EdgeList.end())
-		{
-			FacePair& adj = it3->second;
-			if (adj.set1 && adj.face1 != FaceId)
-			{
-				NewFace.zx_adj = Src->FaceList[adj.face1].GetOppositePoint(e3.v1.value, e3.v2.value);
-				NewFace.set3 = true;
-				Src->FaceList[adj.face1].set1 = true;
-			}
-			else if (adj.set2 && adj.face2 != FaceId)
-			{
-				NewFace.zx_adj = Src->FaceList[adj.face2].GetOppositePoint(e3.v1.value, e3.v2.value);
-				NewFace.set3 = true;
-				Src->FaceList[adj.face2].set1 = true;
-			}
-		}
-#if DEBUG_3
-		else
-		{
-			ErrorString += "Find Edge Error. Current Face: " + std::to_string(FaceId) + " | " + std::to_string(CurrentFace.x.actual_value) + "," + std::to_string(CurrentFace.y.actual_value) + "," + std::to_string(CurrentFace.z.actual_value) + "\n";
-			ErrorString += "Edge: " + std::to_string(e3.v1.actual_value) + ", " + std::to_string(e3.v2.actual_value) + "\n";
-		}
-#endif
+				bool xy_has_adj_face = HandleAdjacencyFace(CurrentFaceId, xy, 0, Src, &xy_adj_face_id, &NewAdjFace);
+				bool yz_has_adj_face = HandleAdjacencyFace(CurrentFaceId, yz, 1, Src, &yz_adj_face_id, &NewAdjFace);
+				bool zx_has_adj_face = HandleAdjacencyFace(CurrentFaceId, zx, 2, Src, &zx_adj_face_id, &NewAdjFace);
 
-		Src->AdjacencyFaceList.push_back(NewFace);
-		CurrentFace.set1 = true;
+				Src->AdjacencyFaceList.emplace_back(NewAdjFace);
+
+				if (xy_has_adj_face && !Src->FaceList[xy_adj_face_id].IsRead)
+				{
+					if (Src->FaceList[xy_adj_face_id].BlackWhite == 0)
+					{
+						Src->FaceList[xy_adj_face_id].BlackWhite = -1;
+						Src->FaceIdPool.push(xy_adj_face_id);
+					}
+				}
+				if (yz_has_adj_face && !Src->FaceList[yz_adj_face_id].IsRead)
+				{
+					if (Src->FaceList[yz_adj_face_id].BlackWhite == 0)
+					{
+						Src->FaceList[yz_adj_face_id].BlackWhite = -1;
+						Src->FaceIdPool.push(yz_adj_face_id);
+					}
+				}
+				if (zx_has_adj_face && !Src->FaceList[zx_adj_face_id].IsRead)
+				{
+					if (Src->FaceList[zx_adj_face_id].BlackWhite == 0)
+					{
+						Src->FaceList[zx_adj_face_id].BlackWhite = -1;
+						Src->FaceIdPool.push(zx_adj_face_id);
+					}
+				}
+				CurrentFace.IsRead = true;
+				
+			}
+			else if (CurrentFace.BlackWhite == -1)
+			{
+				bool NeedRevert = false;
+
+				bool xy_has_adj_face = QueryAdjacencyFace(CurrentFaceId, xy, 0, Src, &xy_adj_face_id);
+				bool yz_has_adj_face = QueryAdjacencyFace(CurrentFaceId, yz, 1, Src, &yz_adj_face_id);
+				bool zx_has_adj_face = QueryAdjacencyFace(CurrentFaceId, zx, 2, Src, &zx_adj_face_id);
+
+				if (xy_has_adj_face && !Src->FaceList[xy_adj_face_id].IsRead)
+				{
+					if (Src->FaceList[xy_adj_face_id].BlackWhite == 0)
+					{
+						Src->FaceList[xy_adj_face_id].BlackWhite = 1;
+						Src->FaceIdPool.push(xy_adj_face_id);
+					}
+					else if (Src->FaceList[xy_adj_face_id].BlackWhite == -1)
+					{
+						NeedRevert = true;
+					}
+				}
+				if (yz_has_adj_face && !Src->FaceList[yz_adj_face_id].IsRead)
+				{
+					if (Src->FaceList[yz_adj_face_id].BlackWhite == 0)
+					{
+						Src->FaceList[yz_adj_face_id].BlackWhite = 1;
+						Src->FaceIdPool.push(yz_adj_face_id);
+					}
+					else if (Src->FaceList[yz_adj_face_id].BlackWhite == -1)
+					{
+						NeedRevert = true;
+					}
+				}
+				if (zx_has_adj_face && !Src->FaceList[zx_adj_face_id].IsRead)
+				{
+					if (Src->FaceList[zx_adj_face_id].BlackWhite == 0)
+					{
+						Src->FaceList[zx_adj_face_id].BlackWhite = 1;
+						Src->FaceIdPool.push(zx_adj_face_id);
+					}
+					else if (Src->FaceList[zx_adj_face_id].BlackWhite == -1)
+					{
+						NeedRevert = true;
+					}
+				}
+
+				if (NeedRevert)
+				{
+					CurrentFace.BlackWhite = 1;
+				}
+				else
+					CurrentFace.IsRead = true;
+			}	
+		}
+
+		double Step = 0.0;
+		if (CurrentFace.IsRead) {
+			Src->FaceIdPool.pop();
+			Step = 1.0 / Src->TriangleNum;
+		}
+		*OutProgressPerRun = Step;
+	}
+	else {
+		*OutProgressPerRun = 1.0;
 	}
 
-	Src->CurrentFacePos++;
 
-	double Step = 1.0 / Src->TriangleNum;
-	*OutProgressPerRun = Step;
 
-	if (Src->CurrentFacePos >= Src->TriangleNum)
+	if (Src->FaceIdPool.empty())
 		return (void*)Src;
 	else
 		return nullptr;
