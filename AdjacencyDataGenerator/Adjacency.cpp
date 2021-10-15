@@ -29,6 +29,14 @@ inline float BytesToFloatLittleEndian(Byte* Src, int Offset)
 	return *reinterpret_cast<float*>(&value);
 }
  
+inline void WriteUnsignedIntegerToBytesLittleEndian(Byte* Src, int Offset, uint value)
+{
+	Src[Offset] = value & 0x000000ff;
+	Src[Offset + 1] = (value & 0x0000ff00) >> 8;
+	Src[Offset + 2] = (value & 0x00ff0000) >> 16;
+	Src[Offset + 3] = (value & 0xff000000) >> 24;
+}
+
 
 
 
@@ -663,4 +671,48 @@ void* AdjacencyProcesser::RunFunc2(void* SourceData, double* OutProgressPerRun)
 		return (void*)Src;
 	else
 		return nullptr;
+}
+
+
+void AdjacencyProcesser::ExportAdjacencyList(std::filesystem::path& FilePath)
+{
+	std::ofstream OutFile(FilePath.c_str(), std::ios::out | std::ios::binary);
+
+	int MeshNum = TriangleContextList.size();
+	int OffsetPerData = ELEMENT_LENGTH;
+
+	int TotalBytesLength = 8;
+	for (int i = 0; i < MeshNum; i++)
+	{
+		TotalBytesLength += 4;
+		TotalBytesLength += TriangleContextList[i]->AdjacencyFaceList.size() * 6 * ELEMENT_LENGTH;
+	}
+
+	Byte* Buffer = new Byte[TotalBytesLength];
+	memset(Buffer, 0, TotalBytesLength);
+
+	WriteUnsignedIntegerToBytesLittleEndian(Buffer, 0, MeshNum);
+	WriteUnsignedIntegerToBytesLittleEndian(Buffer, 4, OffsetPerData);
+
+	int Offset = 8;
+	for (int i = 0; i < MeshNum; i++)
+	{
+		WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, TriangleContextList[i]->AdjacencyFaceList.size());
+		Offset += 4;
+		for (int j = 0; j < TriangleContextList[i]->AdjacencyFaceList.size(); j++)
+		{
+			AdjFace& Curr = TriangleContextList[i]->AdjacencyFaceList[j];
+			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.x.actual_value + 1); Offset += ELEMENT_LENGTH;
+			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.y.actual_value + 1); Offset += ELEMENT_LENGTH;
+			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.z.actual_value + 1); Offset += ELEMENT_LENGTH;
+			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.hasAdjFace[0] ? (Curr.adjPoint[0].actual_value + 1) : 0); Offset += ELEMENT_LENGTH;
+			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.hasAdjFace[1] ? (Curr.adjPoint[1].actual_value + 1) : 0); Offset += ELEMENT_LENGTH;
+			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.hasAdjFace[2] ? (Curr.adjPoint[2].actual_value + 1) : 0); Offset += ELEMENT_LENGTH;
+		}
+	}
+
+	OutFile.write((char*)Buffer, TotalBytesLength);
+	OutFile.close();
+
+	delete[] Buffer;
 }

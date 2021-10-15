@@ -57,9 +57,11 @@
     <Compile Include="Assets\Scripts\SimpleCameraController.cs" />
     <Compile Include="Assets\ComputeTest\ComputeShaderTest.cs" />
     <Compile Include="Assets\Scripts\GenerateAdjacencyEdge.cs" />
+    <Compile Include="Assets\Scripts\TestAdjacency.cs" />
   </ItemGroup>
   <ItemGroup>
      <None Include="Assets\ComputeTest\ComputeShaderTest.compute" />
+     <None Include="Assets\Shaders\TestAdjacencyShade.shader" />
     <Reference Include="UnityEngine">
       <HintPath>D:\Program Files\Unity\Unity2020_115f1\Unity\Editor\Data\Managed\UnityEngine\UnityEngine.dll</HintPath>
     </Reference>

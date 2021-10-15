@@ -33,7 +33,7 @@ int main(int argc, char** argv)
         std::cout << FilePath.c_str() << std::endl;
     }
     //temp
-    FilePath = "F:\\OutlineDev\\LineRenderDev\\LineRenderDev\\Assets\\Models\\BoxAndBox.triangles";//SphereAndTorus WoodPen BoxAndBox
+    FilePath = "F:\\OutlineDev\\LineRenderDev\\LineRenderDev\\Assets\\Models\\WoodPen.triangles";//SphereAndTorus WoodPen BoxAndBox
     
     if (FilePath.size() == 0)
     {
@@ -193,10 +193,16 @@ int main(int argc, char** argv)
         std::vector<SourceContext*> ContextList = Processer.GetTriangleContextList();
         SourceContext* Context = ContextList[0];
 
-        ContextList[0]->DumpEdgeList();
-        ContextList[0]->DumpFaceList();
-        ContextList[0]->DumpAdjacencyFaceList();
+        //ContextList[0]->DumpEdgeList();
+        //ContextList[0]->DumpFaceList();
+        //ContextList[0]->DumpAdjacencyFaceList();
       
+
+        std::cout << "Exporting Adjacency Data......" << std::endl;
+        std::filesystem::path ExportFilePath = FilePath;
+        ExportFilePath.replace_extension(std::filesystem::path("adjacency"));
+        Processer.ExportAdjacencyList(ExportFilePath);
+        std::cout << "Exporting Adjacency Completed." << std::endl;
     }
 
     if (!SilentMode) {

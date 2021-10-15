@@ -12,25 +12,27 @@ using Unity.Jobs;
 
 
 
-public class MeshData
-{
-    public Mesh MeshObj;
-    
-
-    public MeshData(Mesh meshObj)
-    {
-        this.MeshObj = meshObj;
-    }
-
-    ~MeshData()
-    {
-    }
-}
 
 
 
 public class GenerateAdjacencyEdge : ScriptableObject
 {
+    public class MeshData
+    {
+        public Mesh MeshObj;
+
+
+        public MeshData(Mesh meshObj)
+        {
+            this.MeshObj = meshObj;
+        }
+
+        ~MeshData()
+        {
+        }
+    }
+
+
     private static List<MeshData> MeshList;
 
     static bool GetReady()

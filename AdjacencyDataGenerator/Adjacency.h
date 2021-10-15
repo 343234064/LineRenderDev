@@ -334,6 +334,8 @@ struct SourceContext
 		}
 		OutFile.close();
 	}
+
+
 };
 
 class AdjacencyProcesser
@@ -470,6 +472,8 @@ public:
 		ErrorString = "";
 		MessageString = "";
 	}
+
+	void ExportAdjacencyList(std::filesystem::path& FilePath);
 
 private:
 	bool HandleAdjacencyFace(
