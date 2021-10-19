@@ -401,6 +401,7 @@ void* AdjacencyProcesser::RunFunc1(void* SourceData, double* OutProgressPerRun)
 	}
 
 	Src->FaceList.emplace_back(Face(ix, iy, iz));
+	Src->FaceIdPool.insert(Src->CurrentFacePos);
 
 
 
@@ -443,7 +444,8 @@ bool AdjacencyProcesser::GetReady2()
 
 		if (TriangleContextList[i]->FaceList.size() >= 1) {
 			TriangleContextList[i]->FaceList[0].BlackWhite = 1;
-			TriangleContextList[i]->FaceIdPool.push(0);
+			TriangleContextList[i]->FaceIdQueue.push(0);
+			TriangleContextList[i]->FaceIdPool.erase(0);
 
 			TriangleContextList[i]->AdjacencyFaceList.reserve(TriangleContextList[i]->FaceList.size());
 		}
@@ -549,8 +551,8 @@ void* AdjacencyProcesser::RunFunc2(void* SourceData, double* OutProgressPerRun)
 {
 	SourceContext* Src = (SourceContext*)SourceData;
 
-	if (!Src->FaceIdPool.empty()) {
-		int CurrentFaceId = Src->FaceIdPool.front();
+	if (!Src->FaceIdQueue.empty()) {
+		int CurrentFaceId = Src->FaceIdQueue.front();
 
 		Face& CurrentFace = Src->FaceList[CurrentFaceId];
 
@@ -581,7 +583,8 @@ void* AdjacencyProcesser::RunFunc2(void* SourceData, double* OutProgressPerRun)
 					if (Src->FaceList[xy_adj_face_id].BlackWhite == 0)
 					{
 						Src->FaceList[xy_adj_face_id].BlackWhite = -1;
-						Src->FaceIdPool.push(xy_adj_face_id);
+						Src->FaceIdQueue.push(xy_adj_face_id);
+						Src->FaceIdPool.erase(xy_adj_face_id);
 					}
 				}
 				if (yz_has_adj_face && !Src->FaceList[yz_adj_face_id].IsRead)
@@ -589,7 +592,8 @@ void* AdjacencyProcesser::RunFunc2(void* SourceData, double* OutProgressPerRun)
 					if (Src->FaceList[yz_adj_face_id].BlackWhite == 0)
 					{
 						Src->FaceList[yz_adj_face_id].BlackWhite = -1;
-						Src->FaceIdPool.push(yz_adj_face_id);
+						Src->FaceIdQueue.push(yz_adj_face_id);
+						Src->FaceIdPool.erase(yz_adj_face_id);
 					}
 				}
 				if (zx_has_adj_face && !Src->FaceList[zx_adj_face_id].IsRead)
@@ -597,7 +601,8 @@ void* AdjacencyProcesser::RunFunc2(void* SourceData, double* OutProgressPerRun)
 					if (Src->FaceList[zx_adj_face_id].BlackWhite == 0)
 					{
 						Src->FaceList[zx_adj_face_id].BlackWhite = -1;
-						Src->FaceIdPool.push(zx_adj_face_id);
+						Src->FaceIdQueue.push(zx_adj_face_id);
+						Src->FaceIdPool.erase(zx_adj_face_id);
 					}
 				}
 				CurrentFace.IsRead = true;
@@ -616,7 +621,8 @@ void* AdjacencyProcesser::RunFunc2(void* SourceData, double* OutProgressPerRun)
 					if (Src->FaceList[xy_adj_face_id].BlackWhite == 0)
 					{
 						Src->FaceList[xy_adj_face_id].BlackWhite = 1;
-						Src->FaceIdPool.push(xy_adj_face_id);
+						Src->FaceIdQueue.push(xy_adj_face_id);
+						Src->FaceIdPool.erase(xy_adj_face_id);
 					}
 					else if (Src->FaceList[xy_adj_face_id].BlackWhite == -1)
 					{
@@ -628,7 +634,8 @@ void* AdjacencyProcesser::RunFunc2(void* SourceData, double* OutProgressPerRun)
 					if (Src->FaceList[yz_adj_face_id].BlackWhite == 0)
 					{
 						Src->FaceList[yz_adj_face_id].BlackWhite = 1;
-						Src->FaceIdPool.push(yz_adj_face_id);
+						Src->FaceIdQueue.push(yz_adj_face_id);
+						Src->FaceIdPool.erase(yz_adj_face_id);
 					}
 					else if (Src->FaceList[yz_adj_face_id].BlackWhite == -1)
 					{
@@ -640,7 +647,8 @@ void* AdjacencyProcesser::RunFunc2(void* SourceData, double* OutProgressPerRun)
 					if (Src->FaceList[zx_adj_face_id].BlackWhite == 0)
 					{
 						Src->FaceList[zx_adj_face_id].BlackWhite = 1;
-						Src->FaceIdPool.push(zx_adj_face_id);
+						Src->FaceIdQueue.push(zx_adj_face_id);
+						Src->FaceIdPool.erase(zx_adj_face_id);
 					}
 					else if (Src->FaceList[zx_adj_face_id].BlackWhite == -1)
 					{
@@ -654,23 +662,34 @@ void* AdjacencyProcesser::RunFunc2(void* SourceData, double* OutProgressPerRun)
 				}
 				else
 					CurrentFace.IsRead = true;
-			}	
+			}
+			else
+			{
+				CurrentFace.BlackWhite = 1;
+			}
 		}
 
 		double Step = 0.0;
 		if (CurrentFace.IsRead) {
-			Src->FaceIdPool.pop();
+			Src->FaceIdQueue.pop();
 			Step = 1.0 / Src->TriangleNum;
 		}
 		*OutProgressPerRun = Step;
 	}
 	else {
-		*OutProgressPerRun = 1.0;
+		if (!Src->FaceIdPool.empty())
+		{
+			Src->FaceIdQueue.push(*Src->FaceIdPool.begin());
+			Src->FaceIdPool.erase(Src->FaceIdPool.begin());
+		}
+		else {
+			*OutProgressPerRun = 1.0;
+		}
 	}
 
 
 
-	if (Src->FaceIdPool.empty())
+	if (Src->FaceIdPool.empty() && Src->FaceIdQueue.empty())
 		return (void*)Src;
 	else
 		return nullptr;

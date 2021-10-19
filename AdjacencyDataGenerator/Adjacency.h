@@ -3,6 +3,7 @@
 #include "ThreadProcesser.h"
 #include <unordered_map>
 #include <queue>
+#include <set>
 #include <fstream>
 #include <filesystem>
 
@@ -304,7 +305,8 @@ struct SourceContext
 	std::vector<Face> FaceList;
 	std::unordered_map<Edge, FacePair> EdgeList;
 	//Pass2
-	std::queue<int> FaceIdPool;
+	std::queue<uint> FaceIdQueue;
+	std::set<uint> FaceIdPool;
 	std::vector<AdjFace> AdjacencyFaceList;
 	//Pass3
 	std::vector<AdjFace> AdjacencyFaceListShrink;
