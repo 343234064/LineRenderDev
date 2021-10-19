@@ -33,7 +33,7 @@ int main(int argc, char** argv)
         std::cout << FilePath.c_str() << std::endl;
     }
     //temp
-    FilePath = "F:\\OutlineDev\\LineRenderDev\\LineRenderDev\\Assets\\Models\\WoodPen.triangles";//SphereAndTorus WoodPen BoxAndBox
+    FilePath = "F:\\OutlineDev\\LineRenderDev\\LineRenderDev\\Assets\\Models\\SphereAndTorus.triangles";//SphereAndTorus WoodPen BoxAndBox
     
     if (FilePath.size() == 0)
     {
@@ -98,6 +98,7 @@ int main(int argc, char** argv)
             ContextList[0]->DumpVertexList();
             ContextList[0]->DumpRawVertexList();
             */
+            
         }
         /*****Pass 0*****/////////////////////////////////////////////////////////////////////////////////////////
 
@@ -187,16 +188,57 @@ int main(int argc, char** argv)
         /*****Pass 2*****/////////////////////////////////////////////////////////////////////////////////////////
 
 
+        /*****Pass 3*****/////////////////////////////////////////////////////////////////////////////////////////
+        std::cout << LINE_STRING << std::endl;
+        std::cout << "Begin Shrinking Adjacency Data..." << std::endl;
+        Success = Processer.GetReady3();
+
+        std::cout << LINE_STRING << std::endl;
+        std::cout << Processer.GetMessageString() << std::endl;
+        std::cout << LINE_STRING << std::endl;
+
+        if (Success) {
+            double Progress = 0.0;
+            while (true) {
+                std::cout << "Shrinking Adjacency Data....... " << Progress * 100.0 << " %                                                             \r";
+                std::cout.flush();
+
+                if (Progress >= 1.0) break;
+
+                Progress = Processer.GetProgress();
+            }
+            std::cout << std::endl;
+
+            while (true)
+            {
+                if (Processer.IsWorking())
+                    Processer.GetProgress();
+                else
+                    break;
+            }
+        }
+
+        ErrorString = Processer.GetErrorString();
+        if (ErrorString.size() > 0) {
+            std::cout << LINE_STRING << std::endl;
+            std::cout << "Something get error, please see error2.log." << std::endl;
+            std::cout << LINE_STRING << std::endl;
+
+            Processer.DumpErrorString(3);
+        }
+
+        std::cout << "Shrink Adjacency Data Completed." << std::endl;
+        /*****Pass 3*****/////////////////////////////////////////////////////////////////////////////////////////
+
         ///////////////////////
         
-     
+        /*
         std::vector<SourceContext*> ContextList = Processer.GetTriangleContextList();
         SourceContext* Context = ContextList[0];
-
-        //ContextList[0]->DumpEdgeList();
-        //ContextList[0]->DumpFaceList();
-        //ContextList[0]->DumpAdjacencyFaceList();
-      
+        ContextList[0]->DumpEdgeList();
+        ContextList[0]->DumpFaceList();
+        ContextList[0]->DumpAdjacencyFaceListShrink();
+        */
 
         std::cout << "Exporting Adjacency Data......" << std::endl;
         std::filesystem::path ExportFilePath = FilePath;

@@ -200,9 +200,13 @@ struct AdjFace
 		adjPoint[0] = 0;
 		adjPoint[1] = 0;
 		adjPoint[2] = 0;
+		adjFaceIndex[0] = 0;
+		adjFaceIndex[1] = 0;
+		adjFaceIndex[2] = 0;
 		hasAdjFace[0] = false;
 		hasAdjFace[1] = false;
 		hasAdjFace[2] = false;
+		faceIndex = 0;
 	}
 	AdjFace(const Face& face) :
 		x(face.x),
@@ -212,9 +216,13 @@ struct AdjFace
 		adjPoint[0] = 0;
 		adjPoint[1] = 0;
 		adjPoint[2] = 0;
+		adjFaceIndex[0] = 0;
+		adjFaceIndex[1] = 0;
+		adjFaceIndex[2] = 0;
 		hasAdjFace[0] = false;
 		hasAdjFace[1] = false;
 		hasAdjFace[2] = false;
+		faceIndex = 0;
 	}
 
 	Index x;
@@ -223,7 +231,10 @@ struct AdjFace
 
 	// xy, yz, zx
 	Index adjPoint[3]; 
+	uint adjFaceIndex[3];
 	bool hasAdjFace[3];
+
+	uint faceIndex;
 };
 
 struct VertexContext
@@ -289,11 +300,14 @@ struct SourceContext
 	{}
 
 	Byte* BytesData;
+	//Pass1
 	std::vector<Face> FaceList;
 	std::unordered_map<Edge, FacePair> EdgeList;
-
+	//Pass2
 	std::queue<int> FaceIdPool;
 	std::vector<AdjFace> AdjacencyFaceList;
+	//Pass3
+	std::vector<AdjFace> AdjacencyFaceListShrink;
 
 	uint TotalLength;
 	uint IndicesLength;
@@ -302,6 +316,7 @@ struct SourceContext
 	uint CurrentFacePos;
 	uint CurrentIndexPos;
 
+	//Pass0
 	VertexContext* VertexData;
 
 	void DumpFaceList()
@@ -330,12 +345,23 @@ struct SourceContext
 		for (std::vector<AdjFace>::iterator it = AdjacencyFaceList.begin(); it != AdjacencyFaceList.end(); it++)
 		{
 			OutFile << "AdjFace: " << it->x.actual_value << ", " << it->y.actual_value << ", " << it->z.actual_value << " | " 
-				<< it->adjPoint[0].actual_value << "(" << it->hasAdjFace[0] << ") " << it->adjPoint[1].actual_value << "(" << it->hasAdjFace[1] << ") " << it->adjPoint[2].actual_value << "(" << it->hasAdjFace[2] << ") " << std::endl;
+				<< it->adjPoint[0].actual_value << "(" << it->hasAdjFace[0] << ") " << it->adjPoint[1].actual_value << "(" << it->hasAdjFace[1] << ") " << it->adjPoint[2].actual_value << "(" << it->hasAdjFace[2] << ") " 
+				<< " | " << it->adjFaceIndex[0] << ", " << it->adjFaceIndex[1] << ", "  << it->adjFaceIndex[2]<< std::endl;
 		}
 		OutFile.close();
 	}
 
-
+	void DumpAdjacencyFaceListShrink()
+	{
+		std::ofstream OutFile("AdjList.txt", std::ios::out);
+		for (std::vector<AdjFace>::iterator it = AdjacencyFaceListShrink.begin(); it != AdjacencyFaceListShrink.end(); it++)
+		{
+			OutFile << "AdjFace: " << it->x.actual_value << ", " << it->y.actual_value << ", " << it->z.actual_value << " | "
+				<< it->adjPoint[0].actual_value << "(" << it->hasAdjFace[0] << ") " << it->adjPoint[1].actual_value << "(" << it->hasAdjFace[1] << ") " << it->adjPoint[2].actual_value << "(" << it->hasAdjFace[2] << ") "
+				<< " | " << it->adjFaceIndex[0] << ", " << it->adjFaceIndex[1] << ", " << it->adjFaceIndex[2] << std::endl;
+		}
+		OutFile.close();
+	}
 };
 
 class AdjacencyProcesser
@@ -394,6 +420,10 @@ public:
 	//Pass 2
 	bool GetReady2();
 	void* RunFunc2(void* SourceData, double* OutProgressPerRun);
+
+	//Pass 3
+	bool GetReady3();
+	void* RunFunc3(void* SourceData, double* OutProgressPerRun);
 
 	double GetProgress()
 	{

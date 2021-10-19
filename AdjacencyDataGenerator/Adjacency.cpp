@@ -486,6 +486,7 @@ bool AdjacencyProcesser::HandleAdjacencyFace(
 		{
 			OutAdjFace->adjPoint[EdgeIndex] = Src->FaceList[adj.face1].GetOppositePoint(EdgeToSearch.v1, EdgeToSearch.v2);
 			OutAdjFace->hasAdjFace[EdgeIndex] = true;
+			OutAdjFace->adjFaceIndex[EdgeIndex] = adj.face1;
 			*OutAdjFaceId = adj.face1;
 			HasAdjFace = true;
 		}
@@ -493,6 +494,7 @@ bool AdjacencyProcesser::HandleAdjacencyFace(
 		{
 			OutAdjFace->adjPoint[EdgeIndex] = Src->FaceList[adj.face2].GetOppositePoint(EdgeToSearch.v1, EdgeToSearch.v2);
 			OutAdjFace->hasAdjFace[EdgeIndex] = true;
+			OutAdjFace->adjFaceIndex[EdgeIndex] = adj.face2;
 			*OutAdjFaceId = adj.face2;
 			HasAdjFace = true;
 		}
@@ -566,6 +568,7 @@ void* AdjacencyProcesser::RunFunc2(void* SourceData, double* OutProgressPerRun)
 			if (CurrentFace.BlackWhite == 1)
 			{
 				AdjFace NewAdjFace(CurrentFace);
+				NewAdjFace.faceIndex = CurrentFaceId;
 
 				bool xy_has_adj_face = HandleAdjacencyFace(CurrentFaceId, xy, 0, Src, &xy_adj_face_id, &NewAdjFace);
 				bool yz_has_adj_face = HandleAdjacencyFace(CurrentFaceId, yz, 1, Src, &yz_adj_face_id, &NewAdjFace);
@@ -674,11 +677,95 @@ void* AdjacencyProcesser::RunFunc2(void* SourceData, double* OutProgressPerRun)
 }
 
 
+bool AdjacencyProcesser::GetReady3()
+{
+	if (AsyncProcesser == nullptr || TriangleContextList.size() == 0 || TriangleBytesData == nullptr || IsWorking())
+	{
+		ErrorString += "GetReady2 has not run yet or is still working.\n";
+		return false;
+	}
+	AsyncProcesser->Clear();
+
+	ErrorString = "";
+	MessageString = "";
+
+	for (int i = 0; i < TriangleContextList.size(); i++) {
+		WRITE_MESSAGE_DIGIT("Mesh: ", i);
+		WRITE_MESSAGE_DIGIT("Adj Face Num Before Shrink: ", TriangleContextList[i]->AdjacencyFaceList.size());
+
+	}
+
+
+	for (uint i = 0; i < TriangleContextList.size(); i++)
+	{
+		TriangleContextList[i]->CurrentFacePos = 0;
+		TriangleContextList[i]->CurrentIndexPos = 0;
+		AsyncProcesser->AddData((void*)TriangleContextList[i]);
+	}
+
+
+	std::function<void* (void*, double*)> Runnable = std::bind(&AdjacencyProcesser::RunFunc3, this, std::placeholders::_1, std::placeholders::_2);
+	AsyncProcesser->SetRunFunc(Runnable);
+
+	AsyncProcesser->SetIntervalTime(0.0);
+
+	if (!AsyncProcesser->Kick())
+	{
+		ErrorString += "Start async request failed.\n";
+		return false;
+	}
+
+
+	return true;
+}
+
+
+void* AdjacencyProcesser::RunFunc3(void* SourceData, double* OutProgressPerRun)
+{
+	SourceContext* Src = (SourceContext*)SourceData;
+
+	AdjFace& CurrentAdjFace = Src->AdjacencyFaceList[Src->CurrentFacePos];
+
+	bool IsAdjWhite1 = true;
+	bool IsAdjWhite2 = true;
+	bool IsAdjWhite3 = true;
+	if (CurrentAdjFace.hasAdjFace[0]) {
+		IsAdjWhite1 = Src->FaceList[CurrentAdjFace.adjFaceIndex[0]].BlackWhite == -1 ? true : false;
+	}
+	if (CurrentAdjFace.hasAdjFace[1]) {
+		IsAdjWhite2 = Src->FaceList[CurrentAdjFace.adjFaceIndex[1]].BlackWhite == -1 ? true : false;
+	}
+	if (CurrentAdjFace.hasAdjFace[2]) {
+		IsAdjWhite3 = Src->FaceList[CurrentAdjFace.adjFaceIndex[2]].BlackWhite == -1 ? true : false;
+	}
+	
+	if (IsAdjWhite1 || IsAdjWhite2 || IsAdjWhite3)
+	{
+		Src->AdjacencyFaceListShrink.push_back(CurrentAdjFace);
+	}
+	else
+	{
+		Src->FaceList[CurrentAdjFace.faceIndex].BlackWhite = -1;
+	}
+
+	Src->CurrentFacePos++;
+
+	double Step = 1.0 / Src->AdjacencyFaceList.size();
+	*OutProgressPerRun = Step;
+
+	if (Src->CurrentFacePos >= Src->AdjacencyFaceList.size())
+		return (void*)Src;
+	else
+		return nullptr;
+}
+
+
 void AdjacencyProcesser::ExportAdjacencyList(std::filesystem::path& FilePath)
 {
 	std::ofstream OutFile(FilePath.c_str(), std::ios::out | std::ios::binary);
 
 	int MeshNum = TriangleContextList.size();
+
 	int OffsetPerData = ELEMENT_LENGTH;
 
 	int TotalBytesLength = 8;
@@ -697,11 +784,11 @@ void AdjacencyProcesser::ExportAdjacencyList(std::filesystem::path& FilePath)
 	int Offset = 8;
 	for (int i = 0; i < MeshNum; i++)
 	{
-		WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, TriangleContextList[i]->AdjacencyFaceList.size());
+		WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, TriangleContextList[i]->AdjacencyFaceListShrink.size());
 		Offset += 4;
-		for (int j = 0; j < TriangleContextList[i]->AdjacencyFaceList.size(); j++)
+		for (int j = 0; j < TriangleContextList[i]->AdjacencyFaceListShrink.size(); j++)
 		{
-			AdjFace& Curr = TriangleContextList[i]->AdjacencyFaceList[j];
+			AdjFace& Curr = TriangleContextList[i]->AdjacencyFaceListShrink[j];
 			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.x.actual_value + 1); Offset += ELEMENT_LENGTH;
 			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.y.actual_value + 1); Offset += ELEMENT_LENGTH;
 			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.z.actual_value + 1); Offset += ELEMENT_LENGTH;
@@ -713,6 +800,6 @@ void AdjacencyProcesser::ExportAdjacencyList(std::filesystem::path& FilePath)
 
 	OutFile.write((char*)Buffer, TotalBytesLength);
 	OutFile.close();
-
+	 
 	delete[] Buffer;
 }
