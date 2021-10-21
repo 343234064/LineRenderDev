@@ -1,42 +1,54 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Text;
 using System.IO;
+using System.Text;
 using UnityEditor;
 using UnityEngine;
-using Unity.Collections;
 
-
-
-
-[ExecuteInEditMode]
-public class TestAdjacency : MonoBehaviour
+public class OutlineRenderer : MonoBehaviour
 {
+    // Start is called before the first frame update
+    void Start()
+    {
+        GetMeshInformation();
+        LoadAdjacency();
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        
+    }
 
     public class MeshData
     {
         public Mesh RumtimeMesh;
-        public Mesh CachedMesh;
-        public int[] Triangles;
+        public int[] AdjacencyTriangles;
 
         public MeshData(Mesh meshObj)
         {
             RumtimeMesh = meshObj;
-            CachedMesh = Mesh.Instantiate(RumtimeMesh);
         }
 
     }
 
-    public bool LoadAdjacency = false;
-    public bool ShowAdjacency = false;
-    public bool ResetMesh = false;
 
     private List<MeshData> MeshList;
 
-   void OnEnable()
+    private static string GetGameObjectPath(Transform transform)
     {
-        Debug.Log("Test Script Enable");
+        string path = transform.name;
+        while (transform.parent != null)
+        {
+            transform = transform.parent;
+            path = transform.name + "/" + path;
+        }
+        return path;
+    }
+
+    private void GetMeshInformation()
+    {
         MeshList = new List<MeshData>();
 
         MeshFilter SelectedMesh = gameObject.GetComponent<MeshFilter>();
@@ -63,42 +75,24 @@ public class TestAdjacency : MonoBehaviour
             MeshData ToAdd = new MeshData(SelectedMesh.sharedMesh);
             MeshList.Add(ToAdd);
         }
+
+        Debug.Log("Mesh Name: " + gameObject.name);
+        Debug.Log("Mesh Count: " + MeshList.Count);
     }
 
-    void Update()
-    {
-        if(LoadAdjacency)
-        {
-            OnLoadAdjacency();
-            LoadAdjacency = false;
-        }
 
-        if(ShowAdjacency)
-        {
-            OnShowAdjacency();
-            ShowAdjacency = false;
-        }
-
-        if(ResetMesh)
-        {
-            OnResetMesh();
-            ResetMesh = false;
-        }
-    }
-
-    private void OnLoadAdjacency()
+    private void LoadAdjacency()
     {
         if (MeshList.Count == 0) return;
 
-        Debug.Log("Start Load Adjacency.....");
-        String FileName = AssetDatabase.GetAssetPath(MeshList[0].RumtimeMesh);
+        string FileName = AssetDatabase.GetAssetPath(MeshList[0].RumtimeMesh);
         int dotIndex = FileName.LastIndexOf('.');
         if (dotIndex != -1)
         {
             FileName = FileName.Substring(0, dotIndex);
         }
         FileName += ".adjacency";
-        Debug.Log(FileName);
+        Debug.Log("Start Load Adjacency : " + FileName);
 
         if (File.Exists(FileName))
         {
@@ -111,52 +105,38 @@ public class TestAdjacency : MonoBehaviour
 
                 if (MeshNum == MeshList.Count)
                 {
-                    for(int i = 0; i < MeshNum; i++)
+                    for (int i = 0; i < MeshNum; i++)
                     {
                         int TotalAdjFaceNum = Reader.ReadInt32();
                         Debug.Log("Mesh : " + i + " | Total AdjFace Num:" + TotalAdjFaceNum);
-                        MeshList[i].Triangles = new int[TotalAdjFaceNum*3];
-
+                        MeshList[i].AdjacencyTriangles = new int[TotalAdjFaceNum * 6];
+                        
                         int Offset = 0;
                         for (int j = 0; j < TotalAdjFaceNum; j++)
                         {
-                            MeshList[i].Triangles[Offset] = Reader.ReadInt32(); Offset++;
-                            MeshList[i].Triangles[Offset] = Reader.ReadInt32(); Offset++;
-                            MeshList[i].Triangles[Offset] = Reader.ReadInt32(); Offset++;
-                            int xy = Reader.ReadInt32();
-                            int yz = Reader.ReadInt32();
-                            int zx = Reader.ReadInt32();
+                            MeshList[i].AdjacencyTriangles[Offset] = Reader.ReadInt32(); Offset++;
+                            MeshList[i].AdjacencyTriangles[Offset] = Reader.ReadInt32(); Offset++;
+                            MeshList[i].AdjacencyTriangles[Offset] = Reader.ReadInt32(); Offset++;
+
+                            MeshList[i].AdjacencyTriangles[Offset] = Reader.ReadInt32(); Offset++;
+                            MeshList[i].AdjacencyTriangles[Offset] = Reader.ReadInt32(); Offset++;
+                            MeshList[i].AdjacencyTriangles[Offset] = Reader.ReadInt32(); Offset++;
+
                         }
                     }
                 }
-                else 
+                else
                 {
                     Debug.Log("Mesh Num From File Not Equal To Current Mesh.");
                 }
             }
 
         }
-        else 
+        else
         {
             Debug.Log("Cannot Find Adjacency File.....");
         }
 
         Debug.Log("Load Adjacency Completed.");
-    }
-
-    private void OnShowAdjacency()
-    {
-        foreach (MeshData CurrentMeshData in MeshList)
-        {
-            CurrentMeshData.RumtimeMesh.triangles = CurrentMeshData.Triangles;
-        }
-    }
-
-    private void OnResetMesh()
-    {
-        foreach (MeshData CurrentMeshData in MeshList)
-        {
-            CurrentMeshData.RumtimeMesh.triangles = CurrentMeshData.CachedMesh.triangles;
-        }
     }
 }

@@ -4,7 +4,7 @@
 
 // Create a RenderTexture with enableRandomWrite flag and set it
 // with cs.SetTexture
-RWStructuredBuffer<float4> Result;
+RWStructuredBuffer<float3> Result;
 uniform float Time;
 
 
@@ -33,7 +33,7 @@ float3 rand1dTo3d(float value){
 
 
 
-[numthreads(64,1,1)]
+[numthreads(256,1,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
     //generate 2 orthogonal vectors
@@ -43,5 +43,5 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     float scaledTime = Time * 2 + rand1dTo1d(id.x) * 712.131234;
     //calculate a vector based on vectors
     float3 dir = baseDir * sin(scaledTime) + orthogonal * cos(scaledTime);
-    Result[id.x] = float4(dir * 20, rand1dTo1d(id.x));
+    Result[id.x] = float3(dir * 20);
 }

@@ -33,7 +33,7 @@ int main(int argc, char** argv)
         std::cout << FilePath.c_str() << std::endl;
     }
     //temp
-    FilePath = "F:\\OutlineDev\\LineRenderDev\\LineRenderDev\\Assets\\Models\\WoodPen.triangles";//SphereAndTorus WoodPen BoxAndBox Platonic YJS_Mod
+    FilePath = "F:\\OutlineDev\\LineRenderDev\\LineRenderDev\\Assets\\Models\\SphereAndTorus.triangles";//SphereAndTorus WoodPen BoxAndBox Platonic YJS_Mod
     
     if (FilePath.size() == 0)
     {

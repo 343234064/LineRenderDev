@@ -808,9 +808,9 @@ void AdjacencyProcesser::ExportAdjacencyList(std::filesystem::path& FilePath)
 		for (int j = 0; j < TriangleContextList[i]->AdjacencyFaceListShrink.size(); j++)
 		{
 			AdjFace& Curr = TriangleContextList[i]->AdjacencyFaceListShrink[j];
-			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.x.actual_value + 1); Offset += ELEMENT_LENGTH;
-			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.y.actual_value + 1); Offset += ELEMENT_LENGTH;
-			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.z.actual_value + 1); Offset += ELEMENT_LENGTH;
+			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.x.actual_value); Offset += ELEMENT_LENGTH;
+			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.y.actual_value); Offset += ELEMENT_LENGTH;
+			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.z.actual_value); Offset += ELEMENT_LENGTH;
 			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.hasAdjFace[0] ? (Curr.adjPoint[0].actual_value + 1) : 0); Offset += ELEMENT_LENGTH;
 			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.hasAdjFace[1] ? (Curr.adjPoint[1].actual_value + 1) : 0); Offset += ELEMENT_LENGTH;
 			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.hasAdjFace[2] ? (Curr.adjPoint[2].actual_value + 1) : 0); Offset += ELEMENT_LENGTH;

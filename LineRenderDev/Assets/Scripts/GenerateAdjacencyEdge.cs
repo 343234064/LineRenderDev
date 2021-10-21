@@ -114,7 +114,7 @@ public class GenerateAdjacencyEdge : ScriptableObject
     }
 
 
-    [MenuItem("Tools/Create Adjacency Data")]
+    [MenuItem("Tools/Create Vertex and Index Data")]
     static void GenerateAdjacencyData()
     {
         if (!GetReady()) return;
