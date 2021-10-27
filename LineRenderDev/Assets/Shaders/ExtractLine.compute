@@ -11,18 +11,27 @@ struct AdjFace
     uint zx;
 };
 
+
 StructuredBuffer<float3> Vertices;
 StructuredBuffer<AdjFace> AdjacencyTriangles;
 
-AppendStructuredBuffer<uint> LineIndices;
+AppendStructuredBuffer<uint2> LineIndices;
 
+uniform uint TotalAdjacencyTrianglesNum;
 
 
 [numthreads(256, 1, 1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
-    if (id.x % 2 == 0) return;
-    LineIndices.Append(1);
-   // LineIndices.Append(2);
+    if (id.x >= TotalAdjacencyTrianglesNum) return;
+
+    AdjFace CurrentFace = AdjacencyTriangles[id.x];
+    uint2 xy = uint2(CurrentFace.x, CurrentFace.y);
+    uint2 yz = uint2(CurrentFace.y, CurrentFace.z);
+    uint2 zx = uint2(CurrentFace.z, CurrentFace.x);
+
+    LineIndices.Append(xy);
+    LineIndices.Append(yz);
+    LineIndices.Append(zx);
 
 }

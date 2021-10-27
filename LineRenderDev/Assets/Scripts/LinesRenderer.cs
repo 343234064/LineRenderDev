@@ -21,6 +21,10 @@ public struct AdjFace
 /// 先完成静态Mesh版本的
 /// 后续看是否能通过GPU Skin方式解决动画问题
 /// </summary>
+/// 
+
+/// setbuffer移到start()
+/// vertex采用append方式
 public class LinesRenderer : MonoBehaviour
 {
     // Start is called before the first frame update
@@ -47,17 +51,32 @@ public class LinesRenderer : MonoBehaviour
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "LineIndices", MeshList[i].ExtractLineBuffer);
 
                 MeshList[i].ExtractLineBuffer.SetCounterValue(0);
-                Debug.Log("GroupSize : " + MeshList[i].ExtractLinePassGroupSize);
-    
+               
+                ExtractLineShader.SetInt("TotalAdjacencyTrianglesNum", MeshList[i].AdjacencyTriangles.Length);
                 ExtractLineShader.Dispatch(ExtractLineShaderKernelId, MeshList[i].ExtractLinePassGroupSize, 1, 1);
 
                 ComputeBuffer.CopyCount(MeshList[i].ExtractLineBuffer, MeshList[i].ExtractLineArgBuffer, 0);
-                int[] args = new int[] { 0, 1, 0, 0 };
-                MeshList[i].ExtractLineArgBuffer.GetData(args);
+                int[] Args = new int[] { 0 };
+                MeshList[i].ExtractLineArgBuffer.GetData(Args);
 
-                Debug.Log("vertex count " + args[0]);
+                //Debug.Log("Group Size : " + MeshList[i].ExtractLinePassGroupSize);
+                //Debug.Log("Instance Count " + Args[0]);
+                //Debug.Log("Mesh: " + i);
+                Matrix4x4 WorldMatrix = MeshList[i].RumtimeTransform.localToWorldMatrix;
+                LineRenderMaterial.SetMatrix("_ObjectWorldMatrix", WorldMatrix);
+                LineRenderMaterial.SetBuffer("LinesIndex", MeshList[i].ExtractLineBuffer);
+                LineRenderMaterial.SetBuffer("Positions", MeshList[i].VerticesBuffer);
+
+                //Graphics.DrawProceduralIndirect(LineRenderMaterial, BoundingVolume, MeshTopology.Lines, MeshList[i].ExtractLineArgBuffer, 0);
+                Graphics.DrawProcedural(LineRenderMaterial, BoundingVolume, MeshTopology.Lines, 2, Args[0]);
             }
         }
+    }
+
+
+    void OnPostRender()
+    {
+        Debug.Log("XXXXXXXXXXXXXX");
     }
 
     void OnDestroy()
@@ -71,6 +90,8 @@ public class LinesRenderer : MonoBehaviour
     public class MeshData
     {
         public Mesh RumtimeMesh;
+        public Transform RumtimeTransform;
+
         public AdjFace[] AdjacencyTriangles;
 
         public ComputeBuffer AdjacencyIndicesBuffer;
@@ -80,9 +101,10 @@ public class LinesRenderer : MonoBehaviour
 
         public int ExtractLinePassGroupSize;
 
-        public MeshData(Mesh meshObj)
+        public MeshData(Mesh meshObj, Transform transform)
         {
             RumtimeMesh = meshObj;
+            RumtimeTransform = transform;
         }
 
         public void Destroy()
@@ -101,12 +123,15 @@ public class LinesRenderer : MonoBehaviour
 
     /// ///////////////////////////////////////////////////////
     public bool Enable;
+    public Material LineRenderMaterial;
     public ComputeShader ExtractLineShader;
     /// ///////////////////////////////////////////////////////
     private List<MeshData> MeshList;
 
     private int ExtractLineShaderKernelId;
     private uint ExtractLineShaderGroupSize;
+
+    private Bounds BoundingVolume;
     /// ///////////////////////////////////////////////////////
 
 
@@ -127,7 +152,7 @@ public class LinesRenderer : MonoBehaviour
                     if (SubMesh == null) break;
                     else
                     {
-                        MeshData ToAdd = new MeshData(SubMesh.sharedMesh);
+                        MeshData ToAdd = new MeshData(SubMesh.sharedMesh, child.transform);
                         MeshList.Add(ToAdd);
                     }
                 }
@@ -135,7 +160,7 @@ public class LinesRenderer : MonoBehaviour
         }
         else
         {
-            MeshData ToAdd = new MeshData(SelectedMesh.sharedMesh);
+            MeshData ToAdd = new MeshData(SelectedMesh.sharedMesh, gameObject.transform);
             MeshList.Add(ToAdd);
         }
 
@@ -233,22 +258,20 @@ public class LinesRenderer : MonoBehaviour
             MeshList[i].ExtractLineBuffer = new ComputeBuffer(MeshList[i].AdjacencyTriangles.Length * 3 * 2, sizeof(uint), ComputeBufferType.Append);
             
 
-            MeshList[i].ExtractLineArgBuffer = new ComputeBuffer(4, sizeof(int), ComputeBufferType.IndirectArguments);
+            MeshList[i].ExtractLineArgBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.IndirectArguments);
 
-            int[] args = new int[] { 0, 1, 0, 0 };
+            int[] args = new int[] { 0 };
             MeshList[i].ExtractLineArgBuffer.SetData(args);
 
             ComputeBuffer.CopyCount(MeshList[i].ExtractLineBuffer, MeshList[i].ExtractLineArgBuffer, 0);
 
-            MeshList[i].ExtractLinePassGroupSize = (int)((MeshList[i].AdjacencyTriangles.Length + (ExtractLineShaderGroupSize - 1)) / ExtractLineShaderGroupSize);
-            if(MeshList[i].ExtractLinePassGroupSize == 0)
-            {
-                MeshList[i].ExtractLinePassGroupSize = 1;
-            }
+            MeshList[i].ExtractLinePassGroupSize = ((int)(MeshList[i].AdjacencyTriangles.Length / ExtractLineShaderGroupSize) + 1);
+
         }
 
+        BoundingVolume = new Bounds(Vector3.zero, Vector3.one * 20);
     }
 
+   
 
-    
 }
