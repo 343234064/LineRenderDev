@@ -23,8 +23,8 @@ public struct AdjFace
 /// </summary>
 /// 
 
-/// setbuffer移到start()
-/// vertex采用append方式
+/// 
+/// vertex也采用append方式，不必全部传进去
 /// 
 public class LinesRenderer : MonoBehaviour
 {
@@ -43,7 +43,7 @@ public class LinesRenderer : MonoBehaviour
     {
         for (int i = 0; i < MeshList.Count; i++)
         {
-            if (MeshList[i].LineMaterial != null)
+            if (MeshList[i].LineMaterialSetting != null)
             {
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "AdjacencyTriangles", MeshList[i].AdjacencyIndicesBuffer);
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "Vertices", MeshList[i].VerticesBuffer);
@@ -63,11 +63,11 @@ public class LinesRenderer : MonoBehaviour
                 //Debug.Log("Start Instance " + Args[3]);
 
                 Matrix4x4 WorldMatrix = MeshList[i].RumtimeTransform.localToWorldMatrix;
-                MeshList[i].LineMaterial.SetMatrix("_ObjectWorldMatrix", WorldMatrix);
-                MeshList[i].LineMaterial.SetBuffer("LinesIndex", MeshList[i].ExtractLineBuffer);
-                MeshList[i].LineMaterial.SetBuffer("Positions", MeshList[i].VerticesBuffer);
+                MeshList[i].LineMaterialSetting.LineRenderMaterial.SetMatrix("_ObjectWorldMatrix", WorldMatrix);
+                MeshList[i].LineMaterialSetting.LineRenderMaterial.SetBuffer("LinesIndex", MeshList[i].ExtractLineBuffer);
+                MeshList[i].LineMaterialSetting.LineRenderMaterial.SetBuffer("Positions", MeshList[i].VerticesBuffer);
 
-                Graphics.DrawProceduralIndirect(MeshList[i].LineMaterial, BoundingVolume, MeshTopology.Lines, MeshList[i].ExtractLineArgBuffer, 0);
+                Graphics.DrawProceduralIndirect(MeshList[i].LineMaterialSetting.LineRenderMaterial, MeshList[i].LineMaterialSetting.BoundingVolume, MeshTopology.Lines, MeshList[i].ExtractLineArgBuffer, 0);
                 //Graphics.DrawProcedural(MeshList[i].LineMaterial, BoundingVolume, MeshTopology.Lines, 2, Args[0]);
             }
         }
@@ -104,7 +104,7 @@ public class LinesRenderer : MonoBehaviour
     public class MeshData
     {
         public Mesh RumtimeMesh;
-        public Material LineMaterial;
+        public LineMaterial LineMaterialSetting;
         public Transform RumtimeTransform;
 
         public AdjFace[] AdjacencyTriangles;
@@ -141,8 +141,6 @@ public class LinesRenderer : MonoBehaviour
     private List<MeshData> MeshList;
     private int ExtractLineShaderKernelId;
     private uint ExtractLineShaderGroupSize;
-
-    private Bounds BoundingVolume;
     /// ///////////////////////////////////////////////////////
 
 
@@ -160,19 +158,19 @@ public class LinesRenderer : MonoBehaviour
                 {
                     GameObject child = gameObject.transform.GetChild(i).gameObject;
                     MeshFilter SubMesh = child.GetComponent<MeshFilter>();
-                    LineMaterial MatObject = child.GetComponent<LineMaterial>();
+                    LineMaterial MatSetting = child.GetComponent<LineMaterial>();
 
                     if (SubMesh == null) break;
                     else
                     {
                         MeshData ToAdd = new MeshData(SubMesh.sharedMesh, child.transform);
-                        if (MatObject != null)
+                        if (MatSetting != null)
                         {
-                            ToAdd.LineMaterial = MatObject.LineRenderMaterial;
+                            ToAdd.LineMaterialSetting = MatSetting;
                         }
                         else
                         {
-                            ToAdd.LineMaterial = null;
+                            ToAdd.LineMaterialSetting = null;
                             Debug.Log("===============Mesh: " + child.name + " has NO Line Material applied, the mesh will be ignored=================");
                         }
                         MeshList.Add(ToAdd);
@@ -277,7 +275,7 @@ public class LinesRenderer : MonoBehaviour
             MeshList[i].VerticesBuffer = new ComputeBuffer(MeshList[i].RumtimeMesh.vertices.Length, sizeof(float) * 3);
             MeshList[i].VerticesBuffer.SetData(MeshList[i].RumtimeMesh.vertices);
 
-            MeshList[i].ExtractLineBuffer = new ComputeBuffer(MeshList[i].AdjacencyTriangles.Length * 3 * 2, sizeof(uint), ComputeBufferType.Append);
+            MeshList[i].ExtractLineBuffer = new ComputeBuffer(MeshList[i].AdjacencyTriangles.Length * 3, sizeof(uint) * 2, ComputeBufferType.Append);
 
             MeshList[i].ExtractLineArgBuffer = new ComputeBuffer(4, sizeof(int), ComputeBufferType.IndirectArguments);
             int[] args = new int[4] { 2, 1, 0, 0 };
@@ -287,7 +285,6 @@ public class LinesRenderer : MonoBehaviour
 
         }
 
-        BoundingVolume = new Bounds(Vector3.zero, Vector3.one * 20);
     }
 
    

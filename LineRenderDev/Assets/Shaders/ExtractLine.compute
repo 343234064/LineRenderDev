@@ -31,6 +31,11 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     uint2 yz = uint2(CurrentFace.y, CurrentFace.z);
     uint2 zx = uint2(CurrentFace.z, CurrentFace.x);
 
+    float3 vertex_x = Vertices[CurrentFace.x];
+    float3 vertex_y = Vertices[CurrentFace.y];
+    float3 vertex_z = Vertices[CurrentFace.z];
+
+
     LineIndices.Append(xy);
     LineIndices.Append(yz);
     LineIndices.Append(zx);
