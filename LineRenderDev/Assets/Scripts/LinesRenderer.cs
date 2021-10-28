@@ -18,78 +18,93 @@ public struct AdjFace
 }
 
 /// <summary>
-/// 先完成静态Mesh版本的
-/// 后续看是否能通过GPU Skin方式解决动画问题
+/// Static Mesh Ver
+/// 
 /// </summary>
 /// 
 
 /// setbuffer移到start()
 /// vertex采用append方式
+/// 
 public class LinesRenderer : MonoBehaviour
 {
     // Start is called before the first frame update
     void Start()
     {
         GetMeshInformation();
-        if (Enable)
-        {
-            LoadAdjacency();
+        LoadAdjacency();
 
-            Setup();
-        }
+        Setup();
+        
     }
 
     // Update is called once per frame
     void Update()
     {
-        if (Enable)
+        for (int i = 0; i < MeshList.Count; i++)
         {
-            for (int i = 0; i < MeshList.Count; i++)
+            if (MeshList[i].LineMaterial != null)
             {
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "AdjacencyTriangles", MeshList[i].AdjacencyIndicesBuffer);
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "Vertices", MeshList[i].VerticesBuffer);
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "LineIndices", MeshList[i].ExtractLineBuffer);
 
                 MeshList[i].ExtractLineBuffer.SetCounterValue(0);
-               
+
                 ExtractLineShader.SetInt("TotalAdjacencyTrianglesNum", MeshList[i].AdjacencyTriangles.Length);
                 ExtractLineShader.Dispatch(ExtractLineShaderKernelId, MeshList[i].ExtractLinePassGroupSize, 1, 1);
-
-                ComputeBuffer.CopyCount(MeshList[i].ExtractLineBuffer, MeshList[i].ExtractLineArgBuffer, 0);
-                int[] Args = new int[] { 0 };
-                MeshList[i].ExtractLineArgBuffer.GetData(Args);
-
                 //Debug.Log("Group Size : " + MeshList[i].ExtractLinePassGroupSize);
-                //Debug.Log("Instance Count " + Args[0]);
-                //Debug.Log("Mesh: " + i);
-                Matrix4x4 WorldMatrix = MeshList[i].RumtimeTransform.localToWorldMatrix;
-                LineRenderMaterial.SetMatrix("_ObjectWorldMatrix", WorldMatrix);
-                LineRenderMaterial.SetBuffer("LinesIndex", MeshList[i].ExtractLineBuffer);
-                LineRenderMaterial.SetBuffer("Positions", MeshList[i].VerticesBuffer);
+                ComputeBuffer.CopyCount(MeshList[i].ExtractLineBuffer, MeshList[i].ExtractLineArgBuffer, sizeof(int));
+                //int[] Args = new int[4] { 0,0,0,0 };
+                //MeshList[i].ExtractLineArgBuffer.GetData(Args);
+                //Debug.Log("Vertex Count " + Args[0]);
+                //Debug.Log("Instance Count " + Args[1]);
+                //Debug.Log("Start Vertex " + Args[2]);
+                //Debug.Log("Start Instance " + Args[3]);
 
-                //Graphics.DrawProceduralIndirect(LineRenderMaterial, BoundingVolume, MeshTopology.Lines, MeshList[i].ExtractLineArgBuffer, 0);
-                Graphics.DrawProcedural(LineRenderMaterial, BoundingVolume, MeshTopology.Lines, 2, Args[0]);
+                Matrix4x4 WorldMatrix = MeshList[i].RumtimeTransform.localToWorldMatrix;
+                MeshList[i].LineMaterial.SetMatrix("_ObjectWorldMatrix", WorldMatrix);
+                MeshList[i].LineMaterial.SetBuffer("LinesIndex", MeshList[i].ExtractLineBuffer);
+                MeshList[i].LineMaterial.SetBuffer("Positions", MeshList[i].VerticesBuffer);
+
+                Graphics.DrawProceduralIndirect(MeshList[i].LineMaterial, BoundingVolume, MeshTopology.Lines, MeshList[i].ExtractLineArgBuffer, 0);
+                //Graphics.DrawProcedural(MeshList[i].LineMaterial, BoundingVolume, MeshTopology.Lines, 2, Args[0]);
             }
         }
+ 
     }
 
-
-    void OnPostRender()
+    /*
+    void OnEnable()
     {
-        Debug.Log("XXXXXXXXXXXXXX");
+        Camera.onPostRender += OnPostRender;
     }
+
+    void OnPostRender(Camera cam)
+    {
+        //Debug.Log("XXXXXXXXXXXXXX");
+    }
+
+    void OnDisable()
+    {
+        Camera.onPostRender -= OnPostRender;
+    }*/
 
     void OnDestroy()
     {
-        for (int i = 0; i < MeshList.Count; i++)
+        if (MeshList != null)
         {
-            MeshList[i].Destroy();
+            for (int i = 0; i < MeshList.Count; i++)
+            {
+                MeshList[i].Destroy();
+            }
         }
     }
 
     public class MeshData
     {
         public Mesh RumtimeMesh;
+        public Material LineMaterial;
         public Transform RumtimeTransform;
 
         public AdjFace[] AdjacencyTriangles;
@@ -120,14 +135,10 @@ public class LinesRenderer : MonoBehaviour
         }
     }
 
-
     /// ///////////////////////////////////////////////////////
-    public bool Enable;
-    public Material LineRenderMaterial;
     public ComputeShader ExtractLineShader;
     /// ///////////////////////////////////////////////////////
     private List<MeshData> MeshList;
-
     private int ExtractLineShaderKernelId;
     private uint ExtractLineShaderGroupSize;
 
@@ -149,10 +160,21 @@ public class LinesRenderer : MonoBehaviour
                 {
                     GameObject child = gameObject.transform.GetChild(i).gameObject;
                     MeshFilter SubMesh = child.GetComponent<MeshFilter>();
+                    LineMaterial MatObject = child.GetComponent<LineMaterial>();
+
                     if (SubMesh == null) break;
                     else
                     {
                         MeshData ToAdd = new MeshData(SubMesh.sharedMesh, child.transform);
+                        if (MatObject != null)
+                        {
+                            ToAdd.LineMaterial = MatObject.LineRenderMaterial;
+                        }
+                        else
+                        {
+                            ToAdd.LineMaterial = null;
+                            Debug.Log("===============Mesh: " + child.name + " has NO Line Material applied, the mesh will be ignored=================");
+                        }
                         MeshList.Add(ToAdd);
                     }
                 }
@@ -256,14 +278,10 @@ public class LinesRenderer : MonoBehaviour
             MeshList[i].VerticesBuffer.SetData(MeshList[i].RumtimeMesh.vertices);
 
             MeshList[i].ExtractLineBuffer = new ComputeBuffer(MeshList[i].AdjacencyTriangles.Length * 3 * 2, sizeof(uint), ComputeBufferType.Append);
-            
 
-            MeshList[i].ExtractLineArgBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.IndirectArguments);
-
-            int[] args = new int[] { 0 };
+            MeshList[i].ExtractLineArgBuffer = new ComputeBuffer(4, sizeof(int), ComputeBufferType.IndirectArguments);
+            int[] args = new int[4] { 2, 1, 0, 0 };
             MeshList[i].ExtractLineArgBuffer.SetData(args);
-
-            ComputeBuffer.CopyCount(MeshList[i].ExtractLineBuffer, MeshList[i].ExtractLineArgBuffer, 0);
 
             MeshList[i].ExtractLinePassGroupSize = ((int)(MeshList[i].AdjacencyTriangles.Length / ExtractLineShaderGroupSize) + 1);
 

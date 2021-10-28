@@ -190,12 +190,60 @@ PrefabInstance:
       propertyPath: m_Name
       value: SphereAndTorus
       objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 2509802017764886665, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
       objectReference: {fileID: 2100000, guid: fa560a387b88e894e892547c2f08260e, type: 2}
     m_RemovedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
+--- !u!1 &236263015 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: -8513424388201257645, guid: f54c79e26b1ebb24b9758a10609c1121, type: 3}
+  m_PrefabInstance: {fileID: 806569773}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &236263019
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 236263015}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9b3070a7a496da54a91aaac165c88dc9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Notes: 'Each material such be unique for a single mesh object.
+
+    DO NOT apply
+    a same material to multi mesh object'
+  LineRenderMaterial: {fileID: 2100000, guid: 31067fb7262504c48bbbcef19a85fa60, type: 2}
+--- !u!1 &428793225 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: -1500838157198093432, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
+  m_PrefabInstance: {fileID: 47666436}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &428793229
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 428793225}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9b3070a7a496da54a91aaac165c88dc9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Notes: 'Each material such be unique for a single mesh object.
+
+    DO NOT apply
+    a same material to multi mesh object'
+  LineRenderMaterial: {fileID: 2100000, guid: 72573a12241edb447b73e548bb04a52e, type: 2}
 --- !u!1 &648039375 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: d3225e1bf00327942bb9801169f9a8ec, type: 3}
@@ -223,27 +271,25 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 648039375}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 282bad1002983c041a7eef2a2d2c977a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   axis: 1
   speedRot: 50
---- !u!114 &648039379
+--- !u!114 &648039378
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 648039375}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 803e0ff2feae8294c82bae78939c95a6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  Enable: 0
-  LineRenderMaterial: {fileID: 2100000, guid: 72573a12241edb447b73e548bb04a52e, type: 2}
   ExtractLineShader: {fileID: 7200000, guid: 085f920b49dee81489949e16e57f55be, type: 3}
 --- !u!1 &723381315
 GameObject:
@@ -639,21 +685,6 @@ MonoBehaviour:
   LoadAdjacency: 0
   ShowAdjacency: 0
   ResetMesh: 0
---- !u!114 &798713062
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 798713060}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 803e0ff2feae8294c82bae78939c95a6, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  Enable: 0
-  LineRenderMaterial: {fileID: 2100000, guid: 72573a12241edb447b73e548bb04a52e, type: 2}
-  ExtractLineShader: {fileID: 7200000, guid: 085f920b49dee81489949e16e57f55be, type: 3}
 --- !u!1001 &806569773
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -787,9 +818,29 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 803e0ff2feae8294c82bae78939c95a6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  Enable: 0
-  LineRenderMaterial: {fileID: 2100000, guid: 72573a12241edb447b73e548bb04a52e, type: 2}
   ExtractLineShader: {fileID: 7200000, guid: 085f920b49dee81489949e16e57f55be, type: 3}
+--- !u!1 &1002484271 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 2866621852552652557, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
+  m_PrefabInstance: {fileID: 47666436}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &1002484275
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1002484271}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9b3070a7a496da54a91aaac165c88dc9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Notes: 'Each material such be unique for a single mesh object.
+
+    DO NOT apply
+    a same material to multi mesh object'
+  LineRenderMaterial: {fileID: 2100000, guid: 1444b3bab0a1db8428c12433c8f10792, type: 2}
 --- !u!1001 &1256038637
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -851,6 +902,50 @@ PrefabInstance:
       objectReference: {fileID: 2100000, guid: fa560a387b88e894e892547c2f08260e, type: 2}
     m_RemovedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: d3225e1bf00327942bb9801169f9a8ec, type: 3}
+--- !u!1 &1415911826 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 5091175519841788078, guid: d3225e1bf00327942bb9801169f9a8ec, type: 3}
+  m_PrefabInstance: {fileID: 1256038637}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &1415911830
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1415911826}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9b3070a7a496da54a91aaac165c88dc9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Notes: 'Each material such be unique for a single mesh object.
+
+    DO NOT apply
+    a same material to multi mesh object'
+  LineRenderMaterial: {fileID: 2100000, guid: ed6b1d523d2b44c40aa14137e6c14f14, type: 2}
+--- !u!1 &1633505976 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: -3957782524123411102, guid: f54c79e26b1ebb24b9758a10609c1121, type: 3}
+  m_PrefabInstance: {fileID: 806569773}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &1633505980
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1633505976}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9b3070a7a496da54a91aaac165c88dc9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Notes: 'Each material such be unique for a single mesh object.
+
+    DO NOT apply
+    a same material to multi mesh object'
+  LineRenderMaterial: {fileID: 2100000, guid: 27029fe0085574a4593b3b97c75f92b4, type: 2}
 --- !u!1 &1846664508 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
@@ -863,11 +958,9 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1846664508}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 803e0ff2feae8294c82bae78939c95a6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  Enable: 0
-  LineRenderMaterial: {fileID: 2100000, guid: 72573a12241edb447b73e548bb04a52e, type: 2}
   ExtractLineShader: {fileID: 7200000, guid: 085f920b49dee81489949e16e57f55be, type: 3}
