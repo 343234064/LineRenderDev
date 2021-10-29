@@ -53,8 +53,7 @@
     <UnityVersion>2020.1.15f1c1</UnityVersion>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Assets\AssetPathAttribute\Editor\SceneReferenceDrawer.cs" />
-    <Compile Include="Assets\AssetPathAttribute\Editor\AssetPathDrawer.cs" />
+    <Compile Include="Assets\Editor\ReadOnlyDrawer.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="UnityEngine">

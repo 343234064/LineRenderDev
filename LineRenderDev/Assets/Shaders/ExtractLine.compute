@@ -17,13 +17,35 @@ StructuredBuffer<AdjFace> AdjacencyTriangles;
 
 AppendStructuredBuffer<uint2> LineIndices;
 
-uniform uint TotalAdjacencyTrianglesNum;
+uniform float CreaseAngleThreshold;
+uniform float SilhouetteAngleThreshold;
+
+cbuffer Constants
+{
+    uint TotalAdjacencyTrianglesNum;
+    uint SilhouetteEnable;
+    uint CreaseEnable;
+    uint BorderEnable;
+};
+
+
+float3 ComputeNormal(float3 p1, float3 p2, float3 p3)
+{
+    float3 U = p2 - p1;
+    float3 V = p3 - p1;
+
+    float3 Normal = float3(0.0f, 0.0f, 0.0f);
+    Normal.x = U.y * V.z - U.z * V.y;
+    Normal.y = U.z * V.x - U.x * V.z;
+    Normal.z = U.x * V.y - U.y * V.x;
+
+    return normalize(Normal);
+}
 
 
 [numthreads(256, 1, 1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
-    
     if (id.x >= TotalAdjacencyTrianglesNum) return;
 
     AdjFace CurrentFace = AdjacencyTriangles[id.x];
@@ -35,9 +57,42 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     float3 vertex_y = Vertices[CurrentFace.y];
     float3 vertex_z = Vertices[CurrentFace.z];
 
+    float3 CurrentFaceNormal = ComputeNormal(vertex_x, vertex_y, vertex_z);
 
-    LineIndices.Append(xy);
-    LineIndices.Append(yz);
-    LineIndices.Append(zx);
+    if (CurrentFace.xy != 0)
+    {
+        float3 adj_vertex_xy = Vertices[CurrentFace.xy];
+        float3 AdjFaceXYNormal = ComputeNormal(vertex_x, vertex_y, adj_vertex_xy);
+        float angle = dot(CurrentFaceNormal, AdjFaceXYNormal);
+        if (angle >= CreaseAngleThreshold)
+        {
+            LineIndices.Append(xy);
+        }
+    }
+
+    if (CurrentFace.yz != 0)
+    {
+        float3 adj_vertex_yz = Vertices[CurrentFace.yz];
+        float3 AdjFaceYZNormal = ComputeNormal(vertex_y, vertex_z, adj_vertex_yz);
+        float angle = dot(CurrentFaceNormal, AdjFaceYZNormal);
+        if (angle >= CreaseAngleThreshold)
+        {
+            LineIndices.Append(yz);
+        }
+    }
+
+    if (CurrentFace.zx != 0)
+    {
+        float3 adj_vertex_zx = Vertices[CurrentFace.zx];
+        float3 AdjFaceZXNormal = ComputeNormal(adj_vertex_zx, vertex_z, vertex_x);
+        float angle = dot(CurrentFaceNormal, AdjFaceZXNormal);
+        if (angle >= CreaseAngleThreshold)
+        {
+            LineIndices.Append(zx);
+        }
+    }
+    //LineIndices.Append(yz);
+    //LineIndices.Append(zx);
+
 
 }

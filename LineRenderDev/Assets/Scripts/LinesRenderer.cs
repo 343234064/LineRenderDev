@@ -5,7 +5,7 @@ using System.IO;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
-
+using UnityEngine.Rendering;
 
 public struct AdjFace
 {
@@ -16,6 +16,57 @@ public struct AdjFace
     public uint yz;
     public uint zx;
 }
+
+public struct RenderConstants
+{
+    public uint TotalAdjacencyTrianglesNum;
+    public int SilhouetteEnable;
+    public int CreaseEnable;
+    public int BorderEnable;
+
+    public static int Size()
+    {
+        return sizeof(uint) + sizeof(int) * 3;
+    }
+}
+
+public class RenderMeshContext
+{
+    public Mesh RumtimeMesh;
+    public LineMaterial LineMaterialSetting;
+    public Transform RumtimeTransform;
+
+    public AdjFace[] AdjacencyTriangles;
+
+    public ComputeBuffer ConstantBuffer;
+    public ComputeBuffer AdjacencyIndicesBuffer;
+    public ComputeBuffer VerticesBuffer;
+    public ComputeBuffer ExtractLineBuffer;
+    public ComputeBuffer ExtractLineArgBuffer;
+
+    public int ExtractLinePassGroupSize;
+
+    public RenderMeshContext(Mesh meshObj, Transform transform)
+    {
+        RumtimeMesh = meshObj;
+        RumtimeTransform = transform;
+    }
+
+    public void Destroy()
+    {
+        if (ConstantBuffer != null)
+            ConstantBuffer.Release();
+        if (AdjacencyIndicesBuffer != null)
+            AdjacencyIndicesBuffer.Release();
+        if (VerticesBuffer != null)
+            VerticesBuffer.Release();
+        if (ExtractLineBuffer != null)
+            ExtractLineBuffer.Release();
+        if (ExtractLineArgBuffer != null)
+            ExtractLineArgBuffer.Release();
+    }
+}
+
 
 /// <summary>
 /// Static Mesh Ver
@@ -45,28 +96,31 @@ public class LinesRenderer : MonoBehaviour
         {
             if (MeshList[i].LineMaterialSetting != null)
             {
+                ExtractLineShader.SetConstantBuffer(Shader.PropertyToID("Constants"), MeshList[i].ConstantBuffer, 0, RenderConstants.Size());
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "AdjacencyTriangles", MeshList[i].AdjacencyIndicesBuffer);
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "Vertices", MeshList[i].VerticesBuffer);
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "LineIndices", MeshList[i].ExtractLineBuffer);
 
-                MeshList[i].ExtractLineBuffer.SetCounterValue(0);
+                float CreaseAngleThreshold = 0.45f;
+                ExtractLineShader.SetFloat("CreaseAngleThreshold", CreaseAngleThreshold);
 
-                ExtractLineShader.SetInt("TotalAdjacencyTrianglesNum", MeshList[i].AdjacencyTriangles.Length);
+                MeshList[i].ExtractLineBuffer.SetCounterValue(0);
                 ExtractLineShader.Dispatch(ExtractLineShaderKernelId, MeshList[i].ExtractLinePassGroupSize, 1, 1);
                 //Debug.Log("Group Size : " + MeshList[i].ExtractLinePassGroupSize);
                 ComputeBuffer.CopyCount(MeshList[i].ExtractLineBuffer, MeshList[i].ExtractLineArgBuffer, sizeof(int));
-                //int[] Args = new int[4] { 0,0,0,0 };
-                //MeshList[i].ExtractLineArgBuffer.GetData(Args);
-                //Debug.Log("Vertex Count " + Args[0]);
-                //Debug.Log("Instance Count " + Args[1]);
-                //Debug.Log("Start Vertex " + Args[2]);
-                //Debug.Log("Start Instance " + Args[3]);
-
+                /*
+                int[] Args = new int[4] { 0,0,0,0 };
+                MeshList[i].ExtractLineArgBuffer.GetData(Args);
+                Debug.Log("Vertex Count " + Args[0]);
+                Debug.Log("Instance Count " + Args[1]);
+                Debug.Log("Start Vertex " + Args[2]);
+                Debug.Log("Start Instance " + Args[3]);
+                */
                 Matrix4x4 WorldMatrix = MeshList[i].RumtimeTransform.localToWorldMatrix;
                 MeshList[i].LineMaterialSetting.LineRenderMaterial.SetMatrix("_ObjectWorldMatrix", WorldMatrix);
                 MeshList[i].LineMaterialSetting.LineRenderMaterial.SetBuffer("LinesIndex", MeshList[i].ExtractLineBuffer);
                 MeshList[i].LineMaterialSetting.LineRenderMaterial.SetBuffer("Positions", MeshList[i].VerticesBuffer);
-
+               
                 Graphics.DrawProceduralIndirect(MeshList[i].LineMaterialSetting.LineRenderMaterial, MeshList[i].LineMaterialSetting.BoundingVolume, MeshTopology.Lines, MeshList[i].ExtractLineArgBuffer, 0);
                 //Graphics.DrawProcedural(MeshList[i].LineMaterial, BoundingVolume, MeshTopology.Lines, 2, Args[0]);
             }
@@ -74,21 +128,10 @@ public class LinesRenderer : MonoBehaviour
  
     }
 
-    /*
-    void OnEnable()
+    void LateUpdate()
     {
-        Camera.onPostRender += OnPostRender;
+        
     }
-
-    void OnPostRender(Camera cam)
-    {
-        //Debug.Log("XXXXXXXXXXXXXX");
-    }
-
-    void OnDisable()
-    {
-        Camera.onPostRender -= OnPostRender;
-    }*/
 
     void OnDestroy()
     {
@@ -101,44 +144,11 @@ public class LinesRenderer : MonoBehaviour
         }
     }
 
-    public class MeshData
-    {
-        public Mesh RumtimeMesh;
-        public LineMaterial LineMaterialSetting;
-        public Transform RumtimeTransform;
-
-        public AdjFace[] AdjacencyTriangles;
-
-        public ComputeBuffer AdjacencyIndicesBuffer;
-        public ComputeBuffer VerticesBuffer;
-        public ComputeBuffer ExtractLineBuffer;
-        public ComputeBuffer ExtractLineArgBuffer;
-
-        public int ExtractLinePassGroupSize;
-
-        public MeshData(Mesh meshObj, Transform transform)
-        {
-            RumtimeMesh = meshObj;
-            RumtimeTransform = transform;
-        }
-
-        public void Destroy()
-        {
-            if (AdjacencyIndicesBuffer != null)
-                AdjacencyIndicesBuffer.Release();
-            if (VerticesBuffer != null)
-                VerticesBuffer.Release();
-            if (ExtractLineBuffer != null)
-                ExtractLineBuffer.Release();
-            if (ExtractLineArgBuffer != null)
-                ExtractLineArgBuffer.Release();
-        }
-    }
 
     /// ///////////////////////////////////////////////////////
     public ComputeShader ExtractLineShader;
     /// ///////////////////////////////////////////////////////
-    private List<MeshData> MeshList;
+    private List<RenderMeshContext> MeshList;
     private int ExtractLineShaderKernelId;
     private uint ExtractLineShaderGroupSize;
     /// ///////////////////////////////////////////////////////
@@ -146,7 +156,7 @@ public class LinesRenderer : MonoBehaviour
 
     private void GetMeshInformation()
     {
-        MeshList = new List<MeshData>();
+        MeshList = new List<RenderMeshContext>();
 
         MeshFilter SelectedMesh = gameObject.GetComponent<MeshFilter>();
         if (SelectedMesh == null)
@@ -163,7 +173,7 @@ public class LinesRenderer : MonoBehaviour
                     if (SubMesh == null) break;
                     else
                     {
-                        MeshData ToAdd = new MeshData(SubMesh.sharedMesh, child.transform);
+                        RenderMeshContext ToAdd = new RenderMeshContext(SubMesh.sharedMesh, child.transform);
                         if (MatSetting != null)
                         {
                             ToAdd.LineMaterialSetting = MatSetting;
@@ -180,7 +190,7 @@ public class LinesRenderer : MonoBehaviour
         }
         else
         {
-            MeshData ToAdd = new MeshData(SelectedMesh.sharedMesh, gameObject.transform);
+            RenderMeshContext ToAdd = new RenderMeshContext(SelectedMesh.sharedMesh, gameObject.transform);
             MeshList.Add(ToAdd);
         }
 
@@ -283,6 +293,15 @@ public class LinesRenderer : MonoBehaviour
 
             MeshList[i].ExtractLinePassGroupSize = ((int)(MeshList[i].AdjacencyTriangles.Length / ExtractLineShaderGroupSize) + 1);
 
+            MeshList[i].LineMaterialSetting.LineRenderMaterial.renderQueue = (int)RenderQueue.Geometry + 1;
+
+            RenderConstants[] Constants = new RenderConstants[1];
+            Constants[0].TotalAdjacencyTrianglesNum = (uint)MeshList[i].AdjacencyTriangles.Length;
+            Constants[0].SilhouetteEnable = MeshList[i].LineMaterialSetting.SilhouetteEnable ? 1: 0;
+            Constants[0].CreaseEnable = MeshList[i].LineMaterialSetting.CreaseEnable ? 1 : 0;
+            Constants[0].BorderEnable = MeshList[i].LineMaterialSetting.BorderEnable ? 1 : 0;
+            MeshList[i].ConstantBuffer = new ComputeBuffer(1, RenderConstants.Size(), ComputeBufferType.Constant);
+            MeshList[i].ConstantBuffer.SetData(Constants);
         }
 
     }
