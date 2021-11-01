@@ -20,6 +20,7 @@ public class LineMaterial : MonoBehaviour
     [TextArea]
     public string SilhouetteNotes = "Silhouette edge is the edges that base on the angle between view vector and surface normal";
     public bool SilhouetteEnable = true;
+    [Range(0, 180)]
     public float SilhouetteAngleDegreeThreshold = 60.0f;
 
     [Header("Crease Edge")]
@@ -27,7 +28,8 @@ public class LineMaterial : MonoBehaviour
     [TextArea]
     public string CreaseNotes = "Crease edge is the edges that base on the angle between adjacent faces";
     public bool CreaseEnable = true;
-    public float CreaseAngleDegreeThreshold = 60.0f;
+    [Range(0, 180)]
+    public float CreaseAngleDegreeThreshold = 45.0f;
 
     [Header("Border Edge")]
     [Space]

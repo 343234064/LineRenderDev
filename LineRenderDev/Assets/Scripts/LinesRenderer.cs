@@ -101,7 +101,7 @@ public class LinesRenderer : MonoBehaviour
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "Vertices", MeshList[i].VerticesBuffer);
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "LineIndices", MeshList[i].ExtractLineBuffer);
 
-                float CreaseAngleThreshold = 0.45f;
+                float CreaseAngleThreshold = -(MeshList[i].LineMaterialSetting.CreaseAngleDegreeThreshold / 90.0f) + 1.0f;
                 ExtractLineShader.SetFloat("CreaseAngleThreshold", CreaseAngleThreshold);
 
                 MeshList[i].ExtractLineBuffer.SetCounterValue(0);
