@@ -44,6 +44,7 @@ public class RenderMeshContext
     public ComputeBuffer ExtractLineBuffer;
     public ComputeBuffer ExtractLineArgBuffer;
 
+
     public int ExtractLinePassGroupSize;
 
     public RenderMeshContext(Mesh meshObj, Transform transform)
@@ -101,7 +102,9 @@ public class LinesRenderer : MonoBehaviour
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "Vertices", MeshList[i].VerticesBuffer);
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "LineIndices", MeshList[i].ExtractLineBuffer);
 
+                
                 float CreaseAngleThreshold = (MeshList[i].LineMaterialSetting.CreaseAngleDegreeThreshold / 90.0f) - 1.0f;
+                CreaseAngleThreshold = MeshList[i].LineMaterialSetting.CreaseAngleDegreeThreshold * (3.141592653f / 180.0f);
                 ExtractLineShader.SetFloat("CreaseAngleThreshold", CreaseAngleThreshold);
 
                 MeshList[i].ExtractLineBuffer.SetCounterValue(0);
@@ -312,6 +315,7 @@ public class LinesRenderer : MonoBehaviour
             Constants[0].BorderEnable = MeshList[i].LineMaterialSetting.BorderEnable ? 1 : 0;
             MeshList[i].ConstantBuffer = new ComputeBuffer(1, RenderConstants.Size(), ComputeBufferType.Constant);
             MeshList[i].ConstantBuffer.SetData(Constants);
+
         }
 
     }
