@@ -17,8 +17,8 @@ StructuredBuffer<AdjFace> AdjacencyTriangles;
 
 AppendStructuredBuffer<uint2> LineIndices;
 
+uniform float4 LocalSpaceViewPosition;
 uniform float CreaseAngleThreshold;
-uniform float SilhouetteAngleThreshold;
 
 cbuffer Constants
 {
@@ -41,13 +41,22 @@ float3 ComputeNormal(float3 p1, float3 p2, float3 p3)
     Normal.z = U.x * V.y - U.y * V.x;
     */
     Normal = cross(U, V);
+    // No need to normalize
+    // Normal = normalize(Normal);
 
-    return normalize(Normal);
+    return Normal;
 }
 
-bool IsCrease(float3 face1Normal, float3 face2Normal)
+bool IsSilhouette(float3 ViewVector, float3 Face2Normal, float DotFactor)
 {
-    return step(pow(dot(face1Normal, face2Normal) / cos(CreaseAngleThreshold), 2), dot(face1Normal, face1Normal) * dot(face2Normal, face2Normal));
+    return (DotFactor * dot(Face2Normal, ViewVector)) <= 0;
+}
+
+bool IsCrease(float3 Face1Normal, float3 Face2Normal, float AngleThreshold)
+{
+    /// a dot b / (|a| * |b|) <= cos(theta)
+    return step(dot(Face1Normal, Face2Normal) / length(Face2Normal), AngleThreshold);
+
 }
 
 
@@ -57,58 +66,68 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     if (id.x >= TotalAdjacencyTrianglesNum) return;
 
     AdjFace CurrentFace = AdjacencyTriangles[id.x];
-    uint2 xy = uint2(CurrentFace.x, CurrentFace.y);
-    uint2 yz = uint2(CurrentFace.y, CurrentFace.z);
-    uint2 zx = uint2(CurrentFace.z, CurrentFace.x);
+    uint2 XY = uint2(CurrentFace.x, CurrentFace.y);
+    uint2 YZ = uint2(CurrentFace.y, CurrentFace.z);
+    uint2 ZX = uint2(CurrentFace.z, CurrentFace.x);
 
-    float3 vertex_x = Vertices[CurrentFace.x];
-    float3 vertex_y = Vertices[CurrentFace.y];
-    float3 vertex_z = Vertices[CurrentFace.z];
+    float3 VertexX = Vertices[CurrentFace.x];
+    float3 VertexY = Vertices[CurrentFace.y];
+    float3 VertexZ = Vertices[CurrentFace.z];
 
-    float3 CurrentFaceNormal = ComputeNormal(vertex_x, vertex_y, vertex_z);
+    float3 CurrentFaceNormal = ComputeNormal(VertexX, VertexY, VertexZ);
+
+    bool AddXY = false;
+    bool AddYZ = false;
+    bool AddZX = false;
+
+    bool NeedExtractSilhouette = step(1, SilhouetteEnable);
+    float3 LocalViewVector = LocalSpaceViewPosition.xyz - (VertexX + VertexY + VertexZ) / 3.0f;
+    float SilhouettePremultiplyDotFactor = dot(CurrentFaceNormal, LocalViewVector);
+
+    bool NeedExtractCrease = step(1, CreaseEnable);
+    float CreasePremultiplyAngleThreshold = length(CurrentFaceNormal) * (cos(CreaseAngleThreshold) + 0.000001f); //+1.0e-6 for Epsilon
 
 
     if (CurrentFace.xy >= 1)
     {
-        float3 adj_vertex_xy = Vertices[CurrentFace.xy - 1];
-        float3 AdjFaceXYNormal = ComputeNormal(vertex_y, vertex_x, adj_vertex_xy);
+        float3 AdjVertexXY = Vertices[CurrentFace.xy - 1];
+        float3 AdjFaceXYNormal = ComputeNormal(VertexY, VertexX, AdjVertexXY);
 
-        float angle = dot(CurrentFaceNormal, AdjFaceXYNormal);
-        //if (angle <= CreaseAngleThreshold)
-        if(IsCrease(CurrentFaceNormal, AdjFaceXYNormal))
+        AddXY = AddXY || (NeedExtractSilhouette && IsSilhouette(LocalViewVector, AdjFaceXYNormal, SilhouettePremultiplyDotFactor));
+        AddXY = AddXY || (NeedExtractCrease && IsCrease(CurrentFaceNormal, AdjFaceXYNormal, CreasePremultiplyAngleThreshold));
+
+        if(AddXY)
         {
-            LineIndices.Append(xy);
+            LineIndices.Append(XY);
         }
     }
 
     if (CurrentFace.zx >= 1)
     {
-        float3 adj_vertex_zx = Vertices[CurrentFace.zx - 1];
-        float3 AdjFaceZXNormal = ComputeNormal(vertex_x, vertex_z, adj_vertex_zx);
+        float3 AdjVertexZX = Vertices[CurrentFace.zx - 1];
+        float3 AdjFaceZXNormal = ComputeNormal(VertexZ, AdjVertexZX, VertexX);
 
-        float angle = dot(CurrentFaceNormal, AdjFaceZXNormal);
-        //if (angle <= CreaseAngleThreshold)
-        if (IsCrease(CurrentFaceNormal, AdjFaceZXNormal))
+        AddZX = AddZX || (NeedExtractSilhouette && IsSilhouette(LocalViewVector, AdjFaceZXNormal, SilhouettePremultiplyDotFactor));
+        AddZX = AddZX || (NeedExtractCrease && IsCrease(CurrentFaceNormal, AdjFaceZXNormal, CreasePremultiplyAngleThreshold));
+
+        if (AddZX)
         {
-            LineIndices.Append(zx);
+            LineIndices.Append(ZX);
         }
     }
 
     if (CurrentFace.yz >= 1)
     {
-        float3 adj_vertex_yz = Vertices[CurrentFace.yz - 1];
-        float3 AdjFaceYZNormal = ComputeNormal(vertex_z, vertex_y, adj_vertex_yz);
+        float3 AdjVertexYZ = Vertices[CurrentFace.yz - 1];
+        float3 AdjFaceYZNormal = ComputeNormal(AdjVertexYZ, VertexZ, VertexY);
 
-        float angle = dot(CurrentFaceNormal, AdjFaceYZNormal);
-        //if (angle <= CreaseAngleThreshold)
-        if (IsCrease(CurrentFaceNormal, AdjFaceYZNormal))
+        AddYZ = AddYZ || (NeedExtractSilhouette && IsSilhouette(LocalViewVector, AdjFaceYZNormal, SilhouettePremultiplyDotFactor));
+        AddYZ = AddYZ || (NeedExtractCrease && IsCrease(CurrentFaceNormal, AdjFaceYZNormal, CreasePremultiplyAngleThreshold));
+
+        if (AddYZ)
         {
-            LineIndices.Append(yz);
+            LineIndices.Append(YZ);
         }
     }
-    //LineIndices.Append(xy);
-    //LineIndices.Append(yz);
-    //LineIndices.Append(zx);
-
 
 }

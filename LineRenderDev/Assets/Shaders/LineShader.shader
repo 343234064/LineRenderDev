@@ -37,7 +37,6 @@ Shader "LineRender/LineShader"{
 				float3 localposition = Positions[positionIndex];
 
 				float4 worldposition = mul(_ObjectWorldMatrix, float4(localposition, 1));
-
 				float4 position = UnityWorldToClipPos(worldposition);
 				return position;
 			}

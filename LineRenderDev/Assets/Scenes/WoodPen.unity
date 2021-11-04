@@ -329,7 +329,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 648039375}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 282bad1002983c041a7eef2a2d2c977a, type: 3}
   m_Name: 
@@ -408,7 +408,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -1.07
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
       propertyPath: m_LocalPosition.y
@@ -416,23 +416,23 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
       propertyPath: m_LocalPosition.z
-      value: -8.53
+      value: 0.96
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
       propertyPath: m_LocalRotation.w
-      value: 0.7039177
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
       propertyPath: m_LocalRotation.x
-      value: -0
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
       propertyPath: m_LocalRotation.y
-      value: 0.71028155
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
       propertyPath: m_LocalRotation.z
-      value: -0
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
       propertyPath: m_LocalEulerAnglesHint.x
@@ -440,7 +440,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
       propertyPath: m_LocalEulerAnglesHint.y
-      value: 90.516
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
@@ -1135,7 +1135,7 @@ MonoBehaviour:
   SilhouetteAngleDegreeThreshold: 60
   CreaseNotes: Crease edge is the edges that base on the angle between adjacent faces
   CreaseEnable: 1
-  CreaseAngleDegreeThreshold: 180
+  CreaseAngleDegreeThreshold: 161
   BorderNotes: Border edge is the edges that on open face border
   BorderEnable: 1
 --- !u!114 &1236842424
@@ -1257,7 +1257,7 @@ MonoBehaviour:
   SilhouetteEnable: 1
   SilhouetteAngleDegreeThreshold: 60
   CreaseNotes: Crease edge is the edges that base on the angle between adjacent faces
-  CreaseEnable: 1
+  CreaseEnable: 0
   CreaseAngleDegreeThreshold: 177
   BorderNotes: Border edge is the edges that on open face border
   BorderEnable: 1
@@ -1342,6 +1342,21 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   ExtractLineShader: {fileID: 7200000, guid: 085f920b49dee81489949e16e57f55be, type: 3}
+--- !u!114 &1777576414
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1777576411}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 36a8a83d7a4082943b8fa8f074e8b6e3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  LoadAdjacency: 0
+  ShowAdjacency: 0
+  ResetMesh: 0
 --- !u!1 &1846664508 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}

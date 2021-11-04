@@ -102,9 +102,11 @@ public class LinesRenderer : MonoBehaviour
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "Vertices", MeshList[i].VerticesBuffer);
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "LineIndices", MeshList[i].ExtractLineBuffer);
 
-                
-                float CreaseAngleThreshold = (MeshList[i].LineMaterialSetting.CreaseAngleDegreeThreshold / 90.0f) - 1.0f;
-                CreaseAngleThreshold = MeshList[i].LineMaterialSetting.CreaseAngleDegreeThreshold * (3.141592653f / 180.0f);
+                Camera MainCamera = Camera.main;
+                Vector4 LocalCameraPosition = MainCamera.transform.worldToLocalMatrix.MultiplyVector(MainCamera.transform.position);
+                ExtractLineShader.SetVector("LocalSpaceViewPosition", MainCamera.transform.position);
+
+                float CreaseAngleThreshold = (180.0f - MeshList[i].LineMaterialSetting.CreaseAngleDegreeThreshold) * (0.017453292519943294f);
                 ExtractLineShader.SetFloat("CreaseAngleThreshold", CreaseAngleThreshold);
 
                 MeshList[i].ExtractLineBuffer.SetCounterValue(0);
@@ -310,9 +312,9 @@ public class LinesRenderer : MonoBehaviour
 
             RenderConstants[] Constants = new RenderConstants[1];
             Constants[0].TotalAdjacencyTrianglesNum = (uint)MeshList[i].AdjacencyTriangles.Length;
-            Constants[0].SilhouetteEnable = MeshList[i].LineMaterialSetting.SilhouetteEnable ? 1: 0;
-            Constants[0].CreaseEnable = MeshList[i].LineMaterialSetting.CreaseEnable ? 1 : 0;
-            Constants[0].BorderEnable = MeshList[i].LineMaterialSetting.BorderEnable ? 1 : 0;
+            Constants[0].SilhouetteEnable = MeshList[i].LineMaterialSetting.SilhouetteEnable ? 2 : 0;
+            Constants[0].CreaseEnable = MeshList[i].LineMaterialSetting.CreaseEnable ? 2 : 0;
+            Constants[0].BorderEnable = MeshList[i].LineMaterialSetting.BorderEnable ? 2 : 0;
             MeshList[i].ConstantBuffer = new ComputeBuffer(1, RenderConstants.Size(), ComputeBufferType.Constant);
             MeshList[i].ConstantBuffer.SetData(Constants);
 
