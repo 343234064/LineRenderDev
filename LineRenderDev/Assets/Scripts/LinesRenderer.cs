@@ -102,9 +102,8 @@ public class LinesRenderer : MonoBehaviour
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "Vertices", MeshList[i].VerticesBuffer);
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "LineIndices", MeshList[i].ExtractLineBuffer);
 
-                Camera MainCamera = Camera.main;
-                Vector4 LocalCameraPosition = MainCamera.transform.worldToLocalMatrix.MultiplyVector(MainCamera.transform.position);
-                ExtractLineShader.SetVector("LocalSpaceViewPosition", MainCamera.transform.position);
+                Vector3 LocalCameraPosition = MeshList[i].RumtimeTransform.InverseTransformPoint(Camera.main.transform.position);
+                ExtractLineShader.SetVector("LocalSpaceViewPosition", LocalCameraPosition);
 
                 float CreaseAngleThreshold = (180.0f - MeshList[i].LineMaterialSetting.CreaseAngleDegreeThreshold) * (0.017453292519943294f);
                 ExtractLineShader.SetFloat("CreaseAngleThreshold", CreaseAngleThreshold);
@@ -121,6 +120,8 @@ public class LinesRenderer : MonoBehaviour
                 Debug.Log("Start Vertex " + Args[2]);
                 Debug.Log("Start Instance " + Args[3]);
                 */
+
+
                 Matrix4x4 WorldMatrix = MeshList[i].RumtimeTransform.localToWorldMatrix;
                 MeshList[i].LineMaterialSetting.LineRenderMaterial.SetMatrix("_ObjectWorldMatrix", WorldMatrix);
                 MeshList[i].LineMaterialSetting.LineRenderMaterial.SetBuffer("LinesIndex", MeshList[i].ExtractLineBuffer);

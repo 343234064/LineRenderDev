@@ -17,7 +17,7 @@ StructuredBuffer<AdjFace> AdjacencyTriangles;
 
 AppendStructuredBuffer<uint2> LineIndices;
 
-uniform float4 LocalSpaceViewPosition;
+uniform float3 LocalSpaceViewPosition;
 uniform float CreaseAngleThreshold;
 
 cbuffer Constants
@@ -42,7 +42,7 @@ float3 ComputeNormal(float3 p1, float3 p2, float3 p3)
     */
     Normal = cross(U, V);
     // No need to normalize
-    // Normal = normalize(Normal);
+    //Normal = normalize(Normal);
 
     return Normal;
 }
@@ -81,7 +81,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     bool AddZX = false;
 
     bool NeedExtractSilhouette = step(1, SilhouetteEnable);
-    float3 LocalViewVector = LocalSpaceViewPosition.xyz - (VertexX + VertexY + VertexZ) / 3.0f;
+    float3 LocalViewVector = LocalSpaceViewPosition.xyz - (VertexX+VertexY+VertexZ)/3.0f;
     float SilhouettePremultiplyDotFactor = dot(CurrentFaceNormal, LocalViewVector);
 
     bool NeedExtractCrease = step(1, CreaseEnable);

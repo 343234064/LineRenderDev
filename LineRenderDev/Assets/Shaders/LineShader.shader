@@ -4,6 +4,7 @@ Shader "LineRender/LineShader"{
 	//show values to edit in inspector
 	Properties{
 		[HDR] _Color("Tint", Color) = (0, 0, 0, 1)
+		_WorldPositionOffset("World Position Offset", Vector) = (0.0, 0.0, 0.0, 0.0)
 	}
 
 		SubShader{
@@ -22,7 +23,9 @@ Shader "LineRender/LineShader"{
 
 
 			fixed4 _Color;
+			float4 _WorldPositionOffset;
 			float4x4 _ObjectWorldMatrix;
+			
 
 			//buffers
 			StructuredBuffer<uint2> LinesIndex;
@@ -37,6 +40,7 @@ Shader "LineRender/LineShader"{
 				float3 localposition = Positions[positionIndex];
 
 				float4 worldposition = mul(_ObjectWorldMatrix, float4(localposition, 1));
+				worldposition.xyz += _WorldPositionOffset.xyz;
 				float4 position = UnityWorldToClipPos(worldposition);
 				return position;
 			}
