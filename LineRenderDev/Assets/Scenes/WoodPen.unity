@@ -234,6 +234,40 @@ MonoBehaviour:
   CreaseAngleDegreeThreshold: 121
   BorderNotes: Border edge is the edges that on open face border
   BorderEnable: 1
+--- !u!1 &247207320 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 7180280400624970166, guid: c85fac795e22b984096c291961adffa8, type: 3}
+  m_PrefabInstance: {fileID: 1893374243}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &247207322
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 247207320}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9b3070a7a496da54a91aaac165c88dc9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  BaseNotes: 'Each line render material such be unique for a single mesh object.
+
+    DO
+    NOT apply a same material to multi mesh object.'
+  LineRenderMaterial: {fileID: 2100000, guid: b9cb8e72e14004846a952bcb2a7254ef, type: 2}
+  BoundingVolume:
+    m_Center: {x: 0, y: 0, z: 0}
+    m_Extent: {x: 10, y: 10, z: 10}
+  SilhouetteNotes: Silhouette edge is the edges that base on the angle between view
+    vector and surface normal
+  SilhouetteEnable: 1
+  SilhouetteAngleDegreeThreshold: 60
+  CreaseNotes: Crease edge is the edges that base on the angle between adjacent faces
+  CreaseEnable: 1
+  CreaseAngleDegreeThreshold: 157
+  BorderNotes: Border edge is the edges that on open face border
+  BorderEnable: 1
 --- !u!1 &318595629 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: -5266785677919700964, guid: eda86403a45261b41b5eb6c0c0cdbad6, type: 3}
@@ -266,6 +300,74 @@ MonoBehaviour:
   CreaseNotes: Crease edge is the edges that base on the angle between adjacent faces
   CreaseEnable: 1
   CreaseAngleDegreeThreshold: 60
+  BorderNotes: Border edge is the edges that on open face border
+  BorderEnable: 1
+--- !u!1 &324294313 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: -1658812058286047673, guid: c85fac795e22b984096c291961adffa8, type: 3}
+  m_PrefabInstance: {fileID: 1893374243}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &324294315
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 324294313}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9b3070a7a496da54a91aaac165c88dc9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  BaseNotes: 'Each line render material such be unique for a single mesh object.
+
+    DO
+    NOT apply a same material to multi mesh object.'
+  LineRenderMaterial: {fileID: 2100000, guid: f2a112cf87580d74f82bca5d68aabd39, type: 2}
+  BoundingVolume:
+    m_Center: {x: 0, y: 0, z: 0}
+    m_Extent: {x: 10, y: 10, z: 10}
+  SilhouetteNotes: Silhouette edge is the edges that base on the angle between view
+    vector and surface normal
+  SilhouetteEnable: 1
+  SilhouetteAngleDegreeThreshold: 60
+  CreaseNotes: Crease edge is the edges that base on the angle between adjacent faces
+  CreaseEnable: 1
+  CreaseAngleDegreeThreshold: 167
+  BorderNotes: Border edge is the edges that on open face border
+  BorderEnable: 1
+--- !u!1 &380723481 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: -9034103351224445158, guid: c85fac795e22b984096c291961adffa8, type: 3}
+  m_PrefabInstance: {fileID: 1893374243}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &380723483
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 380723481}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9b3070a7a496da54a91aaac165c88dc9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  BaseNotes: 'Each line render material such be unique for a single mesh object.
+
+    DO
+    NOT apply a same material to multi mesh object.'
+  LineRenderMaterial: {fileID: 2100000, guid: 81a5711070871f0458f68ffb139d47c9, type: 2}
+  BoundingVolume:
+    m_Center: {x: 0, y: 0, z: 0}
+    m_Extent: {x: 10, y: 10, z: 10}
+  SilhouetteNotes: Silhouette edge is the edges that base on the angle between view
+    vector and surface normal
+  SilhouetteEnable: 1
+  SilhouetteAngleDegreeThreshold: 60
+  CreaseNotes: Crease edge is the edges that base on the angle between adjacent faces
+  CreaseEnable: 1
+  CreaseAngleDegreeThreshold: 45
   BorderNotes: Border edge is the edges that on open face border
   BorderEnable: 1
 --- !u!1 &428793225 stripped
@@ -383,79 +485,6 @@ MonoBehaviour:
   CreaseAngleDegreeThreshold: 160
   BorderNotes: Border edge is the edges that on open face border
   BorderEnable: 1
---- !u!1001 &712092508
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    m_TransformParent: {fileID: 0}
-    m_Modifications:
-    - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
-      propertyPath: m_RootOrder
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
-      propertyPath: m_LocalScale.x
-      value: 100
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
-      propertyPath: m_LocalScale.y
-      value: 100
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
-      propertyPath: m_LocalScale.z
-      value: 100
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0.96
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -7511558181221131132, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
-      propertyPath: m_Materials.Array.data[0]
-      value: 
-      objectReference: {fileID: 2100000, guid: fa560a387b88e894e892547c2f08260e, type: 2}
-    - target: {fileID: 919132149155446097, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
-      propertyPath: m_Name
-      value: PlaneSingle
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
 --- !u!1 &723381315
 GameObject:
   m_ObjectHideFlags: 0
@@ -1031,6 +1060,24 @@ MonoBehaviour:
   CreaseAngleDegreeThreshold: 60
   BorderNotes: Border edge is the edges that on open face border
   BorderEnable: 1
+--- !u!1 &1197111048 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: c85fac795e22b984096c291961adffa8, type: 3}
+  m_PrefabInstance: {fileID: 1893374243}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &1197111049
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1197111048}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 803e0ff2feae8294c82bae78939c95a6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  ExtractLineShader: {fileID: 7200000, guid: 085f920b49dee81489949e16e57f55be, type: 3}
 --- !u!1001 &1236842421
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1257,8 +1304,8 @@ MonoBehaviour:
   SilhouetteEnable: 1
   SilhouetteAngleDegreeThreshold: 60
   CreaseNotes: Crease edge is the edges that base on the angle between adjacent faces
-  CreaseEnable: 0
-  CreaseAngleDegreeThreshold: 177
+  CreaseEnable: 1
+  CreaseAngleDegreeThreshold: 155
   BorderNotes: Border edge is the edges that on open face border
   BorderEnable: 1
 --- !u!1 &1633505976 stripped
@@ -1295,68 +1342,6 @@ MonoBehaviour:
   CreaseAngleDegreeThreshold: 106
   BorderNotes: Border edge is the edges that on open face border
   BorderEnable: 1
---- !u!1 &1777576411 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: 6526d928671d88b4687930ff8e497e59, type: 3}
-  m_PrefabInstance: {fileID: 712092508}
-  m_PrefabAsset: {fileID: 0}
---- !u!114 &1777576412
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1777576411}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9b3070a7a496da54a91aaac165c88dc9, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  BaseNotes: 'Each line render material such be unique for a single mesh object.
-
-    DO
-    NOT apply a same material to multi mesh object.'
-  LineRenderMaterial: {fileID: 2100000, guid: 5ddc2d8d939664b488dd55005c734caa, type: 2}
-  BoundingVolume:
-    m_Center: {x: 0, y: 0, z: 0}
-    m_Extent: {x: 10, y: 10, z: 10}
-  SilhouetteNotes: Silhouette edge is the edges that base on the angle between view
-    vector and surface normal
-  SilhouetteEnable: 1
-  SilhouetteAngleDegreeThreshold: 60
-  CreaseNotes: Crease edge is the edges that base on the angle between adjacent faces
-  CreaseEnable: 1
-  CreaseAngleDegreeThreshold: 180
-  BorderNotes: Border edge is the edges that on open face border
-  BorderEnable: 1
---- !u!114 &1777576413
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1777576411}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 803e0ff2feae8294c82bae78939c95a6, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  ExtractLineShader: {fileID: 7200000, guid: 085f920b49dee81489949e16e57f55be, type: 3}
---- !u!114 &1777576414
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1777576411}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 36a8a83d7a4082943b8fa8f074e8b6e3, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  LoadAdjacency: 0
-  ShowAdjacency: 0
-  ResetMesh: 0
 --- !u!1 &1846664508 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
@@ -1390,3 +1375,84 @@ MonoBehaviour:
   LoadAdjacency: 0
   ShowAdjacency: 0
   ResetMesh: 0
+--- !u!1001 &1893374243
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: -8679921383154817045, guid: c85fac795e22b984096c291961adffa8, type: 3}
+      propertyPath: m_RootOrder
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: c85fac795e22b984096c291961adffa8, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: c85fac795e22b984096c291961adffa8, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: c85fac795e22b984096c291961adffa8, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: c85fac795e22b984096c291961adffa8, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -6.24
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: c85fac795e22b984096c291961adffa8, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: c85fac795e22b984096c291961adffa8, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0.25
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: c85fac795e22b984096c291961adffa8, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: -0.029322771
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: c85fac795e22b984096c291961adffa8, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: c85fac795e22b984096c291961adffa8, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0.99957
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: c85fac795e22b984096c291961adffa8, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: c85fac795e22b984096c291961adffa8, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: c85fac795e22b984096c291961adffa8, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: -183.361
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: c85fac795e22b984096c291961adffa8, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -6575471983799141802, guid: c85fac795e22b984096c291961adffa8, type: 3}
+      propertyPath: m_Materials.Array.data[0]
+      value: 
+      objectReference: {fileID: 2100000, guid: 5723abc534e0ffd4abf25b12dda6f7f2, type: 2}
+    - target: {fileID: -5743730581454451567, guid: c85fac795e22b984096c291961adffa8, type: 3}
+      propertyPath: m_Materials.Array.data[0]
+      value: 
+      objectReference: {fileID: 2100000, guid: 5723abc534e0ffd4abf25b12dda6f7f2, type: 2}
+    - target: {fileID: 919132149155446097, guid: c85fac795e22b984096c291961adffa8, type: 3}
+      propertyPath: m_Name
+      value: MeetMat
+      objectReference: {fileID: 0}
+    - target: {fileID: 6892417033642571503, guid: c85fac795e22b984096c291961adffa8, type: 3}
+      propertyPath: m_Materials.Array.data[0]
+      value: 
+      objectReference: {fileID: 2100000, guid: 5723abc534e0ffd4abf25b12dda6f7f2, type: 2}
+    m_RemovedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: c85fac795e22b984096c291961adffa8, type: 3}
