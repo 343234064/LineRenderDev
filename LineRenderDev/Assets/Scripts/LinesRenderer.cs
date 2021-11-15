@@ -7,6 +7,8 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
 
+using Sirenix.OdinInspector;
+
 public struct AdjFace
 {
     public uint x;
@@ -95,7 +97,7 @@ public class LinesRenderer : MonoBehaviour
     {
         for (int i = 0; i < MeshList.Count; i++)
         {
-            if (MeshList[i].LineMaterialSetting != null)
+            if (MeshList[i].LineMaterialSetting != null && MeshList[i].RumtimeTransform.gameObject.activeSelf)
             {
                 ExtractLineShader.SetConstantBuffer(Shader.PropertyToID("Constants"), MeshList[i].ConstantBuffer, 0, RenderConstants.Size());
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "AdjacencyTriangles", MeshList[i].AdjacencyIndicesBuffer);
@@ -127,7 +129,7 @@ public class LinesRenderer : MonoBehaviour
                 MeshList[i].LineMaterialSetting.LineRenderMaterial.SetBuffer("LinesIndex", MeshList[i].ExtractLineBuffer);
                 MeshList[i].LineMaterialSetting.LineRenderMaterial.SetBuffer("Positions", MeshList[i].VerticesBuffer);
                
-                Graphics.DrawProceduralIndirect(MeshList[i].LineMaterialSetting.LineRenderMaterial, MeshList[i].LineMaterialSetting.BoundingVolume, MeshTopology.Lines, MeshList[i].ExtractLineArgBuffer, 0);
+                Graphics.DrawProceduralIndirect(MeshList[i].LineMaterialSetting.LineRenderMaterial, MeshList[i].LineMaterialSetting.EdgeBoundingVolume, MeshTopology.Lines, MeshList[i].ExtractLineArgBuffer, 0);
                 //Graphics.DrawProcedural(MeshList[i].LineMaterial, BoundingVolume, MeshTopology.Lines, 2, Args[0]);
             }
         }
@@ -152,6 +154,8 @@ public class LinesRenderer : MonoBehaviour
 
 
     /// ///////////////////////////////////////////////////////
+    [AssetSelector(Paths = "Assets/Shaders")]
+    [Required("Extract Line Shader Is Required")]
     public ComputeShader ExtractLineShader;
     /// ///////////////////////////////////////////////////////
     private List<RenderMeshContext> MeshList;
@@ -295,6 +299,8 @@ public class LinesRenderer : MonoBehaviour
 
         for (int i = 0; i < MeshList.Count; i++)
         {
+            if (!MeshList[i].RumtimeTransform.gameObject.activeSelf) continue;
+
             MeshList[i].AdjacencyIndicesBuffer = new ComputeBuffer(MeshList[i].AdjacencyTriangles.Length, sizeof(uint) * 6);
             MeshList[i].AdjacencyIndicesBuffer.SetData(MeshList[i].AdjacencyTriangles);
 

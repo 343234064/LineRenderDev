@@ -85,7 +85,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     float SilhouettePremultiplyDotFactor = dot(CurrentFaceNormal, LocalViewVector);
 
     // Ignore back face
-    if (dot(normalize(CurrentFaceNormal), normalize(LocalViewVector)) < -0.25f) return;
+    //if (dot(normalize(CurrentFaceNormal), normalize(LocalViewVector)) < -0.25f) return;
 
     bool NeedExtractCrease = step(1, CreaseEnable);
     float CreasePremultiplyAngleThreshold = length(CurrentFaceNormal) * (cos(CreaseAngleThreshold) + 0.000001f); //+1.0e-6 for Epsilon
