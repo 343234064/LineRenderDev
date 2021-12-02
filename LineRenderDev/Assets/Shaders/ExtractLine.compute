@@ -26,6 +26,8 @@ cbuffer Constants
     uint SilhouetteEnable;
     uint CreaseEnable;
     uint BorderEnable;
+    uint HideBackFaceEdge;
+    
 };
 
 
@@ -47,17 +49,20 @@ float3 ComputeNormal(float3 p1, float3 p2, float3 p3)
     return Normal;
 }
 
-bool IsSilhouette(float3 ViewVector, float3 Face2Normal, float DotFactor)
+
+
+inline bool IsSilhouette(float3 ViewVector, float3 FaceNormal, float DotFactor)
 {
-    return (DotFactor * dot(Face2Normal, ViewVector)) <= 0;
+    return step(DotFactor * dot(FaceNormal, ViewVector), 0);
 }
 
-bool IsCrease(float3 Face1Normal, float3 Face2Normal, float AngleThreshold)
+inline bool IsCrease(float3 Face1Normal, float3 Face2Normal, float AngleThreshold)
 {
     /// a dot b / (|a| * |b|) <= cos(theta)
     return step(dot(Face1Normal, Face2Normal) / length(Face2Normal), AngleThreshold);
 
 }
+
 
 
 [numthreads(256, 1, 1)]
@@ -74,22 +79,24 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     float3 VertexY = Vertices[CurrentFace.y];
     float3 VertexZ = Vertices[CurrentFace.z];
 
-    float3 CurrentFaceNormal = ComputeNormal(VertexX, VertexY, VertexZ);
-
     bool AddXY = false;
     bool AddYZ = false;
     bool AddZX = false;
 
-    bool NeedExtractSilhouette = step(1, SilhouetteEnable);
+    bool XYIsBackFace = false;
+    bool ZXIsBackFace = false;
+    bool YZIsBackFace = false;
+
+    float3 CurrentFaceNormal = ComputeNormal(VertexX, VertexY, VertexZ);
+
+    bool NeedExtractSilhouette =  SilhouetteEnable > 0;
     float3 LocalViewVector = LocalSpaceViewPosition.xyz - (VertexX+VertexY+VertexZ)/3.0f;
     float SilhouettePremultiplyDotFactor = dot(CurrentFaceNormal, LocalViewVector);
 
-    // Ignore back face
-    //if (dot(normalize(CurrentFaceNormal), normalize(LocalViewVector)) < -0.25f) return;
-
-    bool NeedExtractCrease = step(1, CreaseEnable);
+    bool NeedExtractCrease = CreaseEnable > 0;
     float CreasePremultiplyAngleThreshold = length(CurrentFaceNormal) * (cos(CreaseAngleThreshold) + 0.000001f); //+1.0e-6 for Epsilon
 
+    bool CurrentIsBackFace = (SilhouettePremultiplyDotFactor < 0 && HideBackFaceEdge > 0)? true : false;
 
     if (CurrentFace.xy >= 1)
     {
@@ -99,7 +106,9 @@ void CSMain (uint3 id : SV_DispatchThreadID)
         AddXY = AddXY || (NeedExtractSilhouette && IsSilhouette(LocalViewVector, AdjFaceXYNormal, SilhouettePremultiplyDotFactor));
         AddXY = AddXY || (NeedExtractCrease && IsCrease(CurrentFaceNormal, AdjFaceXYNormal, CreasePremultiplyAngleThreshold));
 
-        if(AddXY)
+        XYIsBackFace = dot(AdjFaceXYNormal, LocalViewVector) < 0 ? true : false;
+
+        if (AddXY && !(CurrentIsBackFace && XYIsBackFace))
         {
             LineIndices.Append(XY);
         }
@@ -113,7 +122,9 @@ void CSMain (uint3 id : SV_DispatchThreadID)
         AddZX = AddZX || (NeedExtractSilhouette && IsSilhouette(LocalViewVector, AdjFaceZXNormal, SilhouettePremultiplyDotFactor));
         AddZX = AddZX || (NeedExtractCrease && IsCrease(CurrentFaceNormal, AdjFaceZXNormal, CreasePremultiplyAngleThreshold));
 
-        if (AddZX)
+        ZXIsBackFace = dot(AdjFaceZXNormal, LocalViewVector) < 0 ? true : false;
+
+        if (AddZX && !(CurrentIsBackFace && ZXIsBackFace))
         {
             LineIndices.Append(ZX);
         }
@@ -127,7 +138,9 @@ void CSMain (uint3 id : SV_DispatchThreadID)
         AddYZ = AddYZ || (NeedExtractSilhouette && IsSilhouette(LocalViewVector, AdjFaceYZNormal, SilhouettePremultiplyDotFactor));
         AddYZ = AddYZ || (NeedExtractCrease && IsCrease(CurrentFaceNormal, AdjFaceYZNormal, CreasePremultiplyAngleThreshold));
 
-        if (AddYZ)
+        YZIsBackFace = dot(AdjFaceYZNormal, LocalViewVector) < 0 ? true : false;
+
+        if (AddYZ && !(CurrentIsBackFace && YZIsBackFace))
         {
             LineIndices.Append(YZ);
         }

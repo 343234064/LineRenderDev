@@ -18,19 +18,29 @@ public class LineMaterial : MonoBehaviour
     public Bounds EdgeBoundingVolume = new Bounds(Vector3.zero, Vector3.one * 20.0f);
 
     /// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    
+    [TitleGroup("Visibility")]
+
+    [Tooltip("Hide edge that lies on back face")]
+    public bool HideBackFaceEdge = true;
+
+    [Tooltip("Hide edge that is occluded by other face")]
+    public bool HideOccludedEdge = true;
+
+    /// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     [TitleGroup("Silhouette Edge")]
-    [InfoBox("Silhouette edge is the edges that base on the angle between view vector and surface normal.")]
+    [InfoBox("Draw edges that base on the angle between view vector and surface normal.")]
 
     public bool SilhouetteEnable = true;
 
-    [Range(0, 180)]
-    public float SilhouetteAngleDegreeThreshold = 60.0f;
+    [Tooltip("Draw edges around each object only(Contour Only).")]
+    public bool OutineOnly = false;
 
     /// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     
     [TitleGroup("Crease Edge")]
-    [InfoBox("Crease edge is the edges that base on the angle between adjacent faces.")]
+    [InfoBox("Draw edges that base on the angle between adjacent faces.")]
 
     public bool CreaseEnable = true;
 
@@ -40,7 +50,15 @@ public class LineMaterial : MonoBehaviour
     /// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     
     [TitleGroup("Border Edge")]
-    [InfoBox("Border edge is the edges that on open face border.")]
+    [InfoBox("Draw edges that on open face border.")]
 
     public bool BorderEnable = true;
+
+    /// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    [TitleGroup("Marked Edge")]
+    [InfoBox("Draw edges that marked by user.")]
+
+    public bool MarkedEdgeEnable = true;
+
 }

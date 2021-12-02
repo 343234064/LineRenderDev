@@ -22,13 +22,14 @@ public struct AdjFace
 public struct RenderConstants
 {
     public uint TotalAdjacencyTrianglesNum;
-    public int SilhouetteEnable;
-    public int CreaseEnable;
-    public int BorderEnable;
+    public uint SilhouetteEnable;
+    public uint CreaseEnable;
+    public uint BorderEnable;
+    public uint HideBackFaceEdge;
 
     public static int Size()
     {
-        return sizeof(uint) + sizeof(int) * 3;
+        return sizeof(uint) + sizeof(uint) * 4;
     }
 }
 
@@ -319,9 +320,10 @@ public class LinesRenderer : MonoBehaviour
 
             RenderConstants[] Constants = new RenderConstants[1];
             Constants[0].TotalAdjacencyTrianglesNum = (uint)MeshList[i].AdjacencyTriangles.Length;
-            Constants[0].SilhouetteEnable = MeshList[i].LineMaterialSetting.SilhouetteEnable ? 2 : 0;
-            Constants[0].CreaseEnable = MeshList[i].LineMaterialSetting.CreaseEnable ? 2 : 0;
-            Constants[0].BorderEnable = MeshList[i].LineMaterialSetting.BorderEnable ? 2 : 0;
+            Constants[0].SilhouetteEnable = (uint)(MeshList[i].LineMaterialSetting.SilhouetteEnable ? 1 : 0);
+            Constants[0].CreaseEnable = (uint)(MeshList[i].LineMaterialSetting.CreaseEnable ? 1 : 0);
+            Constants[0].BorderEnable = (uint)(MeshList[i].LineMaterialSetting.BorderEnable ? 1 : 0);
+            Constants[0].HideBackFaceEdge = (uint)(MeshList[i].LineMaterialSetting.HideBackFaceEdge ? 1 : 0);
             MeshList[i].ConstantBuffer = new ComputeBuffer(1, RenderConstants.Size(), ComputeBufferType.Constant);
             MeshList[i].ConstantBuffer.SetData(Constants);
 
