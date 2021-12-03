@@ -9,6 +9,9 @@ using UnityEngine.Rendering;
 
 using Sirenix.OdinInspector;
 
+
+
+
 public struct AdjFace
 {
     public uint x;
@@ -17,6 +20,17 @@ public struct AdjFace
     public uint xy;
     public uint yz;
     public uint zx;
+}
+
+public struct LineSegment
+{
+    public Vector3 point3d1;
+    public Vector3 point3d2;
+
+    public static int Size()
+    {
+        return sizeof(float) * 3 * 2;
+    }
 }
 
 public struct RenderConstants
@@ -103,7 +117,7 @@ public class LinesRenderer : MonoBehaviour
                 ExtractLineShader.SetConstantBuffer(Shader.PropertyToID("Constants"), MeshList[i].ConstantBuffer, 0, RenderConstants.Size());
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "AdjacencyTriangles", MeshList[i].AdjacencyIndicesBuffer);
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "Vertices", MeshList[i].VerticesBuffer);
-                ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "LineIndices", MeshList[i].ExtractLineBuffer);
+                ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "Lines", MeshList[i].ExtractLineBuffer);
 
                 Vector3 LocalCameraPosition = MeshList[i].RumtimeTransform.InverseTransformPoint(Camera.main.transform.position);
                 ExtractLineShader.SetVector("LocalSpaceViewPosition", LocalCameraPosition);
@@ -127,8 +141,8 @@ public class LinesRenderer : MonoBehaviour
 
                 Matrix4x4 WorldMatrix = MeshList[i].RumtimeTransform.localToWorldMatrix;
                 MeshList[i].LineMaterialSetting.LineRenderMaterial.SetMatrix("_ObjectWorldMatrix", WorldMatrix);
-                MeshList[i].LineMaterialSetting.LineRenderMaterial.SetBuffer("LinesIndex", MeshList[i].ExtractLineBuffer);
-                MeshList[i].LineMaterialSetting.LineRenderMaterial.SetBuffer("Positions", MeshList[i].VerticesBuffer);
+                MeshList[i].LineMaterialSetting.LineRenderMaterial.SetBuffer("Lines", MeshList[i].ExtractLineBuffer);
+                //MeshList[i].LineMaterialSetting.LineRenderMaterial.SetBuffer("Positions", MeshList[i].VerticesBuffer);
                
                 Graphics.DrawProceduralIndirect(MeshList[i].LineMaterialSetting.LineRenderMaterial, MeshList[i].LineMaterialSetting.EdgeBoundingVolume, MeshTopology.Lines, MeshList[i].ExtractLineArgBuffer, 0);
                 //Graphics.DrawProcedural(MeshList[i].LineMaterial, BoundingVolume, MeshTopology.Lines, 2, Args[0]);
@@ -308,7 +322,7 @@ public class LinesRenderer : MonoBehaviour
             MeshList[i].VerticesBuffer = new ComputeBuffer(MeshList[i].RumtimeMesh.vertices.Length, sizeof(float) * 3);
             MeshList[i].VerticesBuffer.SetData(MeshList[i].RumtimeMesh.vertices);
 
-            MeshList[i].ExtractLineBuffer = new ComputeBuffer(MeshList[i].AdjacencyTriangles.Length * 3, sizeof(uint) * 2, ComputeBufferType.Append);
+            MeshList[i].ExtractLineBuffer = new ComputeBuffer(MeshList[i].AdjacencyTriangles.Length * 3, LineSegment.Size(), ComputeBufferType.Append);
 
             MeshList[i].ExtractLineArgBuffer = new ComputeBuffer(4, sizeof(int), ComputeBufferType.IndirectArguments);
             int[] args = new int[4] { 2, 1, 0, 0 };

@@ -23,14 +23,21 @@ Shader "LineRender/LineShader"{
 			float4 _WorldPositionOffset;
 			float4x4 _ObjectWorldMatrix;
 
-			StructuredBuffer<uint2> LinesIndex;
-			StructuredBuffer<float3> Positions;
+			struct LineSegment
+			{
+				float3 point3d[2];
+			};
+
+			StructuredBuffer<LineSegment> Lines;
+			//StructuredBuffer<float3> Positions;
 
 			float4 vert(uint vertex_id: SV_VertexID, uint instance_id : SV_InstanceID) : SV_POSITION
 			{
-				uint2 edgeIndex = LinesIndex[instance_id];
-				uint positionIndex = edgeIndex[vertex_id];
-				float3 localposition = Positions[positionIndex];
+				//uint2 edgeIndex = LinesIndex[instance_id];
+				//uint positionIndex = edgeIndex[vertex_id];
+				//float3 localposition = Positions[positionIndex];
+				LineSegment Line = Lines[instance_id];
+				float3 localposition = Line.point3d[vertex_id];
 
 				float4 worldposition = mul(_ObjectWorldMatrix, float4(localposition, 1));
 				worldposition.xyz += _WorldPositionOffset.xyz;

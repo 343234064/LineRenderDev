@@ -11,11 +11,15 @@ struct AdjFace
     uint zx;
 };
 
+struct LineSegment
+{
+    float3 point3d[2];
+};
 
 StructuredBuffer<float3> Vertices;
 StructuredBuffer<AdjFace> AdjacencyTriangles;
 
-AppendStructuredBuffer<uint2> LineIndices;
+AppendStructuredBuffer<LineSegment> Lines;
 
 uniform float3 LocalSpaceViewPosition;
 uniform float CreaseAngleThreshold;
@@ -51,9 +55,9 @@ float3 ComputeNormal(float3 p1, float3 p2, float3 p3)
 
 
 
-inline bool IsSilhouette(float3 ViewVector, float3 FaceNormal, float DotFactor)
+inline bool IsSilhouette(float DotFactor1, float DotFactor2)
 {
-    return step(DotFactor * dot(FaceNormal, ViewVector), 0);
+    return step(DotFactor1 * DotFactor2, 0);
 }
 
 inline bool IsCrease(float3 Face1Normal, float3 Face2Normal, float AngleThreshold)
@@ -71,9 +75,6 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     if (id.x >= TotalAdjacencyTrianglesNum) return;
 
     AdjFace CurrentFace = AdjacencyTriangles[id.x];
-    uint2 XY = uint2(CurrentFace.x, CurrentFace.y);
-    uint2 YZ = uint2(CurrentFace.y, CurrentFace.z);
-    uint2 ZX = uint2(CurrentFace.z, CurrentFace.x);
 
     float3 VertexX = Vertices[CurrentFace.x];
     float3 VertexY = Vertices[CurrentFace.y];
@@ -103,14 +104,18 @@ void CSMain (uint3 id : SV_DispatchThreadID)
         float3 AdjVertexXY = Vertices[CurrentFace.xy - 1];
         float3 AdjFaceXYNormal = ComputeNormal(VertexY, VertexX, AdjVertexXY);
 
-        AddXY = AddXY || (NeedExtractSilhouette && IsSilhouette(LocalViewVector, AdjFaceXYNormal, SilhouettePremultiplyDotFactor));
+        float DotFactor = dot(LocalViewVector, AdjFaceXYNormal);
+        AddXY = AddXY || (NeedExtractSilhouette && IsSilhouette(SilhouettePremultiplyDotFactor, DotFactor));
         AddXY = AddXY || (NeedExtractCrease && IsCrease(CurrentFaceNormal, AdjFaceXYNormal, CreasePremultiplyAngleThreshold));
 
-        XYIsBackFace = dot(AdjFaceXYNormal, LocalViewVector) < 0 ? true : false;
+        XYIsBackFace = DotFactor < 0 ? true : false;
 
         if (AddXY && !(CurrentIsBackFace && XYIsBackFace))
         {
-            LineIndices.Append(XY);
+            LineSegment Line;
+            Line.point3d[0] = Vertices[CurrentFace.x];
+            Line.point3d[1] = Vertices[CurrentFace.y];
+            Lines.Append(Line);
         }
     }
 
@@ -119,14 +124,18 @@ void CSMain (uint3 id : SV_DispatchThreadID)
         float3 AdjVertexZX = Vertices[CurrentFace.zx - 1];
         float3 AdjFaceZXNormal = ComputeNormal(VertexZ, AdjVertexZX, VertexX);
 
-        AddZX = AddZX || (NeedExtractSilhouette && IsSilhouette(LocalViewVector, AdjFaceZXNormal, SilhouettePremultiplyDotFactor));
+        float DotFactor = dot(LocalViewVector, AdjFaceZXNormal);
+        AddZX = AddZX || (NeedExtractSilhouette && IsSilhouette(SilhouettePremultiplyDotFactor, DotFactor));
         AddZX = AddZX || (NeedExtractCrease && IsCrease(CurrentFaceNormal, AdjFaceZXNormal, CreasePremultiplyAngleThreshold));
 
-        ZXIsBackFace = dot(AdjFaceZXNormal, LocalViewVector) < 0 ? true : false;
+        ZXIsBackFace = DotFactor < 0 ? true : false;
 
         if (AddZX && !(CurrentIsBackFace && ZXIsBackFace))
         {
-            LineIndices.Append(ZX);
+            LineSegment Line;
+            Line.point3d[0] = Vertices[CurrentFace.z];
+            Line.point3d[1] = Vertices[CurrentFace.x];
+            Lines.Append(Line);
         }
     }
 
@@ -135,14 +144,18 @@ void CSMain (uint3 id : SV_DispatchThreadID)
         float3 AdjVertexYZ = Vertices[CurrentFace.yz - 1];
         float3 AdjFaceYZNormal = ComputeNormal(AdjVertexYZ, VertexZ, VertexY);
 
-        AddYZ = AddYZ || (NeedExtractSilhouette && IsSilhouette(LocalViewVector, AdjFaceYZNormal, SilhouettePremultiplyDotFactor));
+        float DotFactor = dot(LocalViewVector, AdjFaceYZNormal);
+        AddYZ = AddYZ || (NeedExtractSilhouette && IsSilhouette(SilhouettePremultiplyDotFactor, DotFactor));
         AddYZ = AddYZ || (NeedExtractCrease && IsCrease(CurrentFaceNormal, AdjFaceYZNormal, CreasePremultiplyAngleThreshold));
 
-        YZIsBackFace = dot(AdjFaceYZNormal, LocalViewVector) < 0 ? true : false;
+        YZIsBackFace = DotFactor < 0 ? true : false;
 
         if (AddYZ && !(CurrentIsBackFace && YZIsBackFace))
         {
-            LineIndices.Append(YZ);
+            LineSegment Line;
+            Line.point3d[0] = Vertices[CurrentFace.y];
+            Line.point3d[1] = Vertices[CurrentFace.z];
+            Lines.Append(Line);
         }
     }
 
