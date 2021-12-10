@@ -1,0 +1,39 @@
+﻿// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+
+Texture2D<float> DepthTexture;
+RWTexture2D<float4> ResultDepthTexture;
+
+SamplerState LinearClampSampler;
+
+float4 ZbufferParam;
+float2 Resolution;
+
+inline float Linear01Depth(float z)
+{
+    return 1.0 / (ZbufferParam.x * z + ZbufferParam.y);
+}
+
+inline float LinearEyeDepth(float z)
+{
+    return 1.0 / (ZbufferParam.z * z + ZbufferParam.w);
+}
+
+inline float OutputDepth(float d)
+{
+    return pow(d, 0.4545f);
+}
+
+[numthreads(8,8,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    float2 ScreenUV = float2(id.x / Resolution.x, id.y / Resolution.y);
+
+    //ResultDepthTexture[id.xy] = float4(ScreenUV.x, ScreenUV.y, 0.0, 0.0);
+    float Depth = DepthTexture.SampleLevel(LinearClampSampler, ScreenUV, 0).r;
+    //float Depth = DepthTexture[id.xy];
+    Depth = Linear01Depth(Depth);
+    Depth = OutputDepth(Depth);
+    ResultDepthTexture[id.xy] = float4(Depth, Depth, Depth, 0.0);
+}

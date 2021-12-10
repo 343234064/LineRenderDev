@@ -114,6 +114,7 @@ public class LinesRenderer : MonoBehaviour
         {
             if (MeshList[i].LineMaterialSetting != null && MeshList[i].RumtimeTransform.gameObject.activeSelf)
             {
+                ExtractLineShader.SetTextureFromGlobal(ExtractLineShaderKernelId, "DepthTexture", "_CameraDepthTexture");
                 ExtractLineShader.SetConstantBuffer(Shader.PropertyToID("Constants"), MeshList[i].ConstantBuffer, 0, RenderConstants.Size());
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "AdjacencyTriangles", MeshList[i].AdjacencyIndicesBuffer);
                 ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "Vertices", MeshList[i].VerticesBuffer);

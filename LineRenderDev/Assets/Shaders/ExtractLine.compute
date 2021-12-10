@@ -16,6 +16,8 @@ struct LineSegment
     float3 point3d[2];
 };
 
+Texture2D<float> DepthTexture;
+
 StructuredBuffer<float3> Vertices;
 StructuredBuffer<AdjFace> AdjacencyTriangles;
 
