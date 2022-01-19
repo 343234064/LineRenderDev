@@ -61,5 +61,25 @@
             }
             ENDCG
         }
+
+        Pass {
+            Name "ShadowCaster"
+            Tags { "LightMode" = "ShadowCaster" }
+
+            ZWrite On ZTest LEqual
+
+            CGPROGRAM
+            #pragma target 2.0
+
+            #pragma skip_variants SHADOWS_SOFT
+            #pragma multi_compile_shadowcaster
+
+            #pragma vertex vertShadowCaster
+            #pragma fragment fragShadowCaster
+
+            #include "UnityStandardShadow.cginc"
+
+            ENDCG
+        }
     }
 }
