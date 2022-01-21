@@ -1,0 +1,35 @@
+﻿// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+struct Line3D
+{
+    float3 point3d[2];
+};
+
+struct Line2D
+{
+    float3 point2d[2];
+};
+
+cbuffer Constants
+{
+    uint HideOccludedEdge;
+    float2 Resolution;
+};
+
+
+StructuredBuffer<Line3D> Input3DLines;
+AppendStructuredBuffer<Line2D> Output2DLines;
+
+uniform float4 ZbufferParam;
+
+[numthreads(1, 1, 1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    // TODO: insert actual code here!
+    Line3D InputLine = Input3DLines[id.x];
+    Line2D OutputLine;
+    OutputLine.point2d[0] = InputLine.point3d[0];
+    OutputLine.point2d[1] = InputLine.point3d[1];
+    Output2DLines.Append(OutputLine);
+}

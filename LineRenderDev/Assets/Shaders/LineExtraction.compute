@@ -11,18 +11,10 @@ struct AdjFace
     uint zx;
 };
 
-struct LineSegment
+struct Line3D
 {
     float3 point3d[2];
 };
-
-StructuredBuffer<float3> Vertices;
-StructuredBuffer<AdjFace> AdjacencyTriangles;
-
-AppendStructuredBuffer<LineSegment> Lines;
-
-uniform float3 LocalSpaceViewPosition;
-uniform float CreaseAngleThreshold;
 
 cbuffer Constants
 {
@@ -31,8 +23,19 @@ cbuffer Constants
     uint CreaseEnable;
     uint BorderEnable;
     uint HideBackFaceEdge;
-    
+
 };
+
+
+StructuredBuffer<float3> Vertices;
+StructuredBuffer<AdjFace> AdjacencyTriangles;
+
+AppendStructuredBuffer<Line3D> Output3DLines;
+
+uniform float3 LocalSpaceViewPosition;
+uniform float CreaseAngleThreshold;
+
+
 
 
 float3 ComputeNormal(float3 p1, float3 p2, float3 p3)
@@ -112,10 +115,10 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 
         if (AddXY && !(CurrentIsBackFace && XYIsBackFace))
         {
-            LineSegment Line;
+            Line3D Line;
             Line.point3d[0] = Vertices[CurrentFace.x];
             Line.point3d[1] = Vertices[CurrentFace.y];
-            Lines.Append(Line);
+            Output3DLines.Append(Line);
         }
     }
 
@@ -132,10 +135,10 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 
         if (AddZX && !(CurrentIsBackFace && ZXIsBackFace))
         {
-            LineSegment Line;
+            Line3D Line;
             Line.point3d[0] = Vertices[CurrentFace.z];
             Line.point3d[1] = Vertices[CurrentFace.x];
-            Lines.Append(Line);
+            Output3DLines.Append(Line);
         }
     }
 
@@ -152,10 +155,10 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 
         if (AddYZ && !(CurrentIsBackFace && YZIsBackFace))
         {
-            LineSegment Line;
+            Line3D Line;
             Line.point3d[0] = Vertices[CurrentFace.y];
             Line.point3d[1] = Vertices[CurrentFace.z];
-            Lines.Append(Line);
+            Output3DLines.Append(Line);
         }
     }
 

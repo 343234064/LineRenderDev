@@ -44,7 +44,7 @@ public class LinesRenderer : MonoBehaviour
                 ExtractPassParams.CreaseAngleThreshold = (180.0f - MeshList[i].LineMaterialSetting.CreaseAngleDegreeThreshold) * (0.017453292519943294f);
                 MeshList[i].Renderer.ExtractPass.Render(ExtractPassParams);
 
-                //MeshList[i].Renderer.VisibilityPass.Render(Params);
+                MeshList[i].Renderer.VisibilityPass.Render(VisibilityPassParams);
 
                 MaterialPassParams.ObjectWorldMatrix = MeshList[i].RumtimeTransform.localToWorldMatrix;
                 MeshList[i].Renderer.MaterialPass.Render(MaterialPassParams);
@@ -74,11 +74,16 @@ public class LinesRenderer : MonoBehaviour
     [AssetSelector(Paths = "Assets/Shaders")]
     [Required("Extract Line Shader Is Required")]
     public ComputeShader ExtractLineShader;
+
+    [AssetSelector(Paths = "Assets/Shaders")]
+    [Required("Visible Line Shader Is Required")]
+    public ComputeShader VisibleLineShader;
     /// ///////////////////////////////////////////////////////
     private List<RenderMeshContext> MeshList;
     /// ///////////////////////////////////////////////////////
     private RenderExtractPass.RenderParams ExtractPassParams;
     private RenderMaterialPass.RenderParams MaterialPassParams;
+    private RenderVisibilityPass.RenderParams VisibilityPassParams;
 
     private void GetMeshInformation()
     {
@@ -202,26 +207,34 @@ public class LinesRenderer : MonoBehaviour
     void Setup()
     {
         ExtractPassParams = new RenderExtractPass.RenderParams();
+        VisibilityPassParams = new RenderVisibilityPass.RenderParams();
         MaterialPassParams = new RenderMaterialPass.RenderParams();
+
+        VisibilityPassParams.ZbufferParam = new float[4];
+
 
         for (int i = 0; i < MeshList.Count; i++)
         {
             if (!MeshList[i].RumtimeTransform.gameObject.activeSelf) continue;
 
-            MeshList[i].Renderer.Init(ExtractLineShader);
-            MeshList[i].Renderer.InitExtractPassOutputBuffer(MeshList[i].AdjacencyTriangles.Length);
+            MeshList[i].Renderer.Init(ExtractLineShader, VisibleLineShader);
+            MeshList[i].Renderer.InitInputOutputBuffer(MeshList[i].AdjacencyTriangles.Length);
 
             MeshList[i].Renderer.ExtractPass.SetAdjacencyIndicesBuffer(MeshList[i].AdjacencyTriangles.Length, MeshList[i].AdjacencyTriangles);
             MeshList[i].Renderer.ExtractPass.SetVerticesBuffer(MeshList[i].RumtimeMesh.vertices.Length, MeshList[i].RumtimeMesh.vertices);
 
-            RenderExtractPass.RenderConstants[] Constants = new RenderExtractPass.RenderConstants[1];
-            Constants[0].TotalAdjacencyTrianglesNum = (uint)MeshList[i].AdjacencyTriangles.Length;
-            Constants[0].SilhouetteEnable = (uint)(MeshList[i].LineMaterialSetting.SilhouetteEnable ? 1 : 0);
-            Constants[0].CreaseEnable = (uint)(MeshList[i].LineMaterialSetting.CreaseEnable ? 1 : 0);
-            Constants[0].BorderEnable = (uint)(MeshList[i].LineMaterialSetting.BorderEnable ? 1 : 0);
-            Constants[0].HideBackFaceEdge = (uint)(MeshList[i].LineMaterialSetting.HideBackFaceEdge ? 1 : 0);
-            MeshList[i].Renderer.ExtractPass.SetConstantBuffer(Constants);
+            RenderExtractPass.RenderConstants[] Pass1Constants = new RenderExtractPass.RenderConstants[1];
+            Pass1Constants[0].TotalAdjacencyTrianglesNum = (uint)MeshList[i].AdjacencyTriangles.Length;
+            Pass1Constants[0].SilhouetteEnable = (uint)(MeshList[i].LineMaterialSetting.SilhouetteEnable ? 1 : 0);
+            Pass1Constants[0].CreaseEnable = (uint)(MeshList[i].LineMaterialSetting.CreaseEnable ? 1 : 0);
+            Pass1Constants[0].BorderEnable = (uint)(MeshList[i].LineMaterialSetting.BorderEnable ? 1 : 0);
+            Pass1Constants[0].HideBackFaceEdge = (uint)(MeshList[i].LineMaterialSetting.HideBackFaceEdge ? 1 : 0);
+            MeshList[i].Renderer.ExtractPass.SetConstantBuffer(Pass1Constants);
 
+            RenderVisibilityPass.RenderConstants[] Pass2Constants = new RenderVisibilityPass.RenderConstants[1];
+            Pass2Constants[0].HideOccludedEdge = (uint)(MeshList[i].LineMaterialSetting.HideOccludedEdge ? 1 : 0);
+
+            MeshList[i].Renderer.VisibilityPass.SetConstantBuffer(Pass2Constants);
 
             MeshList[i].Renderer.MaterialPass.SetLineMaterialObject(MeshList[i].LineMaterialSetting);
 
