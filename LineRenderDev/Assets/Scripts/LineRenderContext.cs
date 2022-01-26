@@ -109,10 +109,11 @@ public class RenderLayer
 
         if (ExtractPassOutputArgBuffer == null)
         {
-            ExtractPassOutputArgBuffer = new ComputeBuffer(4, sizeof(int), ComputeBufferType.IndirectArguments);
+            ExtractPassOutputArgBuffer = new ComputeBuffer(3, sizeof(int), ComputeBufferType.IndirectArguments);
         }
         int[] Args1 = new int[3] { 0, 1, 1}; // instance count, 1, 1(for next dispatch x y z)
         ExtractPassOutputArgBuffer.SetData(Args1);
+        int ExtractPassOutputArgBufferOffset = 0;
 
 
         if (VisiblePassOutputBuffer != null)
@@ -125,17 +126,18 @@ public class RenderLayer
         }
         int[] Args2 = new int[4] { 2, 1, 0, 0 }; // vertex count, instance count, start vertex, start instance
         VisiblePassOutputArgBuffer.SetData(Args2);
+        int VisiblePassOutputArgBufferOffset = sizeof(int);
 
 
         if (ExtractPass != null)
-            ExtractPass.SetOutputBuffer(ExtractPassOutputBuffer, ExtractPassOutputArgBuffer);
+            ExtractPass.SetOutputBuffer(ExtractPassOutputBuffer, ExtractPassOutputArgBuffer, ExtractPassOutputArgBufferOffset);
         if (VisibilityPass != null)
         {
-            VisibilityPass.SetInputBuffer(ExtractPassOutputBuffer, ExtractPassOutputArgBuffer);
-            VisibilityPass.SetOutputBuffer(VisiblePassOutputBuffer, VisiblePassOutputArgBuffer);
+            VisibilityPass.SetInputBuffer(ExtractPassOutputBuffer, ExtractPassOutputArgBuffer, ExtractPassOutputArgBufferOffset);
+            VisibilityPass.SetOutputBuffer(VisiblePassOutputBuffer, VisiblePassOutputArgBuffer, VisiblePassOutputArgBufferOffset);
         }
         if(MaterialPass != null)
-            MaterialPass.SetInputLineBuffer(VisiblePassOutputBuffer, VisiblePassOutputArgBuffer);
+            MaterialPass.SetInputBuffer(VisiblePassOutputBuffer, VisiblePassOutputArgBuffer, 0);
     }
 }
 
@@ -173,6 +175,8 @@ public class RenderExtractPass
     private ComputeBuffer ExtractLineBuffer;
     private ComputeBuffer ExtractLineArgBuffer;
 
+    private int ExtractLineArgBufferOffset;
+
     private int ExtractLinePassGroupSize;
     private int ExtractLineShaderKernelId;
     private uint ExtractLineShaderGroupSize;
@@ -183,6 +187,7 @@ public class RenderExtractPass
         ExtractLineShaderKernelId = ExtractLineShader.FindKernel("CSMain");
         ExtractLineShader.GetKernelThreadGroupSizes(ExtractLineShaderKernelId, out ExtractLineShaderGroupSize, out _, out _);
 
+        ExtractLineArgBufferOffset = 0;
         ExtractLinePassGroupSize = 1;
     }
 
@@ -244,10 +249,11 @@ public class RenderExtractPass
         ConstantBuffer.SetData(Constants);
     }
 
-    public void SetOutputBuffer(ComputeBuffer OutputBuffer, ComputeBuffer OutputArgBuffer)
+    public void SetOutputBuffer(ComputeBuffer OutputBuffer, ComputeBuffer OutputArgBuffer, int ArgBufferOffset)
     {
         ExtractLineBuffer = OutputBuffer;
         ExtractLineArgBuffer = OutputArgBuffer;
+        ExtractLineArgBufferOffset = ArgBufferOffset;
     }
 
     public void Render(RenderExtractPass.RenderParams Params)
@@ -263,13 +269,15 @@ public class RenderExtractPass
         ExtractLineBuffer.SetCounterValue(0);
         ExtractLineShader.Dispatch(ExtractLineShaderKernelId, ExtractLinePassGroupSize, 1, 1);
         //Debug.Log("Group Size : " + ExtractLinePassGroupSize);
-        ComputeBuffer.CopyCount(ExtractLineBuffer, ExtractLineArgBuffer, 0);
+        ComputeBuffer.CopyCount(ExtractLineBuffer, ExtractLineArgBuffer, ExtractLineArgBufferOffset);
         /*
-               int[] Args = new int[3] { 0,0,0 };
-               ExtractLineArgBuffer.GetData(Args);
-               Debug.Log("Instance Count 1 " + Args[0]);
-               Debug.Log("y Count 1 " + Args[1]);
-               Debug.Log("z Count 1 " + Args[2]);
+        Debug.Log("========================================");
+        int[] Args = new int[3] { 0,0,0 };
+        ExtractLineArgBuffer.GetData(Args);
+        Debug.Log("Instance Count 1 " + Args[0]);
+        //Debug.Log("y Count 1 " + Args[1]);
+        //Debug.Log("z Count 1 " + Args[2]);
+        Debug.Log("========================================");
         */
     }
 }
@@ -280,17 +288,18 @@ public class RenderVisibilityPass
     public struct RenderConstants
     {
         public uint HideOccludedEdge;
-        public Vector2 RenderResolution;
 
         public static int Size()
         {
-            return sizeof(uint) + sizeof(float) * 2;
+            return sizeof(uint);
         }
     }
 
     public struct RenderParams
     {
         public float[] ZbufferParam;
+        public float RenderResolutionX;
+        public float RenderResolutionY;
     }
 
     private ComputeShader VisibleLineShader;
@@ -303,6 +312,9 @@ public class RenderVisibilityPass
     private ComputeBuffer VisibleLineBuffer;
     private ComputeBuffer VisibleLineArgBuffer;
 
+    private int InputLineArgBufferOffset;
+    private int VisibleLineArgBufferOffset;
+
     private int VisibleLineShaderKernelId;
     private uint VisibleLineShaderGroupSize;
 
@@ -312,6 +324,8 @@ public class RenderVisibilityPass
         VisibleLineShader = ShaderInstance;
         VisibleLineShaderKernelId = VisibleLineShader.FindKernel("CSMain");
         VisibleLineShader.GetKernelThreadGroupSizes(VisibleLineShaderKernelId, out VisibleLineShaderGroupSize, out _, out _);
+        InputLineArgBufferOffset = 0;
+        VisibleLineArgBufferOffset = 0;
     }
 
     public void Destroy()
@@ -320,16 +334,18 @@ public class RenderVisibilityPass
             ConstantBuffer.Release();
     }
 
-    public void SetInputBuffer(ComputeBuffer InputBuffer, ComputeBuffer InputArgBuffer)
+    public void SetInputBuffer(ComputeBuffer InputBuffer, ComputeBuffer InputArgBuffer, int ArgBufferOffset)
     {
         InputLineBuffer = InputBuffer;
         InputLineArgBuffer = InputArgBuffer;
+        InputLineArgBufferOffset = ArgBufferOffset;
     }
 
-    public void SetOutputBuffer(ComputeBuffer OutputBuffer, ComputeBuffer OutputArgBuffer)
+    public void SetOutputBuffer(ComputeBuffer OutputBuffer, ComputeBuffer OutputArgBuffer, int ArgBufferOffset)
     {
         VisibleLineBuffer = OutputBuffer;
         VisibleLineArgBuffer = OutputArgBuffer;
+        VisibleLineArgBufferOffset = ArgBufferOffset;
     }
 
     public void SetConstantBuffer(RenderVisibilityPass.RenderConstants[] Constants)
@@ -349,11 +365,14 @@ public class RenderVisibilityPass
         VisibleLineShader.SetBuffer(VisibleLineShaderKernelId, "Output2DLines", VisibleLineBuffer);
 
         VisibleLineShader.SetFloats("ZbufferParam", Params.ZbufferParam);
+        VisibleLineShader.SetFloat("RenderResolutionX", Params.RenderResolutionX);
+        VisibleLineShader.SetFloat("RenderResolutionY", Params.RenderResolutionY);
+
 
         VisibleLineBuffer.SetCounterValue(0);
-        VisibleLineShader.DispatchIndirect(VisibleLineShaderKernelId, InputLineArgBuffer, 0);
+        VisibleLineShader.DispatchIndirect(VisibleLineShaderKernelId, InputLineArgBuffer, (uint)InputLineArgBufferOffset);
 
-        ComputeBuffer.CopyCount(VisibleLineBuffer, VisibleLineArgBuffer, sizeof(int));
+        ComputeBuffer.CopyCount(VisibleLineBuffer, VisibleLineArgBuffer, VisibleLineArgBufferOffset);
         /*
         int[] Args = new int[4] { 0, 0, 0, 0 };
         VisibleLineArgBuffer.GetData(Args);
@@ -378,10 +397,11 @@ public class RenderMaterialPass
     private ComputeBuffer InputLineBuffer;
     private ComputeBuffer InputLineArgBuffer;
 
+    private int InputLineArgBufferOffset;
 
     public void Init()
     {
-
+        InputLineArgBufferOffset = 0;
     }
 
     public void Destroy()
@@ -394,10 +414,11 @@ public class RenderMaterialPass
         LineMaterialObject = Material;
     }
 
-    public void SetInputLineBuffer(ComputeBuffer InputBuffer, ComputeBuffer InputArgBuffer)
+    public void SetInputBuffer(ComputeBuffer InputBuffer, ComputeBuffer InputArgBuffer, int ArgBufferOffset)
     {
         InputLineBuffer = InputBuffer;
         InputLineArgBuffer = InputArgBuffer;
+        InputLineArgBufferOffset = ArgBufferOffset;
     }
 
     public void Render(RenderMaterialPass.RenderParams Params)
@@ -406,6 +427,6 @@ public class RenderMaterialPass
         LineMaterialObject.LineRenderMaterial.SetBuffer("Lines", InputLineBuffer);
         //MeshList[i].LineMaterialSetting.LineRenderMaterial.SetBuffer("Positions", MeshList[i].VerticesBuffer);
 
-        Graphics.DrawProceduralIndirect(LineMaterialObject.LineRenderMaterial, LineMaterialObject.EdgeBoundingVolume, MeshTopology.Lines, InputLineArgBuffer, 0);
+        Graphics.DrawProceduralIndirect(LineMaterialObject.LineRenderMaterial, LineMaterialObject.EdgeBoundingVolume, MeshTopology.Lines, InputLineArgBuffer, InputLineArgBufferOffset);
     }
 }

@@ -11,7 +11,6 @@ using Sirenix.OdinInspector;
 
 
 
-
 /// <summary>
 /// Static Mesh Ver
 /// 
@@ -30,12 +29,14 @@ public class LinesRenderer : MonoBehaviour
         LoadAdjacency();
 
         Setup();
-        
+
+
     }
 
     // Update is called once per frame
     void Update()
     {
+        Camera MainCamera = Camera.main;
         for (int i = 0; i < MeshList.Count; i++)
         {
             if (MeshList[i].LineMaterialSetting != null && MeshList[i].RumtimeTransform.gameObject.activeSelf)
@@ -44,6 +45,21 @@ public class LinesRenderer : MonoBehaviour
                 ExtractPassParams.CreaseAngleThreshold = (180.0f - MeshList[i].LineMaterialSetting.CreaseAngleDegreeThreshold) * (0.017453292519943294f);
                 MeshList[i].Renderer.ExtractPass.Render(ExtractPassParams);
 
+
+#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
+                //Reverse Z in DirectX 11, DirectX 12
+                VisibilityPassParams.ZbufferParam[0] = (float)(-1.0f + MainCamera.farClipPlane / MainCamera.nearClipPlane);
+                VisibilityPassParams.ZbufferParam[1] = 1.0f;
+                VisibilityPassParams.ZbufferParam[2] = (float)(VisibilityPassParams.ZbufferParam[0] / MainCamera.farClipPlane);
+                VisibilityPassParams.ZbufferParam[3] = (float)(1.0f / MainCamera.farClipPlane);
+#else
+                VisibilityPassParams.ZbufferParam[0] = (float)(1.0f - camera.farClipPlane / camera.nearClipPlane);
+                VisibilityPassParams.ZbufferParam[1] = (float)(camera.farClipPlane / camera.nearClipPlane);
+                VisibilityPassParams.ZbufferParam[2] = (float)(ZbufferParam[0] / camera.farClipPlane);
+                VisibilityPassParams.ZbufferParam[3] = (float)(ZbufferParam[1] / camera.farClipPlane);
+#endif
+                VisibilityPassParams.RenderResolutionX = MainCamera.pixelWidth;
+                VisibilityPassParams.RenderResolutionY = MainCamera.pixelHeight;
                 MeshList[i].Renderer.VisibilityPass.Render(VisibilityPassParams);
 
                 MaterialPassParams.ObjectWorldMatrix = MeshList[i].RumtimeTransform.localToWorldMatrix;
@@ -80,10 +96,12 @@ public class LinesRenderer : MonoBehaviour
     public ComputeShader VisibleLineShader;
     /// ///////////////////////////////////////////////////////
     private List<RenderMeshContext> MeshList;
-    /// ///////////////////////////////////////////////////////
+   
     private RenderExtractPass.RenderParams ExtractPassParams;
     private RenderMaterialPass.RenderParams MaterialPassParams;
     private RenderVisibilityPass.RenderParams VisibilityPassParams;
+    /// ///////////////////////////////////////////////////////
+    
 
     private void GetMeshInformation()
     {
@@ -113,7 +131,7 @@ public class LinesRenderer : MonoBehaviour
                         else
                         {
                             ToAdd.LineMaterialSetting = null;
-                            Debug.Log("================Mesh: " + child.name + " has NO Line Material applied, the mesh will be ignored=================");
+                            Debug.Log("=================Mesh: " + child.name + " has NO Line Material applied, the mesh will be ignored=================");
                         }
                         MeshList.Add(ToAdd);
                     }
@@ -131,7 +149,7 @@ public class LinesRenderer : MonoBehaviour
             else
             {
                 ToAdd.LineMaterialSetting = null;
-                Debug.Log("===============Mesh: " + gameObject.name + " has NO Line Material applied, the mesh will be ignored=================");
+                Debug.Log("=================Mesh: " + gameObject.name + " has NO Line Material applied, the mesh will be ignored=================");
             }
             MeshList.Add(ToAdd);
         }
@@ -233,7 +251,6 @@ public class LinesRenderer : MonoBehaviour
 
             RenderVisibilityPass.RenderConstants[] Pass2Constants = new RenderVisibilityPass.RenderConstants[1];
             Pass2Constants[0].HideOccludedEdge = (uint)(MeshList[i].LineMaterialSetting.HideOccludedEdge ? 1 : 0);
-
             MeshList[i].Renderer.VisibilityPass.SetConstantBuffer(Pass2Constants);
 
             MeshList[i].Renderer.MaterialPass.SetLineMaterialObject(MeshList[i].LineMaterialSetting);
