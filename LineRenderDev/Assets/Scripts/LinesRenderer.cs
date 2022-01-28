@@ -25,6 +25,8 @@ public class LinesRenderer : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
+        RenderCamera = Camera.main;
+
         GetMeshInformation();
         LoadAdjacency();
 
@@ -33,40 +35,53 @@ public class LinesRenderer : MonoBehaviour
 
     }
 
+    void OnApplicationFocus(bool Focus)
+    {
+        RenderCamera = Camera.main;
+        /*
+        if (!Focus)
+        {
+            SceneView Scene = SceneView.lastActiveSceneView;
+            if (Scene) RenderCamera = Scene.camera;
+        }*/
+    }
+
     // Update is called once per frame
     void Update()
     {
-        Camera MainCamera = Camera.main;
+        Matrix4x4 ViewProjectionMatrix = GL.GetGPUProjectionMatrix(RenderCamera.projectionMatrix, true) * RenderCamera.worldToCameraMatrix;
         for (int i = 0; i < MeshList.Count; i++)
         {
             if (MeshList[i].LineMaterialSetting != null && MeshList[i].RumtimeTransform.gameObject.activeSelf)
             {
                 ExtractPassParams.LocalCameraPosition = MeshList[i].RumtimeTransform.InverseTransformPoint(Camera.main.transform.position);
                 ExtractPassParams.CreaseAngleThreshold = (180.0f - MeshList[i].LineMaterialSetting.CreaseAngleDegreeThreshold) * (0.017453292519943294f);
+                ExtractPassParams.WorldViewProjectionMatrix = ViewProjectionMatrix * MeshList[i].RumtimeTransform.localToWorldMatrix;
                 MeshList[i].Renderer.ExtractPass.Render(ExtractPassParams);
 
 
 #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
                 //Reverse Z in DirectX 11, DirectX 12
-                VisibilityPassParams.ZbufferParam[0] = (float)(-1.0f + MainCamera.farClipPlane / MainCamera.nearClipPlane);
+                VisibilityPassParams.ZbufferParam[0] = (float)(-1.0f + RenderCamera.farClipPlane / RenderCamera.nearClipPlane);
                 VisibilityPassParams.ZbufferParam[1] = 1.0f;
-                VisibilityPassParams.ZbufferParam[2] = (float)(VisibilityPassParams.ZbufferParam[0] / MainCamera.farClipPlane);
-                VisibilityPassParams.ZbufferParam[3] = (float)(1.0f / MainCamera.farClipPlane);
+                VisibilityPassParams.ZbufferParam[2] = (float)(VisibilityPassParams.ZbufferParam[0] / RenderCamera.farClipPlane);
+                VisibilityPassParams.ZbufferParam[3] = (float)(1.0f / RenderCamera.farClipPlane);
 #else
-                VisibilityPassParams.ZbufferParam[0] = (float)(1.0f - camera.farClipPlane / camera.nearClipPlane);
-                VisibilityPassParams.ZbufferParam[1] = (float)(camera.farClipPlane / camera.nearClipPlane);
-                VisibilityPassParams.ZbufferParam[2] = (float)(ZbufferParam[0] / camera.farClipPlane);
-                VisibilityPassParams.ZbufferParam[3] = (float)(ZbufferParam[1] / camera.farClipPlane);
+                VisibilityPassParams.ZbufferParam[0] = (float)(1.0f - RenderCamera.farClipPlane / RenderCamera.nearClipPlane);
+                VisibilityPassParams.ZbufferParam[1] = (float)(RenderCamera.farClipPlane / RenderCamera.nearClipPlane);
+                VisibilityPassParams.ZbufferParam[2] = (float)(ZbufferParam[0] / RenderCamera.farClipPlane);
+                VisibilityPassParams.ZbufferParam[3] = (float)(ZbufferParam[1] / RenderCamera.farClipPlane);
 #endif
-                VisibilityPassParams.RenderResolutionX = MainCamera.pixelWidth;
-                VisibilityPassParams.RenderResolutionY = MainCamera.pixelHeight;
+                VisibilityPassParams.RenderResolutionX = RenderCamera.pixelWidth;
+                VisibilityPassParams.RenderResolutionY = RenderCamera.pixelHeight;
                 MeshList[i].Renderer.VisibilityPass.Render(VisibilityPassParams);
 
                 MaterialPassParams.ObjectWorldMatrix = MeshList[i].RumtimeTransform.localToWorldMatrix;
                 MeshList[i].Renderer.MaterialPass.Render(MaterialPassParams);
             }
         }
- 
+
+
     }
 
     void LateUpdate()
@@ -95,6 +110,7 @@ public class LinesRenderer : MonoBehaviour
     [Required("Visible Line Shader Is Required")]
     public ComputeShader VisibleLineShader;
     /// ///////////////////////////////////////////////////////
+    private Camera RenderCamera;
     private List<RenderMeshContext> MeshList;
    
     private RenderExtractPass.RenderParams ExtractPassParams;

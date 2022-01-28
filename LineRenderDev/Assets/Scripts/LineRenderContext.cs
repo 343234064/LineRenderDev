@@ -15,12 +15,14 @@ public struct AdjFace
 
 public struct Line3D
 {
-    public Vector3 point3d1;
-    public Vector3 point3d2;
+    public Vector3 localposition1;
+    public Vector3 localposition2;
+    public Vector4 transformedposition1;
+    public Vector4 transformedposition2;
 
     public static int Size()
     {
-        return sizeof(float) * 3 * 2;
+        return sizeof(float) * 4 * 2 + sizeof(float) * 3 * 2;
     }
 }
 
@@ -164,6 +166,8 @@ public class RenderExtractPass
     {
         public Vector3 LocalCameraPosition;
         public float CreaseAngleThreshold;
+        public Matrix4x4 WorldViewProjectionMatrix;
+
     }
 
     public ComputeShader ExtractLineShader;
@@ -265,12 +269,14 @@ public class RenderExtractPass
 
         ExtractLineShader.SetVector("LocalSpaceViewPosition", Params.LocalCameraPosition);
         ExtractLineShader.SetFloat("CreaseAngleThreshold", Params.CreaseAngleThreshold);
+        ExtractLineShader.SetMatrix("WorldViewProjection", Params.WorldViewProjectionMatrix);
 
         ExtractLineBuffer.SetCounterValue(0);
         ExtractLineShader.Dispatch(ExtractLineShaderKernelId, ExtractLinePassGroupSize, 1, 1);
         //Debug.Log("Group Size : " + ExtractLinePassGroupSize);
         ComputeBuffer.CopyCount(ExtractLineBuffer, ExtractLineArgBuffer, ExtractLineArgBufferOffset);
-        /*
+        
+        //移动摄像机时instance count不明原因增加
         Debug.Log("========================================");
         int[] Args = new int[3] { 0,0,0 };
         ExtractLineArgBuffer.GetData(Args);
@@ -278,7 +284,8 @@ public class RenderExtractPass
         //Debug.Log("y Count 1 " + Args[1]);
         //Debug.Log("z Count 1 " + Args[2]);
         Debug.Log("========================================");
-        */
+        
+
     }
 }
 

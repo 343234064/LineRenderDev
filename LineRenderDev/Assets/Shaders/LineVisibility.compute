@@ -3,7 +3,8 @@
 
 struct Line3D
 {
-    float3 point3d[2];
+    float3 localposition[2];
+    float4 transformedposition[2];
 };
 
 struct Line2D
@@ -31,8 +32,8 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     // TODO: insert actual code here!
     Line3D InputLine = Input3DLines[id.x];
     Line2D OutputLine;
-    OutputLine.point2d[0] = InputLine.point3d[0];
-    OutputLine.point2d[1] = InputLine.point3d[1];
+    OutputLine.point2d[0] = InputLine.localposition[0];
+    OutputLine.point2d[1] = InputLine.localposition[1];
     Output2DLines.Append(OutputLine);
 
 

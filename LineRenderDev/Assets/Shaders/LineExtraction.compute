@@ -13,7 +13,8 @@ struct AdjFace
 
 struct Line3D
 {
-    float3 point3d[2];
+    float3 localposition[2];
+    float4 transformedposition[2];
 };
 
 cbuffer Constants
@@ -34,8 +35,7 @@ AppendStructuredBuffer<Line3D> Output3DLines;
 
 uniform float3 LocalSpaceViewPosition;
 uniform float CreaseAngleThreshold;
-
-
+uniform float4x4 WorldViewProjection;
 
 
 float3 ComputeNormal(float3 p1, float3 p2, float3 p3)
@@ -70,6 +70,58 @@ inline bool IsCrease(float3 Face1Normal, float3 Face2Normal, float AngleThreshol
 
 }
 
+
+#define NDCLEFT -1.0
+#define NDCRIGHT 1.0
+#define NDCTOP 1.0
+#define NDCBOTTOM -1.0
+
+inline bool IsIntersectWithXPlane(float3 LinePoint1, float LineKFactor, float XPlane, float2 LineXMinMax)
+{
+    float Y = (XPlane - LinePoint1.x) * LineKFactor + LinePoint1.y;
+    if ((Y >= NDCBOTTOM && Y <= NDCTOP) && (XPlane >= LineXMinMax.x && XPlane <= LineXMinMax.y)) return true;
+    else return false;
+}
+
+inline bool IsIntersectWithYPlane(float3 LinePoint1, float LineKFactor, float YPlane, float2 LineYMinMax)
+{
+    float X = (YPlane - LinePoint1.y) * LineKFactor + LinePoint1.x;
+    if ((X >= NDCLEFT && X <= NDCRIGHT) && (YPlane >= LineYMinMax.x && YPlane <= LineYMinMax.y)) return true;
+    else return false;
+}
+
+inline bool IsIn(float3 LinePoint1, float3 LinePoint2)
+{
+    bool Poine1IsIn = (LinePoint1.x >= NDCLEFT && LinePoint1.x <= NDCRIGHT) && (LinePoint1.y >= NDCBOTTOM && LinePoint1.y <= NDCTOP);
+    bool Poine2IsIn = (LinePoint2.x >= NDCLEFT && LinePoint2.x <= NDCRIGHT) && (LinePoint2.y >= NDCBOTTOM && LinePoint2.y <= NDCTOP);
+
+    return Poine1IsIn && Poine2IsIn;
+}
+
+bool PreClipping(Line3D Line)
+{
+    float3 NDCPos1 = Line.transformedposition[0].xyz / Line.transformedposition[0].w;
+    float3 NDCPos2 = Line.transformedposition[1].xyz / Line.transformedposition[1].w;
+
+    if (IsIn(NDCPos1, NDCPos2))
+        return false;
+    else {
+        float KFactorX = (NDCPos2.y - NDCPos1.y) / (NDCPos2.x - NDCPos1.x);
+        float KFactorY = (NDCPos2.x - NDCPos1.x) / (NDCPos2.y - NDCPos1.y);
+        float2 LineXMinMax = float2(min(NDCPos1.x, NDCPos2.x), max(NDCPos1.x, NDCPos2.x));
+        float2 LineYMinMax = float2(min(NDCPos1.y, NDCPos2.y), max(NDCPos1.y, NDCPos2.y));
+
+        bool IntersectLeft = IsIntersectWithXPlane(NDCPos1, KFactorX, NDCLEFT, LineXMinMax);
+        bool IntersectRight = IsIntersectWithXPlane(NDCPos1, KFactorX, NDCRIGHT, LineXMinMax);
+        bool IntersectTop = IsIntersectWithYPlane(NDCPos1, KFactorY, NDCTOP, LineYMinMax);
+        bool IntersectBottom = IsIntersectWithYPlane(NDCPos1, KFactorY, NDCBOTTOM, LineYMinMax);
+
+        if (IntersectLeft || IntersectRight || IntersectTop || IntersectBottom)
+            return false;
+        else
+            return true;
+    }
+}
 
 
 [numthreads(256, 1, 1)]
@@ -117,9 +169,12 @@ void CSMain (uint3 id : SV_DispatchThreadID)
         if (AddXY && !(CurrentIsBackFace && XYIsBackFace))
         {
             Line3D Line;
-            Line.point3d[0] = Vertices[CurrentFace.x];
-            Line.point3d[1] = Vertices[CurrentFace.y];
-            Output3DLines.Append(Line);
+            Line.localposition[0] = Vertices[CurrentFace.x];
+            Line.localposition[1] = Vertices[CurrentFace.y];
+            Line.transformedposition[0] = mul(WorldViewProjection, float4(Vertices[CurrentFace.x], 1.0));
+            Line.transformedposition[1] = mul(WorldViewProjection, float4(Vertices[CurrentFace.y], 1.0));
+            if (!PreClipping(Line))
+                Output3DLines.Append(Line);
         }
     }
     if (CurrentFace.zx >= 1)
@@ -136,9 +191,12 @@ void CSMain (uint3 id : SV_DispatchThreadID)
         if (AddZX && !(CurrentIsBackFace && ZXIsBackFace))
         {
             Line3D Line;
-            Line.point3d[0] = Vertices[CurrentFace.z];
-            Line.point3d[1] = Vertices[CurrentFace.x];
-            Output3DLines.Append(Line);
+            Line.localposition[0] = Vertices[CurrentFace.z];
+            Line.localposition[1] = Vertices[CurrentFace.x];
+            Line.transformedposition[0] = mul(WorldViewProjection, float4(Vertices[CurrentFace.z], 1.0));
+            Line.transformedposition[1] = mul(WorldViewProjection, float4(Vertices[CurrentFace.x], 1.0));
+            if(!PreClipping(Line))
+                Output3DLines.Append(Line);
         }
     }
 
@@ -156,9 +214,12 @@ void CSMain (uint3 id : SV_DispatchThreadID)
         if (AddYZ && !(CurrentIsBackFace && YZIsBackFace))
         {
             Line3D Line;
-            Line.point3d[0] = Vertices[CurrentFace.y];
-            Line.point3d[1] = Vertices[CurrentFace.z];
-            Output3DLines.Append(Line);
+            Line.localposition[0] = Vertices[CurrentFace.y];
+            Line.localposition[1] = Vertices[CurrentFace.z];
+            Line.transformedposition[0] = mul(WorldViewProjection, float4(Vertices[CurrentFace.y], 1.0));
+            Line.transformedposition[1] = mul(WorldViewProjection, float4(Vertices[CurrentFace.z], 1.0));
+            if (!PreClipping(Line))
+                Output3DLines.Append(Line);
         }
     }
 
