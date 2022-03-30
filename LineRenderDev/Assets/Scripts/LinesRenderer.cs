@@ -22,6 +22,7 @@ using Sirenix.OdinInspector;
 /// 
 public class LinesRenderer : MonoBehaviour
 {
+    public float Test = 0.0f;
     // Start is called before the first frame update
     void Start()
     {
@@ -49,6 +50,7 @@ public class LinesRenderer : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
+
         Matrix4x4 ViewProjectionMatrix = GL.GetGPUProjectionMatrix(RenderCamera.projectionMatrix, true) * RenderCamera.worldToCameraMatrix;
         for (int i = 0; i < MeshList.Count; i++)
         {
@@ -57,23 +59,9 @@ public class LinesRenderer : MonoBehaviour
                 ExtractPassParams.LocalCameraPosition = MeshList[i].RumtimeTransform.InverseTransformPoint(Camera.main.transform.position);
                 ExtractPassParams.CreaseAngleThreshold = (180.0f - MeshList[i].LineMaterialSetting.CreaseAngleDegreeThreshold) * (0.017453292519943294f);
                 ExtractPassParams.WorldViewProjectionMatrix = ViewProjectionMatrix * MeshList[i].RumtimeTransform.localToWorldMatrix;
+                ExtractPassParams.WorldViewMatrix = RenderCamera.worldToCameraMatrix * MeshList[i].RumtimeTransform.localToWorldMatrix;
                 MeshList[i].Renderer.ExtractPass.Render(ExtractPassParams);
 
-
-#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
-                //Reverse Z in DirectX 11, DirectX 12
-                VisibilityPassParams.ZbufferParam[0] = (float)(-1.0f + RenderCamera.farClipPlane / RenderCamera.nearClipPlane);
-                VisibilityPassParams.ZbufferParam[1] = 1.0f;
-                VisibilityPassParams.ZbufferParam[2] = (float)(VisibilityPassParams.ZbufferParam[0] / RenderCamera.farClipPlane);
-                VisibilityPassParams.ZbufferParam[3] = (float)(1.0f / RenderCamera.farClipPlane);
-#else
-                VisibilityPassParams.ZbufferParam[0] = (float)(1.0f - RenderCamera.farClipPlane / RenderCamera.nearClipPlane);
-                VisibilityPassParams.ZbufferParam[1] = (float)(RenderCamera.farClipPlane / RenderCamera.nearClipPlane);
-                VisibilityPassParams.ZbufferParam[2] = (float)(ZbufferParam[0] / RenderCamera.farClipPlane);
-                VisibilityPassParams.ZbufferParam[3] = (float)(ZbufferParam[1] / RenderCamera.farClipPlane);
-#endif
-                VisibilityPassParams.RenderResolutionX = RenderCamera.pixelWidth;
-                VisibilityPassParams.RenderResolutionY = RenderCamera.pixelHeight;
                 MeshList[i].Renderer.VisibilityPass.Render(VisibilityPassParams);
 
                 MaterialPassParams.ObjectWorldMatrix = MeshList[i].RumtimeTransform.localToWorldMatrix;
@@ -117,7 +105,7 @@ public class LinesRenderer : MonoBehaviour
     private RenderMaterialPass.RenderParams MaterialPassParams;
     private RenderVisibilityPass.RenderParams VisibilityPassParams;
     /// ///////////////////////////////////////////////////////
-    
+
 
     private void GetMeshInformation()
     {
@@ -246,6 +234,7 @@ public class LinesRenderer : MonoBehaviour
 
         VisibilityPassParams.ZbufferParam = new float[4];
 
+        RenderCamera.depthTextureMode = DepthTextureMode.Depth;
 
         for (int i = 0; i < MeshList.Count; i++)
         {

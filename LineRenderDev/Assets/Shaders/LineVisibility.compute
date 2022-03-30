@@ -1,40 +1,94 @@
 ﻿// Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel CSMain
 
-struct Line3D
+#if defined(SHADER_API_D3D11) || defined(SHADER_API_PSSL) || defined(SHADER_API_METAL) || defined(SHADER_API_VULKAN) || defined(SHADER_API_SWITCH)
+#define FLIPPED_PROJECTION 1
+#endif
+#if defined(SHADER_API_D3D11) || defined(SHADER_API_PSSL) || defined(SHADER_API_METAL) || defined(SHADER_API_VULKAN) || defined(SHADER_API_SWITCH)
+#define REVERSED_Z 1
+#endif
+#if defined(SHADER_API_D3D11) || defined(SHADER_API_PSSL) || defined(SHADER_API_METAL) || defined(SHADER_API_VULKAN) || defined(SHADER_API_SWITCH)
+#define NEGATIVE_CLIP_Z_VALUE 0
+#elif defined(SHADER_API_D3D9)  || defined(SHADER_API_WIIU) || defined(SHADER_API_D3D11_9X)
+#define NEGATIVE_CLIP_Z_VALUE 0
+#else
+#define NEGATIVE_CLIP_Z_VALUE 1
+#endif
+
+
+struct LineTransformed
 {
-    float3 localposition[2];
-    float4 transformedposition[2];
+    float3 LocalPosition[2];
+    float4 NDCPosition[2];
 };
 
-struct Line2D
+struct LineSegment
 {
     float3 point2d[2];
 };
-
 
 cbuffer Constants
 {
     uint HideOccludedEdge;
 };
 
-StructuredBuffer<Line3D> Input3DLines;
-AppendStructuredBuffer<Line2D> Output2DLines;
+StructuredBuffer<LineTransformed> Input3DLines;
+AppendStructuredBuffer<LineSegment> Output2DLines;
 
-uniform float4 ZbufferParam;
-uniform float RenderResolutionX;
-uniform float RenderResolutionY;
+Texture2D<float> SceneDepthTexture;
+SamplerState LinearClampSampler;
+
+
+/*
+* In NDC space, XY range in [-1.0, 1.0]. (If is opengl, Y should be filpped upside-down)
+* In Direct3D, Z range in [0.0, 1.0]. (If is reversed-z, it will be [1.0, 0.0] in unity)
+* In OpenGL, Z range in [-1.0, 1.0].
+* w might be 0(degenerate case)
+*/
+inline float3 ComputeScreenPosition(float4 NDCPosition)
+{
+    float3 ScreenPosition = float3(NDCPosition.x * 0.5f + 0.5f, NDCPosition.y * 0.5f + 0.5f, NDCPosition.z);
+#if FLIPPED_PROJECTION
+    ScreenPosition.y = 1.0 - ScreenPosition.y;
+#endif
+#if NEGATIVE_CLIP_Z_VALUE
+    ScreenPosition.z = ScreenPosition.z * 0.5 + 0.5;
+#endif
+    return ScreenPosition;
+}
+
+inline bool ZTest(float PositionDepth, float SceneDepth)
+{
+#if REVERSED_Z
+    return (PositionDepth >= SceneDepth) ? true : false;
+#else
+    return (PositionDepth <= SceneDepth) ? true : false;
+#endif
+}
 
 
 [numthreads(1, 1, 1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
-    // TODO: insert actual code here!
-    Line3D InputLine = Input3DLines[id.x];
-    Line2D OutputLine;
-    OutputLine.point2d[0] = InputLine.localposition[0];
-    OutputLine.point2d[1] = InputLine.localposition[1];
-    Output2DLines.Append(OutputLine);
+    /*
+    * 1.xy转换到屏幕坐标
+    * 2.z看是否需要转到0,1 (DX\GL差异)， 不行的话就用view空间深度(读深度图然后LinearEyeDepth)
+    * 3.采样深度图，得到深度进行2个点的比较
+    */
+    LineTransformed InputLine = Input3DLines[id.x];
 
+    float3 ScreenPosition1 = ComputeScreenPosition(InputLine.NDCPosition[0]);
+    float3 ScreenPosition2 = ComputeScreenPosition(InputLine.NDCPosition[1]);
+
+    float Position1SceneDepth = (SceneDepthTexture.SampleLevel(LinearClampSampler, ScreenPosition1.xy, 0).r);
+    float Position2SceneDepth = (SceneDepthTexture.SampleLevel(LinearClampSampler, ScreenPosition2.xy, 0).r);
+
+    if(ZTest(ScreenPosition1.z, Position1SceneDepth) && ZTest(ScreenPosition2.z, Position2SceneDepth))
+    { 
+        LineSegment OutputLine;
+        OutputLine.point2d[0] = InputLine.LocalPosition[0];
+        OutputLine.point2d[1] = InputLine.LocalPosition[1];
+        Output2DLines.Append(OutputLine);
+    }
 
 }

@@ -51,6 +51,11 @@ public class RenderDepth : MonoBehaviour
             ResultDepthTexture.Create();
         }
 
+        /*
+         *  Texture DepthTexture = Shader.GetGlobalTexture("_CameraDepthTexture");
+        if (DepthTexture != null)
+            Debug.Log("NOT NULL!!!!!!!!!");
+        */
         RenderDepthShader.SetTexture(RenderDepthShaderKernelId, "ResultDepthTexture", ResultDepthTexture);
         RenderDepthShader.SetTextureFromGlobal(RenderDepthShaderKernelId, "DepthTexture", "_CameraDepthTexture");
         RenderDepthShader.SetFloats("Resolution", RenderResolution);

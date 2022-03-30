@@ -13,12 +13,12 @@ public struct AdjFace
     public uint zx;
 }
 
-public struct Line3D
+public struct LineTransformed
 {
-    public Vector3 localposition1;
-    public Vector3 localposition2;
-    public Vector4 transformedposition1;
-    public Vector4 transformedposition2;
+    public Vector3 LocalPosition1;
+    public Vector3 LocalPosition2;
+    public Vector4 NDCPositon1;
+    public Vector4 NDCPositon2;
 
     public static int Size()
     {
@@ -26,7 +26,7 @@ public struct Line3D
     }
 }
 
-public struct Line2D
+public struct LineSegment
 {
     public Vector3 point2d1;
     public Vector3 point2d2;
@@ -107,7 +107,7 @@ public class RenderLayer
     {
         if (ExtractPassOutputBuffer != null)
             ExtractPassOutputBuffer.Release();
-        ExtractPassOutputBuffer = new ComputeBuffer(AdjacencyTrianglesNum * 3, Line3D.Size(), ComputeBufferType.Append);
+        ExtractPassOutputBuffer = new ComputeBuffer(AdjacencyTrianglesNum * 3, LineTransformed.Size(), ComputeBufferType.Append);
 
         if (ExtractPassOutputArgBuffer == null)
         {
@@ -120,7 +120,7 @@ public class RenderLayer
 
         if (VisiblePassOutputBuffer != null)
             VisiblePassOutputBuffer.Release();
-        VisiblePassOutputBuffer = new ComputeBuffer(AdjacencyTrianglesNum * 3, Line2D.Size(), ComputeBufferType.Append);
+        VisiblePassOutputBuffer = new ComputeBuffer(AdjacencyTrianglesNum * 3, LineSegment.Size(), ComputeBufferType.Append);
 
         if (VisiblePassOutputArgBuffer == null)
         {
@@ -167,7 +167,7 @@ public class RenderExtractPass
         public Vector3 LocalCameraPosition;
         public float CreaseAngleThreshold;
         public Matrix4x4 WorldViewProjectionMatrix;
-
+        public Matrix4x4 WorldViewMatrix;
     }
 
     public ComputeShader ExtractLineShader;
@@ -269,14 +269,15 @@ public class RenderExtractPass
 
         ExtractLineShader.SetVector("LocalSpaceViewPosition", Params.LocalCameraPosition);
         ExtractLineShader.SetFloat("CreaseAngleThreshold", Params.CreaseAngleThreshold);
-        ExtractLineShader.SetMatrix("WorldViewProjection", Params.WorldViewProjectionMatrix);
+        ExtractLineShader.SetMatrix("WorldViewProjection", Params.WorldViewProjectionMatrix); 
+        ExtractLineShader.SetMatrix("WorldView", Params.WorldViewMatrix);
 
         ExtractLineBuffer.SetCounterValue(0);
         ExtractLineShader.Dispatch(ExtractLineShaderKernelId, ExtractLinePassGroupSize, 1, 1);
         //Debug.Log("Group Size : " + ExtractLinePassGroupSize);
         ComputeBuffer.CopyCount(ExtractLineBuffer, ExtractLineArgBuffer, ExtractLineArgBufferOffset);
         
-        //移动摄像机时instance count不明原因增加
+        /*
         Debug.Log("========================================");
         int[] Args = new int[3] { 0,0,0 };
         ExtractLineArgBuffer.GetData(Args);
@@ -284,7 +285,7 @@ public class RenderExtractPass
         //Debug.Log("y Count 1 " + Args[1]);
         //Debug.Log("z Count 1 " + Args[2]);
         Debug.Log("========================================");
-        
+        */
 
     }
 }
@@ -305,8 +306,6 @@ public class RenderVisibilityPass
     public struct RenderParams
     {
         public float[] ZbufferParam;
-        public float RenderResolutionX;
-        public float RenderResolutionY;
     }
 
     private ComputeShader VisibleLineShader;
@@ -367,14 +366,26 @@ public class RenderVisibilityPass
 
     public void Render(RenderVisibilityPass.RenderParams Params)
     {
+        /*
+         * ***********************************************************************************
+         * 前几帧出现空的问题可能跟渲染顺序有关，compute shader在前，depth update在后
+         * 在完成可见性测试后再重新考虑是否移动到camera on render image进行或者看如何插入到depth update之后
+         * **********************************************************************************
+         */
+        Texture DepthTexture = Shader.GetGlobalTexture("_CameraDepthTexture");
+        if (DepthTexture != null)
+        {
+            VisibleLineShader.SetTexture(VisibleLineShaderKernelId, "SceneDepthTexture", DepthTexture);
+        }
+        else
+            Debug.Log("NULL!!!!!!!!!");
+        //VisibleLineShader.SetTextureFromGlobal(VisibleLineShaderKernelId, "SceneDepthTexture", "_CameraDepthTexture");
+
         VisibleLineShader.SetConstantBuffer(Shader.PropertyToID("Constants"), ConstantBuffer, 0, RenderConstants.Size());
         VisibleLineShader.SetBuffer(VisibleLineShaderKernelId, "Input3DLines", InputLineBuffer);
         VisibleLineShader.SetBuffer(VisibleLineShaderKernelId, "Output2DLines", VisibleLineBuffer);
 
         VisibleLineShader.SetFloats("ZbufferParam", Params.ZbufferParam);
-        VisibleLineShader.SetFloat("RenderResolutionX", Params.RenderResolutionX);
-        VisibleLineShader.SetFloat("RenderResolutionY", Params.RenderResolutionY);
-
 
         VisibleLineBuffer.SetCounterValue(0);
         VisibleLineShader.DispatchIndirect(VisibleLineShaderKernelId, InputLineArgBuffer, (uint)InputLineArgBufferOffset);

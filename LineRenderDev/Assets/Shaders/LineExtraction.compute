@@ -11,10 +11,10 @@ struct AdjFace
     uint zx;
 };
 
-struct Line3D
+struct LineTransformed
 {
-    float3 localposition[2];
-    float4 transformedposition[2];
+    float3 LocalPosition[2];
+    float4 NDCPosition[2];
 };
 
 cbuffer Constants
@@ -31,7 +31,7 @@ cbuffer Constants
 StructuredBuffer<float3> Vertices;
 StructuredBuffer<AdjFace> AdjacencyTriangles;
 
-AppendStructuredBuffer<Line3D> Output3DLines;
+AppendStructuredBuffer<LineTransformed> Output3DLines;
 
 uniform float3 LocalSpaceViewPosition;
 uniform float CreaseAngleThreshold;
@@ -98,10 +98,10 @@ inline bool IsIn(float3 LinePoint1, float3 LinePoint2)
     return Poine1IsIn && Poine2IsIn;
 }
 
-bool PreClipping(Line3D Line)
+bool PreClipping(LineTransformed Line)
 {
-    float3 NDCPos1 = Line.transformedposition[0].xyz / Line.transformedposition[0].w;
-    float3 NDCPos2 = Line.transformedposition[1].xyz / Line.transformedposition[1].w;
+    float3 NDCPos1 = Line.NDCPosition[0].xyz;
+    float3 NDCPos2 = Line.NDCPosition[1].xyz;
 
     if (IsIn(NDCPos1, NDCPos2))
         return false;
@@ -122,6 +122,19 @@ bool PreClipping(Line3D Line)
             return true;
     }
 }
+
+inline float4 GetNDCPosition(float3 LocalPosition)
+{
+    float4 Transformed = mul(WorldViewProjection, float4(LocalPosition, 1.0));
+    //In NDC space, XY range in [-1.0, 1.0]
+    //In Direct3D, Z range in [0.0, 1.0]. (If is reversed-z, it will be [1.0, 0.0] in unity)
+    //In OpenGL, Z range in [-1.0, 1.0].
+    //w might be 0(degenerate case)
+    Transformed.xyz = Transformed.xyz / Transformed.w;
+
+    return Transformed;
+}
+
 
 
 [numthreads(256, 1, 1)]
@@ -168,11 +181,11 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 
         if (AddXY && !(CurrentIsBackFace && XYIsBackFace))
         {
-            Line3D Line;
-            Line.localposition[0] = Vertices[CurrentFace.x];
-            Line.localposition[1] = Vertices[CurrentFace.y];
-            Line.transformedposition[0] = mul(WorldViewProjection, float4(Vertices[CurrentFace.x], 1.0));
-            Line.transformedposition[1] = mul(WorldViewProjection, float4(Vertices[CurrentFace.y], 1.0));
+            LineTransformed Line;
+            Line.LocalPosition[0] = Vertices[CurrentFace.x];
+            Line.LocalPosition[1] = Vertices[CurrentFace.y];
+            Line.NDCPosition[0] = GetNDCPosition(Vertices[CurrentFace.x]);
+            Line.NDCPosition[1] = GetNDCPosition(Vertices[CurrentFace.y]);
             if (!PreClipping(Line))
                 Output3DLines.Append(Line);
         }
@@ -190,13 +203,13 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 
         if (AddZX && !(CurrentIsBackFace && ZXIsBackFace))
         {
-            Line3D Line;
-            Line.localposition[0] = Vertices[CurrentFace.z];
-            Line.localposition[1] = Vertices[CurrentFace.x];
-            Line.transformedposition[0] = mul(WorldViewProjection, float4(Vertices[CurrentFace.z], 1.0));
-            Line.transformedposition[1] = mul(WorldViewProjection, float4(Vertices[CurrentFace.x], 1.0));
+            LineTransformed Line;
+            Line.LocalPosition[0] = Vertices[CurrentFace.z];
+            Line.LocalPosition[1] = Vertices[CurrentFace.x];
+            Line.NDCPosition[0] = GetNDCPosition(Vertices[CurrentFace.z]);
+            Line.NDCPosition[1] = GetNDCPosition(Vertices[CurrentFace.x]);
             if(!PreClipping(Line))
-                Output3DLines.Append(Line);
+                Output3DLines.Append(Line); 
         }
     }
 
@@ -213,11 +226,11 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 
         if (AddYZ && !(CurrentIsBackFace && YZIsBackFace))
         {
-            Line3D Line;
-            Line.localposition[0] = Vertices[CurrentFace.y];
-            Line.localposition[1] = Vertices[CurrentFace.z];
-            Line.transformedposition[0] = mul(WorldViewProjection, float4(Vertices[CurrentFace.y], 1.0));
-            Line.transformedposition[1] = mul(WorldViewProjection, float4(Vertices[CurrentFace.z], 1.0));
+            LineTransformed Line;
+            Line.LocalPosition[0] = Vertices[CurrentFace.y];
+            Line.LocalPosition[1] = Vertices[CurrentFace.z];
+            Line.NDCPosition[0] = GetNDCPosition(Vertices[CurrentFace.y]);
+            Line.NDCPosition[1] = GetNDCPosition(Vertices[CurrentFace.z]);
             if (!PreClipping(Line))
                 Output3DLines.Append(Line);
         }
