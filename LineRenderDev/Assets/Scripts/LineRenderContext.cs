@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 
 public struct AdjFace
@@ -69,14 +70,22 @@ public class RenderLayer
     public RenderVisibilityPass VisibilityPass;
     public RenderMaterialPass MaterialPass;
 
+    public CommandBuffer RenderCommands;
+    private Camera MainCamera;
+    
     private ComputeBuffer ExtractPassOutputBuffer;
     private ComputeBuffer ExtractPassOutputArgBuffer;
 
     private ComputeBuffer VisiblePassOutputBuffer;
     private ComputeBuffer VisiblePassOutputArgBuffer;
 
-    public void Init(ComputeShader ExtractPassShader, ComputeShader VisiblePassShader)
+    public void Init(Camera RenderCamera, ComputeShader ExtractPassShader, ComputeShader VisiblePassShader)
     {
+        MainCamera = RenderCamera;
+        RenderCommands = new CommandBuffer();
+        RenderCommands.name = "Draw Lines";
+        MainCamera.AddCommandBuffer(CameraEvent.AfterForwardAlpha, RenderCommands);
+
         ExtractPass = new RenderExtractPass();
         VisibilityPass = new RenderVisibilityPass();
         MaterialPass = new RenderMaterialPass();
@@ -101,6 +110,10 @@ public class RenderLayer
             VisiblePassOutputBuffer.Release();
         if (VisiblePassOutputArgBuffer != null)
             VisiblePassOutputArgBuffer.Release();
+
+        //temp
+        MainCamera.RemoveCommandBuffer(CameraEvent.AfterForwardAlpha, RenderCommands);
+        RenderCommands.Release();
     }
 
     public void InitInputOutputBuffer(int AdjacencyTrianglesNum)
@@ -260,8 +273,22 @@ public class RenderExtractPass
         ExtractLineArgBufferOffset = ArgBufferOffset;
     }
 
-    public void Render(RenderExtractPass.RenderParams Params)
+    public void Render(RenderExtractPass.RenderParams Params, CommandBuffer RenderCommands)
     {
+        RenderCommands.SetComputeConstantBufferParam(ExtractLineShader, Shader.PropertyToID("Constants"), ConstantBuffer, 0, RenderConstants.Size());
+        RenderCommands.SetComputeBufferParam(ExtractLineShader, ExtractLineShaderKernelId, "AdjacencyTriangles", AdjacencyIndicesBuffer);
+        RenderCommands.SetComputeBufferParam(ExtractLineShader, ExtractLineShaderKernelId, "Vertices", VerticesBuffer);
+        RenderCommands.SetComputeBufferParam(ExtractLineShader, ExtractLineShaderKernelId, "Output3DLines", ExtractLineBuffer);
+
+        RenderCommands.SetComputeVectorParam(ExtractLineShader, "LocalSpaceViewPosition", Params.LocalCameraPosition);
+        RenderCommands.SetComputeFloatParam(ExtractLineShader, "CreaseAngleThreshold", Params.CreaseAngleThreshold);
+        RenderCommands.SetComputeMatrixParam(ExtractLineShader, "WorldViewProjection", Params.WorldViewProjectionMatrix);
+        RenderCommands.SetComputeMatrixParam(ExtractLineShader, "WorldView", Params.WorldViewMatrix);
+
+        RenderCommands.SetComputeBufferCounterValue(ExtractLineBuffer, 0); //SetBufferCounterValue ver 2021.3
+        RenderCommands.DispatchCompute(ExtractLineShader, ExtractLineShaderKernelId, ExtractLinePassGroupSize, 1, 1);
+        RenderCommands.CopyCounterValue(ExtractLineBuffer, ExtractLineArgBuffer, (uint)ExtractLineArgBufferOffset);
+        /*
         ExtractLineShader.SetConstantBuffer(Shader.PropertyToID("Constants"), ConstantBuffer, 0, RenderConstants.Size());
         ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "AdjacencyTriangles", AdjacencyIndicesBuffer);
         ExtractLineShader.SetBuffer(ExtractLineShaderKernelId, "Vertices", VerticesBuffer);
@@ -271,12 +298,14 @@ public class RenderExtractPass
         ExtractLineShader.SetFloat("CreaseAngleThreshold", Params.CreaseAngleThreshold);
         ExtractLineShader.SetMatrix("WorldViewProjection", Params.WorldViewProjectionMatrix); 
         ExtractLineShader.SetMatrix("WorldView", Params.WorldViewMatrix);
+        
 
         ExtractLineBuffer.SetCounterValue(0);
         ExtractLineShader.Dispatch(ExtractLineShaderKernelId, ExtractLinePassGroupSize, 1, 1);
         //Debug.Log("Group Size : " + ExtractLinePassGroupSize);
         ComputeBuffer.CopyCount(ExtractLineBuffer, ExtractLineArgBuffer, ExtractLineArgBufferOffset);
-        
+        */
+
         /*
         Debug.Log("========================================");
         int[] Args = new int[3] { 0,0,0 };
@@ -305,7 +334,7 @@ public class RenderVisibilityPass
 
     public struct RenderParams
     {
-        public float[] ZbufferParam;
+        //public float[] ZbufferParam;
     }
 
     private ComputeShader VisibleLineShader;
@@ -364,14 +393,20 @@ public class RenderVisibilityPass
         ConstantBuffer.SetData(Constants);
     }
 
-    public void Render(RenderVisibilityPass.RenderParams Params)
+    public void Render(RenderVisibilityPass.RenderParams Params, CommandBuffer RenderCommands)
     {
+        RenderTargetIdentifier DepthRTIdentifier = new RenderTargetIdentifier(BuiltinRenderTextureType.Depth);
+        RenderCommands.SetComputeTextureParam(VisibleLineShader, VisibleLineShaderKernelId, "SceneDepthTexture", DepthRTIdentifier);
+
+        RenderCommands.SetComputeConstantBufferParam(VisibleLineShader, Shader.PropertyToID("Constants"), ConstantBuffer, 0, RenderConstants.Size());
+        RenderCommands.SetComputeBufferParam(VisibleLineShader, VisibleLineShaderKernelId, "Input3DLines", InputLineBuffer);
+        RenderCommands.SetComputeBufferParam(VisibleLineShader, VisibleLineShaderKernelId, "Output2DLines", VisibleLineBuffer);
+
+        RenderCommands.SetComputeBufferCounterValue(VisibleLineBuffer, 0); //SetBufferCounterValue ver 2021.3
+        RenderCommands.DispatchCompute(VisibleLineShader, VisibleLineShaderKernelId, InputLineArgBuffer, (uint)InputLineArgBufferOffset);
+        RenderCommands.CopyCounterValue(VisibleLineBuffer, VisibleLineArgBuffer, (uint)VisibleLineArgBufferOffset);
+
         /*
-         * ***********************************************************************************
-         * 前几帧出现空的问题可能跟渲染顺序有关，compute shader在前，depth update在后
-         * 在完成可见性测试后再重新考虑是否移动到camera on render image进行或者看如何插入到depth update之后
-         * **********************************************************************************
-         */
         Texture DepthTexture = Shader.GetGlobalTexture("_CameraDepthTexture");
         if (DepthTexture != null)
         {
@@ -385,12 +420,12 @@ public class RenderVisibilityPass
         VisibleLineShader.SetBuffer(VisibleLineShaderKernelId, "Input3DLines", InputLineBuffer);
         VisibleLineShader.SetBuffer(VisibleLineShaderKernelId, "Output2DLines", VisibleLineBuffer);
 
-        VisibleLineShader.SetFloats("ZbufferParam", Params.ZbufferParam);
+        //VisibleLineShader.SetFloats("ZbufferParam", Params.ZbufferParam);
 
         VisibleLineBuffer.SetCounterValue(0);
         VisibleLineShader.DispatchIndirect(VisibleLineShaderKernelId, InputLineArgBuffer, (uint)InputLineArgBufferOffset);
-
         ComputeBuffer.CopyCount(VisibleLineBuffer, VisibleLineArgBuffer, VisibleLineArgBufferOffset);
+        */
         /*
         int[] Args = new int[4] { 0, 0, 0, 0 };
         VisibleLineArgBuffer.GetData(Args);
@@ -439,12 +474,13 @@ public class RenderMaterialPass
         InputLineArgBufferOffset = ArgBufferOffset;
     }
 
-    public void Render(RenderMaterialPass.RenderParams Params)
+    public void Render(RenderMaterialPass.RenderParams Params, CommandBuffer RenderCommands)
     {
         LineMaterialObject.LineRenderMaterial.SetMatrix("_ObjectWorldMatrix", Params.ObjectWorldMatrix);
         LineMaterialObject.LineRenderMaterial.SetBuffer("Lines", InputLineBuffer);
         //MeshList[i].LineMaterialSetting.LineRenderMaterial.SetBuffer("Positions", MeshList[i].VerticesBuffer);
 
-        Graphics.DrawProceduralIndirect(LineMaterialObject.LineRenderMaterial, LineMaterialObject.EdgeBoundingVolume, MeshTopology.Lines, InputLineArgBuffer, InputLineArgBufferOffset);
+        RenderCommands.DrawProceduralIndirect(Matrix4x4.identity, LineMaterialObject.LineRenderMaterial, -1, MeshTopology.Lines, InputLineArgBuffer, InputLineArgBufferOffset);
+        //Graphics.DrawProceduralIndirect(LineMaterialObject.LineRenderMaterial, LineMaterialObject.EdgeBoundingVolume, MeshTopology.Lines, InputLineArgBuffer, InputLineArgBufferOffset);
     }
 }

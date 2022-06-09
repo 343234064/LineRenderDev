@@ -49,10 +49,10 @@ inline float3 ComputeScreenPosition(float4 NDCPosition)
 {
     float3 ScreenPosition = float3(NDCPosition.x * 0.5f + 0.5f, NDCPosition.y * 0.5f + 0.5f, NDCPosition.z);
 #if FLIPPED_PROJECTION
-    ScreenPosition.y = 1.0 - ScreenPosition.y;
+    ScreenPosition.y = 1.0f - ScreenPosition.y;
 #endif
 #if NEGATIVE_CLIP_Z_VALUE
-    ScreenPosition.z = ScreenPosition.z * 0.5 + 0.5;
+    ScreenPosition.z = ScreenPosition.z * 0.5f + 0.5f;
 #endif
     return ScreenPosition;
 }
@@ -70,10 +70,10 @@ inline bool ZTest(float PositionDepth, float SceneDepth)
 [numthreads(1, 1, 1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
-    /*
-    * 1.xy转换到屏幕坐标
-    * 2.z看是否需要转到0,1 (DX\GL差异)， 不行的话就用view空间深度(读深度图然后LinearEyeDepth)
-    * 3.采样深度图，得到深度进行2个点的比较
+    /* 抖动问题
+    * 
+    * 1.改动流程，compute部分需要移动到update depth texture之后 (使用commandbuffer.DispatchCompute, commandbuffer.DrawProceduralIndirect来添加到后面的流程)
+    * 2.从后处理获取到TAA的jittered参数
     */
     LineTransformed InputLine = Input3DLines[id.x];
 

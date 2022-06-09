@@ -9,7 +9,7 @@ using UnityEngine.Rendering;
 
 using Sirenix.OdinInspector;
 
-
+using UnityEngine.Rendering.PostProcessing;
 
 /// <summary>
 /// Static Mesh Ver
@@ -45,27 +45,34 @@ public class LinesRenderer : MonoBehaviour
             SceneView Scene = SceneView.lastActiveSceneView;
             if (Scene) RenderCamera = Scene.camera;
         }*/
+
     }
 
     // Update is called once per frame
     void Update()
     {
-
+        //Debug.Log("==============");
+        PostProcessLayer PPLayer = RenderCamera.GetComponent<PostProcessLayer>();
+        float speed = PPLayer.temporalAntialiasing.jitterSpread;
+        Matrix4x4 JitteredProjectionMatrix = PPLayer.temporalAntialiasing.GetJitteredProjectionMatrix(RenderCamera);
+        //Debug.Log(speed);
+        //Debug.Log("==============");
         Matrix4x4 ViewProjectionMatrix = GL.GetGPUProjectionMatrix(RenderCamera.projectionMatrix, true) * RenderCamera.worldToCameraMatrix;
         for (int i = 0; i < MeshList.Count; i++)
         {
             if (MeshList[i].LineMaterialSetting != null && MeshList[i].RumtimeTransform.gameObject.activeSelf)
             {
+                MeshList[i].Renderer.RenderCommands.Clear();
                 ExtractPassParams.LocalCameraPosition = MeshList[i].RumtimeTransform.InverseTransformPoint(Camera.main.transform.position);
                 ExtractPassParams.CreaseAngleThreshold = (180.0f - MeshList[i].LineMaterialSetting.CreaseAngleDegreeThreshold) * (0.017453292519943294f);
                 ExtractPassParams.WorldViewProjectionMatrix = ViewProjectionMatrix * MeshList[i].RumtimeTransform.localToWorldMatrix;
                 ExtractPassParams.WorldViewMatrix = RenderCamera.worldToCameraMatrix * MeshList[i].RumtimeTransform.localToWorldMatrix;
-                MeshList[i].Renderer.ExtractPass.Render(ExtractPassParams);
+                MeshList[i].Renderer.ExtractPass.Render(ExtractPassParams, MeshList[i].Renderer.RenderCommands);
 
-                MeshList[i].Renderer.VisibilityPass.Render(VisibilityPassParams);
+                MeshList[i].Renderer.VisibilityPass.Render(VisibilityPassParams, MeshList[i].Renderer.RenderCommands);
 
                 MaterialPassParams.ObjectWorldMatrix = MeshList[i].RumtimeTransform.localToWorldMatrix;
-                MeshList[i].Renderer.MaterialPass.Render(MaterialPassParams);
+                MeshList[i].Renderer.MaterialPass.Render(MaterialPassParams, MeshList[i].Renderer.RenderCommands);
             }
         }
 
@@ -232,15 +239,15 @@ public class LinesRenderer : MonoBehaviour
         VisibilityPassParams = new RenderVisibilityPass.RenderParams();
         MaterialPassParams = new RenderMaterialPass.RenderParams();
 
-        VisibilityPassParams.ZbufferParam = new float[4];
-
+        //VisibilityPassParams.ZbufferParam = new float[4];
+        // temp
         RenderCamera.depthTextureMode = DepthTextureMode.Depth;
 
         for (int i = 0; i < MeshList.Count; i++)
         {
             if (!MeshList[i].RumtimeTransform.gameObject.activeSelf) continue;
 
-            MeshList[i].Renderer.Init(ExtractLineShader, VisibleLineShader);
+            MeshList[i].Renderer.Init(RenderCamera, ExtractLineShader, VisibleLineShader);
             MeshList[i].Renderer.InitInputOutputBuffer(MeshList[i].AdjacencyTriangles.Length);
 
             MeshList[i].Renderer.ExtractPass.SetAdjacencyIndicesBuffer(MeshList[i].AdjacencyTriangles.Length, MeshList[i].AdjacencyTriangles);
