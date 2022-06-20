@@ -27,6 +27,7 @@ public class LinesRenderer : MonoBehaviour
     void Start()
     {
         RenderCamera = Camera.main;
+        Camera.onPreRender += OnPreRenderCallback;
 
         GetMeshInformation();
         LoadAdjacency();
@@ -50,6 +51,13 @@ public class LinesRenderer : MonoBehaviour
 
     // Update is called once per frame
     void Update()
+    {
+
+
+
+    }
+
+    void OnPreRenderCallback(Camera camera)
     {
         //Debug.Log("==============");
         PostProcessLayer PPLayer = RenderCamera.GetComponent<PostProcessLayer>();
@@ -75,13 +83,6 @@ public class LinesRenderer : MonoBehaviour
                 MeshList[i].Renderer.MaterialPass.Render(MaterialPassParams, MeshList[i].Renderer.RenderCommands);
             }
         }
-
-
-    }
-
-    void LateUpdate()
-    {
-
     }
 
     void OnDestroy()
@@ -93,6 +94,8 @@ public class LinesRenderer : MonoBehaviour
                 MeshList[i].Destroy();
             }
         }
+
+        Camera.onPreRender -= OnPreRenderCallback;
     }
 
 
