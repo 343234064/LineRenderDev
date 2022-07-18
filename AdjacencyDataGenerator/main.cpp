@@ -33,7 +33,7 @@ int main(int argc, char** argv)
         std::cout << FilePath.c_str() << std::endl;
     }
     //temp
-    FilePath = "F:\\OutlineDev\\LineRenderDev\\LineRenderDev\\Assets\\Models\\SphereAndTorus.triangles";//SphereAndTorus WoodPen BoxAndBox Platonic YJS_Mod
+    //FilePath = "F:\\OutlineDev\\LineRenderDev\\LineRenderDev\\Assets\\Models\\MeetMat.triangles";//SphereAndTorus WoodPen BoxAndBox Platonic YJS_Mod
     
     if (FilePath.size() == 0)
     {
@@ -226,7 +226,6 @@ int main(int argc, char** argv)
 
             Processer.DumpErrorString(3);
         }
-
         std::cout << "Shrink Adjacency Data Completed." << std::endl;
         /*****Pass 3*****/////////////////////////////////////////////////////////////////////////////////////////
 
@@ -239,11 +238,15 @@ int main(int argc, char** argv)
         ContextList[0]->DumpFaceList();
         ContextList[0]->DumpAdjacencyFaceListShrink();
         */
-
         std::cout << "Exporting Adjacency Data......" << std::endl;
+
+        Processer.ClearMessageString();
         std::filesystem::path ExportFilePath = FilePath;
         ExportFilePath.replace_extension(std::filesystem::path("adjacency"));
         Processer.ExportAdjacencyList(ExportFilePath);
+        std::cout << Processer.GetMessageString() << std::endl;
+        std::cout << LINE_STRING << std::endl;
+
         std::cout << "Exporting Adjacency Completed." << std::endl;
     }
 

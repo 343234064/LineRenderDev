@@ -113,6 +113,16 @@ public class GenerateAdjacencyEdge : ScriptableObject
         return;
     }
 
+    static void WriteStringToMemmoryBuffer(MemoryStream memStream, string value)
+    {
+        byte[] valueInBytes = Encoding.ASCII.GetBytes(value);
+
+        int bytesCount = valueInBytes.Length;
+        WriteIntToMemmoryBuffer(memStream, bytesCount);
+
+        memStream.Write(valueInBytes, 0, valueInBytes.Length);
+        return;
+    }
 
     [MenuItem("Tools/Create Vertex and Index Data")]
     static void GenerateAdjacencyData()
@@ -146,7 +156,7 @@ public class GenerateAdjacencyEdge : ScriptableObject
             int[] Triangles = CurrentMeshData.MeshObj.triangles;
             int FaceNum = Triangles.Length / 3;
             int VertNum = CurrentMeshData.MeshObj.vertexCount;
-            Debug.Log("Current mesh : " + CurrentMeshData.MeshObj.ToString());
+            Debug.Log("Current mesh : " + CurrentMeshData.MeshObj.name);
             Debug.Log("Sub mesh count : " + CurrentMeshData.MeshObj.subMeshCount);
             Debug.Log("Faces : " + FaceNum);
             Debug.Log("Indices : " + CurrentMeshData.MeshObj.triangles.Length);
@@ -158,6 +168,9 @@ public class GenerateAdjacencyEdge : ScriptableObject
             }
 
             // head of block 
+            // 4 bytes : length of name
+            // name
+            WriteStringToMemmoryBuffer(triangle_memStream, CurrentMeshData.MeshObj.name);
             // 4 bytes: num of triangle list
             WriteIntToMemmoryBuffer(triangle_memStream, CurrentMeshData.MeshObj.triangles.Length);
             // elements
@@ -185,6 +198,9 @@ public class GenerateAdjacencyEdge : ScriptableObject
         foreach (MeshData CurrentMeshData in MeshList)
         {
             // head of block 
+            // 4 bytes : length of name
+            // name
+            WriteStringToMemmoryBuffer(vertex_memStream, CurrentMeshData.MeshObj.name);
             // 4 bytes: num of vertex list
             WriteIntToMemmoryBuffer(vertex_memStream, CurrentMeshData.MeshObj.vertices.Length);
 
@@ -193,7 +209,7 @@ public class GenerateAdjacencyEdge : ScriptableObject
             foreach (Vector3 vertex in CurrentMeshData.MeshObj.vertices)
             {
                 WriteVector3ToMemmoryBuffer(vertex_memStream, vertex);
-                Debug.Log(vertex.x + "," + vertex.y + "," + vertex.z);
+                //Debug.Log(vertex.x + "," + vertex.y + "," + vertex.z);
             } 
             
             Debug.Log("Vertex Write Bytes length : " + result2.Length);

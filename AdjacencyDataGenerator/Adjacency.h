@@ -241,12 +241,14 @@ struct AdjFace
 struct VertexContext
 {
 	VertexContext() :
+		Name("None"),
 		BytesData(nullptr),
 		TotalLength(0),
 		VertexLength(0),
 		CurrentVertexPos(0),
 		CurrentVertexId(0) {}
 
+	std::string Name;
 	Byte* BytesData;
 	std::vector<Vertex3> RawVertex;
 	std::unordered_map<Vertex3, uint> VertexList;
@@ -291,6 +293,7 @@ struct VertexContext
 struct SourceContext
 {
 	SourceContext():
+		Name("None"),
 		BytesData(nullptr), 
 		TotalLength(0), 
 		IndicesLength(0),
@@ -300,6 +303,7 @@ struct SourceContext
 		VertexData(nullptr)
 	{}
 
+	std::string Name;
 	Byte* BytesData;
 	//Pass1
 	std::vector<Face> FaceList;
@@ -453,6 +457,11 @@ public:
 		OutFile << ErrorString;
 		OutFile.close();
 		ErrorString = "";
+	}
+
+	void ClearMessageString()
+	{
+		MessageString = "";
 	}
 
 	std::string& GetMessageString()

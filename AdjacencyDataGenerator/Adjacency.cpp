@@ -2,6 +2,11 @@
 #include <iostream>
 
 
+#define WRITE_MESSAGE(Message, Obj) \
+	MessageString += Message; \
+	MessageString += Obj; \
+	MessageString += "\n";
+
 #define WRITE_MESSAGE_DIGIT(Message, Digit) \
 	MessageString += Message; \
 	MessageString += std::to_string(Digit); \
@@ -29,15 +34,31 @@ inline float BytesToFloatLittleEndian(Byte* Src, int Offset)
 	return *reinterpret_cast<float*>(&value);
 }
  
-inline void WriteUnsignedIntegerToBytesLittleEndian(Byte* Src, int Offset, uint value)
+
+inline void WriteUnsignedIntegerToBytesLittleEndian(Byte* Src, int Offset, uint Value)
 {
-	Src[Offset] = value & 0x000000ff;
-	Src[Offset + 1] = (value & 0x0000ff00) >> 8;
-	Src[Offset + 2] = (value & 0x00ff0000) >> 16;
-	Src[Offset + 3] = (value & 0xff000000) >> 24;
+	Src[Offset] = Value & 0x000000ff;
+	Src[Offset + 1] = (Value & 0x0000ff00) >> 8;
+	Src[Offset + 2] = (Value & 0x00ff0000) >> 16;
+	Src[Offset + 3] = (Value & 0xff000000) >> 24;
+}
+
+inline std::string BytesToASCIIString(Byte* Src, int Offset, int Length)
+{
+	char* Buffer = new char[size_t(Length) + 1];
+	memcpy(Buffer, Src + Offset, Length);
+	Buffer[Length] = '\0';
+
+	std::string Str = Buffer;
+	delete[] Buffer;
+	return std::move(Str);
 }
 
 
+inline void WriteASCIIStringToBytes(Byte* Dst, int Offset, std::string& Value)
+{
+	memcpy(Dst + Offset, Value.c_str(), Value.length());
+}
 
 
 bool AdjacencyProcesser::GetReady0(std::filesystem::path& VertexFilePath)
@@ -94,21 +115,28 @@ bool AdjacencyProcesser::GetReady0(std::filesystem::path& VertexFilePath)
 
 	for (uint i = 0; i < MeshNum; i++)
 	{
-		uint vertexLength = BytesToUnsignedIntegerLittleEndian(VertexBytesData, Pos);
-
-		Pos += VER_ELEMENT_LENGTH;
-		Byte* Bytes = VertexBytesData + Pos;
-		Pos += VER_ELEMENT_LENGTH * 3 * vertexLength;
-
 		VertexContext* Context = new VertexContext();
+
+		uint NameLength = BytesToUnsignedIntegerLittleEndian(VertexBytesData, Pos);
+		Pos += 4;
+		Context->Name = BytesToASCIIString(VertexBytesData, Pos, NameLength);
+		Pos += NameLength;
+
+		uint VertexLength = BytesToUnsignedIntegerLittleEndian(VertexBytesData, Pos);
+		Pos += 4;
+
+		Byte* Bytes = VertexBytesData + Pos;
+		Pos += VER_ELEMENT_LENGTH * 3 * VertexLength;
+
 		Context->BytesData = Bytes;
-		Context->TotalLength = VER_ELEMENT_LENGTH * 3 * vertexLength;
-		Context->VertexLength = vertexLength;
+		Context->TotalLength = VER_ELEMENT_LENGTH * 3 * VertexLength;
+		Context->VertexLength = VertexLength;
 		Context->CurrentVertexPos = 0;
 		Context->CurrentVertexId = 0;
-		Context->RawVertex.reserve(vertexLength);
+		Context->RawVertex.reserve(VertexLength);
 
 		WRITE_MESSAGE_DIGIT("Mesh: ", i);
+		WRITE_MESSAGE("Name: ", Context->Name);
 		WRITE_MESSAGE_DIGIT("Vertex: ", Context->VertexLength);
 		WRITE_MESSAGE_DIGIT("TotalLength: ", Context->TotalLength);
 
@@ -230,13 +258,19 @@ bool AdjacencyProcesser::GetReady1(std::filesystem::path& FilePath, bool NeedMer
 
 	for (uint i = 0; i < MeshNum; i++)
 	{
-		int IndicesLength = BytesToUnsignedIntegerLittleEndian(TriangleBytesData, Pos);
+		SourceContext* Context = new SourceContext();
 
-		Pos += ELEMENT_LENGTH;
+		uint NameLength = BytesToUnsignedIntegerLittleEndian(TriangleBytesData, Pos);
+		Pos += 4;
+		Context->Name = BytesToASCIIString(TriangleBytesData, Pos, NameLength);
+		Pos += NameLength;
+
+		int IndicesLength = BytesToUnsignedIntegerLittleEndian(TriangleBytesData, Pos);
+		Pos += 4;
+
 		Byte* Bytes = TriangleBytesData + Pos;
 		Pos += ELEMENT_LENGTH * IndicesLength;
 
-		SourceContext* Context = new SourceContext();
 		Context->BytesData = Bytes;
 		Context->TotalLength = ELEMENT_LENGTH * IndicesLength;
 		Context->IndicesLength = IndicesLength;
@@ -790,6 +824,8 @@ void AdjacencyProcesser::ExportAdjacencyList(std::filesystem::path& FilePath)
 	int TotalBytesLength = 8;
 	for (int i = 0; i < MeshNum; i++)
 	{
+		TotalBytesLength += (4 + TriangleContextList[i]->Name.length());
+
 		TotalBytesLength += 4;
 		TotalBytesLength += TriangleContextList[i]->AdjacencyFaceList.size() * 6 * ELEMENT_LENGTH;
 	}
@@ -803,7 +839,17 @@ void AdjacencyProcesser::ExportAdjacencyList(std::filesystem::path& FilePath)
 	int Offset = 8;
 	for (int i = 0; i < MeshNum; i++)
 	{
+		int NameLength = TriangleContextList[i]->Name.length();
+		WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, NameLength);
+		Offset += 4;
+
+		WriteASCIIStringToBytes(Buffer, Offset, TriangleContextList[i]->Name);
+		Offset += NameLength;
+
 		WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, TriangleContextList[i]->AdjacencyFaceListShrink.size());
+
+		WRITE_MESSAGE_DIGIT("Adj Face Num : ", TriangleContextList[i]->AdjacencyFaceListShrink.size());
+
 		Offset += 4;
 		for (int j = 0; j < TriangleContextList[i]->AdjacencyFaceListShrink.size(); j++)
 		{
