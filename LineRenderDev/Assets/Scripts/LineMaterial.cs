@@ -3,10 +3,19 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+
+//[ExecuteInEditMode]
 public class LineMaterial : MonoBehaviour
 {
+    [FilePath]
+    [BoxGroup("Source")]
+    public string AdjacencyData = "None";
+
+    [BoxGroup("Source")]
+    [Tooltip("Which adjacency data will be used (If has multiple data for different sub mesh in the source)， -1 means auto.")]
+    public int SubMeshIndex = -1;
     /// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    
+
     [TitleGroup("Base Setting")]
     [InfoBox("Each line render material such be unique for a single mesh object.\nDO NOT apply a same material to multi mesh object.")]
 
@@ -61,4 +70,11 @@ public class LineMaterial : MonoBehaviour
 
     public bool MarkedEdgeEnable = true;
 
+
+    /// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    void Awake()
+    {
+        
+    }
 }

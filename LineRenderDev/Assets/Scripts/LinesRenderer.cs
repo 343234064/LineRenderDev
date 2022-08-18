@@ -1,280 +1,185 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.IO;
-using System.Text;
-using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
 
 using Sirenix.OdinInspector;
 
-using UnityEngine.Rendering.PostProcessing;
-
-/// <summary>
-/// Static Mesh Ver
-/// 
-/// </summary>
-/// 
-
-/// 
-/// vertex也采用append方式，不必全部传进去
-/// 
+//[ExecuteAlways]
+[RequireComponent(typeof(Camera))]
 public class LinesRenderer : MonoBehaviour
 {
-    public float Test = 0.0f;
-    // Start is called before the first frame update
-    void Start()
+    [Serializable]
+    public struct MeshInfoForDisplay
     {
-        RenderCamera = Camera.main;
-        Camera.onPreRender += OnPreRenderCallback;
-
-        GetMeshInformation();
-        LoadAdjacency();
-
-        Setup();
-
-
+        public string Name;
+        //[FoldoutGroup("$Name", false)]
+        public int SubMeshIndex;
+        //[FoldoutGroup("$Name", false)]
+        public int AdjFaceCount;
+        public bool Available;
     }
 
-    void OnApplicationFocus(bool Focus)
+    private class MeshInfo
     {
-        RenderCamera = Camera.main;
-        /*
-        if (!Focus)
-        {
-            SceneView Scene = SceneView.lastActiveSceneView;
-            if (Scene) RenderCamera = Scene.camera;
-        }*/
-
+        public string Name;
+        public int SubMeshIndex;
+        public bool Available;
+        public LineContext Context;
     }
-
-    // Update is called once per frame
-    void Update()
-    {
-
-
-
-    }
-
-    void OnPreRenderCallback(Camera camera)
-    {
-        //Debug.Log("==============");
-        PostProcessLayer PPLayer = RenderCamera.GetComponent<PostProcessLayer>();
-        float speed = PPLayer.temporalAntialiasing.jitterSpread;
-        Matrix4x4 JitteredProjectionMatrix = PPLayer.temporalAntialiasing.GetJitteredProjectionMatrix(RenderCamera);
-        //Debug.Log(speed);
-        //Debug.Log("==============");
-        Matrix4x4 ViewProjectionMatrix = GL.GetGPUProjectionMatrix(RenderCamera.projectionMatrix, true) * RenderCamera.worldToCameraMatrix;
-        for (int i = 0; i < MeshList.Count; i++)
-        {
-            if (MeshList[i].LineMaterialSetting != null && MeshList[i].RumtimeTransform.gameObject.activeSelf)
-            {
-                MeshList[i].Renderer.RenderCommands.Clear();
-                ExtractPassParams.LocalCameraPosition = MeshList[i].RumtimeTransform.InverseTransformPoint(Camera.main.transform.position);
-                ExtractPassParams.CreaseAngleThreshold = (180.0f - MeshList[i].LineMaterialSetting.CreaseAngleDegreeThreshold) * (0.017453292519943294f);
-                ExtractPassParams.WorldViewProjectionMatrix = ViewProjectionMatrix * MeshList[i].RumtimeTransform.localToWorldMatrix;
-                ExtractPassParams.WorldViewMatrix = RenderCamera.worldToCameraMatrix * MeshList[i].RumtimeTransform.localToWorldMatrix;
-                MeshList[i].Renderer.ExtractPass.Render(ExtractPassParams, MeshList[i].Renderer.RenderCommands);
-
-                MeshList[i].Renderer.VisibilityPass.Render(VisibilityPassParams, MeshList[i].Renderer.RenderCommands);
-
-                MaterialPassParams.ObjectWorldMatrix = MeshList[i].RumtimeTransform.localToWorldMatrix;
-                MeshList[i].Renderer.MaterialPass.Render(MaterialPassParams, MeshList[i].Renderer.RenderCommands);
-            }
-        }
-    }
-
-    void OnDestroy()
-    {
-        if (MeshList != null)
-        {
-            for (int i = 0; i < MeshList.Count; i++)
-            {
-                MeshList[i].Destroy();
-            }
-        }
-
-        Camera.onPreRender -= OnPreRenderCallback;
-    }
-
 
     /// ///////////////////////////////////////////////////////
-    [AssetSelector(Paths = "Assets/Shaders")]
+    [TitleGroup("Global Shaders")]
+
+    [AssetSelector(Filter = "Assets/")]
     [Required("Extract Line Shader Is Required")]
     public ComputeShader ExtractLineShader;
 
-    [AssetSelector(Paths = "Assets/Shaders")]
+    [AssetSelector(Paths = "Assets/")]
     [Required("Visible Line Shader Is Required")]
     public ComputeShader VisibleLineShader;
+
     /// ///////////////////////////////////////////////////////
+    [TitleGroup("Meshes")]
+    public List<MeshInfoForDisplay> MeshInfoListForOnlyDisplay;
+
+    /// ////////////////////////////////////////////////////////
     private Camera RenderCamera;
-    private List<RenderMeshContext> MeshList;
-   
-    private RenderExtractPass.RenderParams ExtractPassParams;
-    private RenderMaterialPass.RenderParams MaterialPassParams;
-    private RenderVisibilityPass.RenderParams VisibilityPassParams;
-    /// ///////////////////////////////////////////////////////
+    private List<MeshInfo> MeshInfoListForRender;
+    private RenderLayer Renderer;
 
-
-    private void GetMeshInformation()
+    private void InitMeshList()
     {
-        MeshList = new List<RenderMeshContext>();
+        MeshInfoListForOnlyDisplay.Clear();
+        MeshInfoListForRender = new List<MeshInfo>();
+        LineMaterial[] LineObjectMaterialList = UnityEngine.Object.FindObjectsOfType<LineMaterial>();
 
-        MeshFilter SelectedMesh = gameObject.GetComponent<MeshFilter>();
-        if (SelectedMesh == null)
+        foreach (LineMaterial LineObjectMaterial in LineObjectMaterialList)
         {
-            int SubNodesNum = gameObject.transform.childCount;
-            if (SubNodesNum != 0)
-            {
-                for (int i = 0; i < SubNodesNum; i++)
-                {
-                    GameObject child = gameObject.transform.GetChild(i).gameObject;
-                    MeshFilter SubMesh = child.GetComponent<MeshFilter>();
-                    LineMaterial MatSetting = child.GetComponent<LineMaterial>();
+            GameObject LineObject = LineObjectMaterial.gameObject;
 
-                    if (SubMesh == null) break;
-                    else
-                    {
-                        RenderMeshContext ToAdd = new RenderMeshContext(SubMesh.sharedMesh, child.transform);
-                        if (MatSetting != null)
-                        {
-                            ToAdd.LineMaterialSetting = MatSetting;
-                            ToAdd.LineMaterialSetting.LineRenderMaterial.renderQueue = (int)RenderQueue.Geometry + 1;
-                        }
-                        else
-                        {
-                            ToAdd.LineMaterialSetting = null;
-                            Debug.Log("=================Mesh: " + child.name + " has NO Line Material applied, the mesh will be ignored=================");
-                        }
-                        MeshList.Add(ToAdd);
-                    }
-                }
+            MeshFilter SubMesh = LineObject.GetComponent<MeshFilter>();
+            if (SubMesh == null)
+            {
+                Debug.LogWarning("A object will be ignored in Line Drawing because it isn't has a MeshFilter component.", LineObject);
+                continue;
             }
+
+            LineMaterial MatSetting = LineObject.GetComponent<LineMaterial>();
+            MatSetting.LineRenderMaterial.renderQueue = (int)RenderQueue.Geometry + 1;
+
+            LineContext Context = new LineContext(SubMesh.sharedMesh, LineObject.transform, MatSetting);
+
+            MeshInfo ToAdd = new MeshInfo();
+            ToAdd.Context = Context;
+            ToAdd.Name = LineObject.name;
+            ToAdd.SubMeshIndex = MatSetting.SubMeshIndex;
+            ToAdd.Available = false;
+
+            MeshInfoListForRender.Add(ToAdd);
         }
-        else
+    }
+
+
+    void OnEnable()
+    {
+        Debug.Log("Line Renderer Enabled.");
+
+        RenderCamera = GetComponent<Camera>();
+        if(RenderCamera == null)
         {
-            RenderMeshContext ToAdd = new RenderMeshContext(SelectedMesh.sharedMesh, gameObject.transform);
-            LineMaterial MatSetting = gameObject.GetComponent<LineMaterial>();
-            if (MatSetting != null)
+            Debug.LogError("This (Line Renderer) script must be attached to a camera object.");
+        }
+
+        RenderCamera.depthTextureMode = DepthTextureMode.Depth;
+
+        InitMeshList();
+
+        RenderShader InputShaders = new RenderShader();
+        Renderer = new RenderLayer();
+
+        InputShaders.ExtractPassShader = ExtractLineShader;
+        InputShaders.VisibilityPassShader = VisibleLineShader;
+        Renderer.Init(InputShaders);
+
+        RenderCamera.AddCommandBuffer(CameraEvent.AfterForwardAlpha, Renderer.GetRenderCommand());
+    }
+
+    void Start()
+    {
+       for(int i = 0; i<MeshInfoListForRender.Count; i++)
+        {
+           MeshInfo Current = MeshInfoListForRender[i];
+            if (!Current.Context.RumtimeTransform.gameObject.activeSelf)
             {
-                ToAdd.LineMaterialSetting = MatSetting;
+                Current.Available = false;
+                continue;
+            }
+
+            string AdjacencyPath = MeshInfoListForRender[i].Context.LineMaterialSetting.AdjacencyData;
+            AdjFace[] AdjacencyTriangles = null;
+            if (Current.Context.LineMaterialSetting.SubMeshIndex != -1)
+            {
+                AdjacencyTriangles = AdjacencyDataPool.Instance.TryLoad(AdjacencyPath, Current.Context.LineMaterialSetting.SubMeshIndex);
             }
             else
             {
-                ToAdd.LineMaterialSetting = null;
-                Debug.Log("=================Mesh: " + gameObject.name + " has NO Line Material applied, the mesh will be ignored=================");
+                int SubMeshIndex = -1;
+                AdjacencyTriangles = AdjacencyDataPool.Instance.TryLoadAndGetSubMeshIndex(AdjacencyPath, Current.Name, out SubMeshIndex);
+                Current.SubMeshIndex = SubMeshIndex;
             }
-            MeshList.Add(ToAdd);
-        }
 
-        Debug.Log("Mesh Name: " + gameObject.name);
-        Debug.Log("Mesh Count: " + MeshList.Count);
-    }
-
-
-    private void LoadAdjacency()
-    {
-        if (MeshList.Count == 0) return;
-
-        string FileName = AssetDatabase.GetAssetPath(MeshList[0].RumtimeMesh);
-        int dotIndex = FileName.LastIndexOf('.');
-        if (dotIndex != -1)
-        {
-            FileName = FileName.Substring(0, dotIndex);
-        }
-        FileName += ".adjacency";
-        Debug.Log("Start Load Adjacency : " + FileName);
-
-        if (File.Exists(FileName))
-        {
-            using (BinaryReader Reader = new BinaryReader(File.Open(FileName, FileMode.Open)))
+            int AdjFaceCount = 0;
+            if (AdjacencyTriangles != null)
             {
-                int MeshNum = Reader.ReadInt32();
-                int OffsetPerData = Reader.ReadInt32();
-                Debug.Log("Mesh Num:" + MeshNum);
-                Debug.Log("Offset Per Data:" + OffsetPerData);
-
-                if (MeshNum == MeshList.Count)
-                {
-                    for (int i = 0; i < MeshNum; i++)
-                    {
-                        int TotalAdjFaceNum = Reader.ReadInt32();
-                        Debug.Log("Mesh : " + i + " | Total AdjFace Num:" + TotalAdjFaceNum);
-                        MeshList[i].AdjacencyTriangles = new AdjFace[TotalAdjFaceNum];
-                        
-
-                        int Offset = 0;
-                        for (int j = 0; j < TotalAdjFaceNum; j++)
-                        {
-                            AdjFace Face = new AdjFace();
-                            Face.x = (uint)Reader.ReadInt32();
-                            Face.y = (uint)Reader.ReadInt32();
-                            Face.z = (uint)Reader.ReadInt32();
-                            Face.xy = (uint)Reader.ReadInt32();
-                            Face.yz = (uint)Reader.ReadInt32();
-                            Face.zx = (uint)Reader.ReadInt32();
-
-                            MeshList[i].AdjacencyTriangles[Offset] = Face; 
-                            Offset++;
-                        }
-
-                    }
-                }
-                else
-                {
-                    Debug.Log("Mesh Num From File Not Equal To Current Mesh.");
-                }
+                Current.Available = true;
+                AdjFaceCount = AdjacencyTriangles.Length;
+                Debug.Log("Load Successed :" + Current.Name);
+            }
+            else
+            {
+                Current.Available = false;
             }
 
-        }
-        else
-        {
-            Debug.Log("Cannot Find Adjacency File.....");
-        }
+            MeshInfoForDisplay Info = new MeshInfoForDisplay();
+            Info.SubMeshIndex = Current.SubMeshIndex;
+            Info.AdjFaceCount = AdjFaceCount;
+            Info.Name = Current.Name;
+            Info.Available = Current.Available;
+            MeshInfoListForOnlyDisplay.Add(Info);
 
-        Debug.Log("Load Adjacency Completed.");
+            if(Current.Available)
+                Current.Context.Init(AdjacencyTriangles);
+        }
     }
 
-    void Setup()
+
+    void OnDisable()
     {
-        ExtractPassParams = new RenderExtractPass.RenderParams();
-        VisibilityPassParams = new RenderVisibilityPass.RenderParams();
-        MaterialPassParams = new RenderMaterialPass.RenderParams();
+        Debug.Log("Line Renderer Disabled.");
 
-        //VisibilityPassParams.ZbufferParam = new float[4];
-        // temp
-        RenderCamera.depthTextureMode = DepthTextureMode.Depth;
-
-        for (int i = 0; i < MeshList.Count; i++)
+        foreach(MeshInfo Current in MeshInfoListForRender)
         {
-            if (!MeshList[i].RumtimeTransform.gameObject.activeSelf) continue;
-
-            MeshList[i].Renderer.Init(RenderCamera, ExtractLineShader, VisibleLineShader);
-            MeshList[i].Renderer.InitInputOutputBuffer(MeshList[i].AdjacencyTriangles.Length);
-
-            MeshList[i].Renderer.ExtractPass.SetAdjacencyIndicesBuffer(MeshList[i].AdjacencyTriangles.Length, MeshList[i].AdjacencyTriangles);
-            MeshList[i].Renderer.ExtractPass.SetVerticesBuffer(MeshList[i].RumtimeMesh.vertices.Length, MeshList[i].RumtimeMesh.vertices);
-
-            RenderExtractPass.RenderConstants[] Pass1Constants = new RenderExtractPass.RenderConstants[1];
-            Pass1Constants[0].TotalAdjacencyTrianglesNum = (uint)MeshList[i].AdjacencyTriangles.Length;
-            Pass1Constants[0].SilhouetteEnable = (uint)(MeshList[i].LineMaterialSetting.SilhouetteEnable ? 1 : 0);
-            Pass1Constants[0].CreaseEnable = (uint)(MeshList[i].LineMaterialSetting.CreaseEnable ? 1 : 0);
-            Pass1Constants[0].BorderEnable = (uint)(MeshList[i].LineMaterialSetting.BorderEnable ? 1 : 0);
-            Pass1Constants[0].HideBackFaceEdge = (uint)(MeshList[i].LineMaterialSetting.HideBackFaceEdge ? 1 : 0);
-            MeshList[i].Renderer.ExtractPass.SetConstantBuffer(Pass1Constants);
-
-            RenderVisibilityPass.RenderConstants[] Pass2Constants = new RenderVisibilityPass.RenderConstants[1];
-            Pass2Constants[0].HideOccludedEdge = (uint)(MeshList[i].LineMaterialSetting.HideOccludedEdge ? 1 : 0);
-            MeshList[i].Renderer.VisibilityPass.SetConstantBuffer(Pass2Constants);
-
-            MeshList[i].Renderer.MaterialPass.SetLineMaterialObject(MeshList[i].LineMaterialSetting);
-
-            
+            if (Current.Available)
+                Current.Context.Destroy();
         }
 
+        MeshInfoListForOnlyDisplay.Clear();
+        MeshInfoListForRender.Clear();
+
+        RenderCamera.RemoveCommandBuffer(CameraEvent.AfterForwardAlpha, Renderer.GetRenderCommand());
+        Renderer.Destroy();
     }
 
-   
+    void OnPreRender()
+    {
+        foreach(MeshInfo Current in MeshInfoListForRender)
+        {
+            if(Current.Available)
+            {
 
+            }
+        }
+    }
 }
