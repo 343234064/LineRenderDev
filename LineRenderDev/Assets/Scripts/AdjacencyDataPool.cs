@@ -15,6 +15,11 @@ public struct AdjFace
     public uint xy;
     public uint yz;
     public uint zx;
+
+    public static int Size()
+    {
+        return sizeof(uint) * 6;
+    }
 }
 
 public class AdjacencyDataPool

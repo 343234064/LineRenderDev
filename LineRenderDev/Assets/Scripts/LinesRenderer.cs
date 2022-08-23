@@ -91,12 +91,11 @@ public class LinesRenderer : MonoBehaviour
         {
             Debug.LogError("This (Line Renderer) script must be attached to a camera object.");
         }
-
         RenderCamera.depthTextureMode = DepthTextureMode.Depth;
 
         InitMeshList();
 
-        RenderShader InputShaders = new RenderShader();
+        LineShader InputShaders = new LineShader();
         Renderer = new RenderLayer();
 
         InputShaders.ExtractPassShader = ExtractLineShader;
