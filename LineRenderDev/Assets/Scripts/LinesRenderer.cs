@@ -92,6 +92,7 @@ public class LinesRenderer : MonoBehaviour
             Debug.LogError("This (Line Renderer) script must be attached to a camera object.");
         }
         RenderCamera.depthTextureMode = DepthTextureMode.Depth;
+        Camera.onPreRender += OnPreRender;
 
         InitMeshList();
 
@@ -169,15 +170,30 @@ public class LinesRenderer : MonoBehaviour
 
         RenderCamera.RemoveCommandBuffer(CameraEvent.AfterForwardAlpha, Renderer.GetRenderCommand());
         Renderer.Destroy();
+
+        Camera.onPreRender -= OnPreRender;
     }
 
-    void OnPreRender()
+    void OnPreRender(Camera camera)
     {
-        foreach(MeshInfo Current in MeshInfoListForRender)
+        Renderer.ClearEveryFrame();
+
+        Matrix4x4 ViewProjectionMatrix = GL.GetGPUProjectionMatrix(RenderCamera.projectionMatrix, true) * RenderCamera.worldToCameraMatrix;
+        foreach (MeshInfo Current in MeshInfoListForRender)
         {
             if(Current.Available)
             {
+                Debug.Log("Render: "+Current.Name);
+                Renderer.BeginEveryFrame();
 
+                Renderer.EveryFrameParams.LocalCameraPosition = Current.Context.RumtimeTransform.InverseTransformPoint(Camera.main.transform.position);
+                Renderer.EveryFrameParams.CreaseAngleThreshold = (180.0f - Current.Context.LineMaterialSetting.CreaseAngleDegreeThreshold) * (0.017453292519943294f);
+                Renderer.EveryFrameParams.WorldViewProjectionMatrix = ViewProjectionMatrix * Current.Context.RumtimeTransform.localToWorldMatrix;
+                Renderer.EveryFrameParams.WorldViewMatrix = RenderCamera.worldToCameraMatrix * Current.Context.RumtimeTransform.localToWorldMatrix;
+                Renderer.EveryFrameParams.ObjectWorldMatrix = Current.Context.RumtimeTransform.localToWorldMatrix;
+
+                Renderer.EndEveryFrame(Current.Context);
+                Renderer.Render();
             }
         }
     }
