@@ -24,7 +24,7 @@ cbuffer Constants
     uint CreaseEnable;
     uint BorderEnable;
     uint HideBackFaceEdge;
-
+    uint HideOccludedEdge;
 };
 
 

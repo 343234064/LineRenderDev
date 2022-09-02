@@ -29,6 +29,11 @@ struct LineSegment
 
 cbuffer Constants
 {
+    uint TotalAdjacencyTrianglesNum;
+    uint SilhouetteEnable;
+    uint CreaseEnable;
+    uint BorderEnable;
+    uint HideBackFaceEdge;
     uint HideOccludedEdge;
 };
 
