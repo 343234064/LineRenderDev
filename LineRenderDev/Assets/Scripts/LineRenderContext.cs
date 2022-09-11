@@ -1,8 +1,9 @@
-﻿using System.Collections;
+﻿
+
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
-
 
 
 public struct Array3<T>
@@ -318,10 +319,12 @@ public class ComputePass
 
         RenderCommands.DispatchCompute(CoreShader, CoreShaderKernelId, DispatchArgBuffer, DispatchArgBufferOffset);
 
+
         foreach (BufferParam OBuffer in OutputBuffers)
         {
             if (OBuffer.NeedCopyValue)
                 RenderCommands.CopyCounterValue(OBuffer.Buffer, OBuffer.ArgBuffer, (uint)OBuffer.ArgBufferOffset);
+
         }
 
     }
@@ -413,7 +416,7 @@ public class RenderLayer
     private VisibilityPass VisiblePass;
 
     private CommandBuffer RenderCommands;
-   
+
     public RenderLayer()
     {
         Available = false;
@@ -454,39 +457,11 @@ public class RenderLayer
         Debug.Log("Render Layer Destroy");
     }
 
-    public void Render()
+    public void Render(LineContext Current)
     {
         if (!Available)
             return;
-
-        ExtractPass.Render(RenderCommands, EveryFrameParams);
-        VisiblePass.Render(RenderCommands, EveryFrameParams);
-
-    }
-
-    public CommandBuffer GetRenderCommand()
-    {
-        return RenderCommands;
-    }
-
-    public void ClearEveryFrame()
-    {
-        RenderCommands.Clear();
-    }
-
-    public void BeginEveryFrame()
-    {
-        ExtractPass.ClearConstantBuffer();
-        ExtractPass.ClearInputBuffer();
-        ExtractPass.ClearOutputBuffer();
-
-        VisiblePass.ClearConstantBuffer();
-        VisiblePass.ClearInputBuffer();
-        VisiblePass.ClearOutputBuffer();
-    }
-
-    public void EndEveryFrame(LineContext Current)
-    {
+        
         ExtractPass.SetConstantBuffer("Constants", Current.ConstantsBuffer, RenderConstants.Size());
         ExtractPass.SetInputBuffer("AdjacencyTriangles", Current.AdjacencyBuffer);
         ExtractPass.SetInputBuffer("Vertices", Current.VerticesBuffer);
@@ -500,6 +475,76 @@ public class RenderLayer
         VisiblePass.SetOutputBufferWithArgBuffer("Output2DLines", Current.VisibleLineBuffer, Current.VisibleLineArgBuffer, Current.VisibleLineArgBufferOffset);
         VisiblePass.DispatchArguments = Current.ExtractedLineArgBuffer;
         VisiblePass.DispatchArgOffset = (uint)Current.ExtractedLineArgBufferOffset;
+
+        Current.LineMaterialSetting.LineRenderMaterial.SetMatrix("ObjectWorldMatrix", EveryFrameParams.ObjectWorldMatrix);
+        Current.LineMaterialSetting.LineRenderMaterial.SetBuffer("Lines", Current.VisibleLineBuffer);
+
+        ExtractPass.Render(RenderCommands, EveryFrameParams);
+        VisiblePass.Render(RenderCommands, EveryFrameParams);
+
+        RenderCommands.DrawProceduralIndirect(Matrix4x4.identity, Current.LineMaterialSetting.LineRenderMaterial, -1, MeshTopology.Lines, Current.VisibleLineArgBuffer, 0); //VisibleLineArgBufferOffset
+
+        /*
+        ExtractPass.CoreShader.SetConstantBuffer(Shader.PropertyToID("Constants"), Current.ConstantsBuffer, 0, RenderConstants.Size());
+        ExtractPass.CoreShader.SetBuffer(ExtractPass.CoreShaderKernelId, "AdjacencyTriangles", Current.AdjacencyBuffer);
+        ExtractPass.CoreShader.SetBuffer(ExtractPass.CoreShaderKernelId, "Vertices", Current.VerticesBuffer);
+        ExtractPass.CoreShader.SetBuffer(ExtractPass.CoreShaderKernelId, "Output3DLines", Current.ExtractedLineBuffer);
+
+        ExtractPass.CoreShader.SetVector("LocalSpaceViewPosition", EveryFrameParams.LocalCameraPosition);
+        ExtractPass.CoreShader.SetFloat("CreaseAngleThreshold", EveryFrameParams.CreaseAngleThreshold);
+        ExtractPass.CoreShader.SetMatrix("WorldViewProjection", EveryFrameParams.WorldViewProjectionMatrix);
+        ExtractPass.CoreShader.SetMatrix("WorldView", EveryFrameParams.WorldViewMatrix);
+
+        Current.ExtractedLineBuffer.SetCounterValue(0);
+        ExtractPass.CoreShader.Dispatch(ExtractPass.CoreShaderKernelId, ((int)(Current.AdjacencyBuffer.count / ExtractPass.CoreShaderGroupSize.x) + 1), 1, 1);
+        //Debug.Log("Group Size : " + ExtractLinePassGroupSize);
+        ComputeBuffer.CopyCount(Current.ExtractedLineBuffer, Current.VisibleLineArgBuffer, Current.VisibleLineArgBufferOffset);
+
+        Current.LineMaterialSetting.LineRenderMaterial.SetMatrix("ObjectWorldMatrix", EveryFrameParams.ObjectWorldMatrix);
+        Current.LineMaterialSetting.LineRenderMaterial.SetBuffer("Lines", Current.ExtractedLineBuffer);
+        */
+        /*
+        Debug.Log("==============================");
+        Debug.Log("==============================");
+        int[] Args1 = new int[3] { 0, 0, 0 };
+        Current.ExtractedLineArgBuffer.GetData(Args1);
+        Debug.Log("Instance Count 1 " + Args1[0]);
+        //Debug.Log("y Count 1 " + Args[1]);
+        //Debug.Log("z Count 1 " + Args[2]);
+        Debug.Log("==============================");
+        
+        int[] Args2 = new int[4] { 0, 0, 0, 0 };
+        Current.VisibleLineArgBuffer.GetData(Args2);
+        Debug.Log("Vertex Count 2 " + Args2[0]);
+        Debug.Log("Instance Count 2 " + Args2[1]);
+        Debug.Log("Start Vertex 2 " + Args2[2]);
+        Debug.Log("Start Instance 2 " + Args2[3]);
+        Debug.Log("==============================");
+        Debug.Log("==============================");
+         */
     }
+
+    public CommandBuffer GetRenderCommand()
+    {
+        return RenderCommands;
+    }
+
+    public void ClearFrame()
+    {
+        
+        ExtractPass.ClearConstantBuffer();
+        ExtractPass.ClearInputBuffer();
+        ExtractPass.ClearOutputBuffer();
+
+        VisiblePass.ClearConstantBuffer();
+        VisiblePass.ClearInputBuffer();
+        VisiblePass.ClearOutputBuffer();
+    }
+
+    public void ClearCommandBuffer()
+    {
+        RenderCommands.Clear();
+    }
+
 }
 

@@ -40,6 +40,7 @@ public class LinesRenderer : MonoBehaviour
     [Required("Visible Line Shader Is Required")]
     public ComputeShader VisibleLineShader;
 
+
     /// ///////////////////////////////////////////////////////
     [TitleGroup("Meshes")]
     public List<MeshInfoForDisplay> MeshInfoListForOnlyDisplay;
@@ -48,6 +49,9 @@ public class LinesRenderer : MonoBehaviour
     private Camera RenderCamera;
     private List<MeshInfo> MeshInfoListForRender;
     private RenderLayer Renderer;
+
+
+
 
     private void InitMeshList()
     {
@@ -152,6 +156,8 @@ public class LinesRenderer : MonoBehaviour
             if(Current.Available)
                 Current.Context.Init(AdjacencyTriangles);
         }
+
+
     }
 
 
@@ -176,7 +182,7 @@ public class LinesRenderer : MonoBehaviour
 
     void OnPreRender(Camera camera)
     {
-        Renderer.ClearEveryFrame();
+        Renderer.ClearCommandBuffer();
 
         Matrix4x4 ViewProjectionMatrix = GL.GetGPUProjectionMatrix(RenderCamera.projectionMatrix, true) * RenderCamera.worldToCameraMatrix;
         foreach (MeshInfo Current in MeshInfoListForRender)
@@ -184,7 +190,7 @@ public class LinesRenderer : MonoBehaviour
             if(Current.Available)
             {
                 Debug.Log("Render: "+Current.Name);
-                Renderer.BeginEveryFrame();
+                Renderer.ClearFrame();
 
                 Renderer.EveryFrameParams.LocalCameraPosition = Current.Context.RumtimeTransform.InverseTransformPoint(Camera.main.transform.position);
                 Renderer.EveryFrameParams.CreaseAngleThreshold = (180.0f - Current.Context.LineMaterialSetting.CreaseAngleDegreeThreshold) * (0.017453292519943294f);
@@ -192,9 +198,10 @@ public class LinesRenderer : MonoBehaviour
                 Renderer.EveryFrameParams.WorldViewMatrix = RenderCamera.worldToCameraMatrix * Current.Context.RumtimeTransform.localToWorldMatrix;
                 Renderer.EveryFrameParams.ObjectWorldMatrix = Current.Context.RumtimeTransform.localToWorldMatrix;
 
-                Renderer.EndEveryFrame(Current.Context);
-                Renderer.Render();
+                Renderer.Render(Current.Context);
             }
         }
     }
+
+
 }

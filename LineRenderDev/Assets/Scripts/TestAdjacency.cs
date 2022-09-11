@@ -113,6 +113,13 @@ public class TestAdjacency : MonoBehaviour
                 {
                     for(int i = 0; i < MeshNum; i++)
                     {
+                        int NameLength = Reader.ReadInt32();
+
+                        byte[] NameArray = new byte[NameLength];
+                        Reader.Read(NameArray, 0, NameLength);
+                        string Name = Encoding.ASCII.GetString(NameArray);
+                        Debug.Log("Mesh " + i + ": " + Name);
+
                         int TotalAdjFaceNum = Reader.ReadInt32();
                         Debug.Log("Mesh : " + i + " | Total AdjFace Num:" + TotalAdjFaceNum);
                         MeshList[i].Triangles = new int[TotalAdjFaceNum*3];
