@@ -189,7 +189,7 @@ public class LinesRenderer : MonoBehaviour
         {
             if(Current.Available)
             {
-                Debug.Log("Render: "+Current.Name);
+                //Debug.Log("Render: "+Current.Name);
                 Renderer.ClearFrame();
 
                 Renderer.EveryFrameParams.LocalCameraPosition = Current.Context.RumtimeTransform.InverseTransformPoint(Camera.main.transform.position);
