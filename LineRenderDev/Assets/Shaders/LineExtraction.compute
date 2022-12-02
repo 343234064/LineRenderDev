@@ -11,10 +11,13 @@ struct AdjFace
     uint zx;
 };
 
-struct LineTransformed
+struct LineSegment
 {
     float3 LocalPosition[2];
     float4 NDCPosition[2];
+
+    int Extracted;
+    int Visible;
 };
 
 cbuffer Constants
@@ -31,7 +34,7 @@ cbuffer Constants
 StructuredBuffer<float3> Vertices;
 StructuredBuffer<AdjFace> AdjacencyTriangles;
 
-AppendStructuredBuffer<LineTransformed> Output3DLines;
+RWStructuredBuffer<LineSegment> Segments;
 
 uniform float3 LocalSpaceViewPosition;
 uniform float CreaseAngleThreshold;
@@ -98,7 +101,7 @@ inline bool IsIn(float3 LinePoint1, float3 LinePoint2)
     return Poine1IsIn && Poine2IsIn;
 }
 
-bool PreClipping(LineTransformed Line)
+bool PreClipping(LineSegment Line)
 {
     float3 NDCPos1 = Line.NDCPosition[0].xyz;
     float3 NDCPos2 = Line.NDCPosition[1].xyz;
@@ -136,6 +139,19 @@ inline float4 GetNDCPosition(float3 LocalPosition)
 }
 
 
+void Preprocess(LineSegment Line, uint id, uint offset)
+{
+    uint LineIndex = id * 3 + offset;
+
+    Segments[LineIndex].LocalPosition[0] = Line.LocalPosition[0];
+    Segments[LineIndex].LocalPosition[1] = Line.LocalPosition[1];
+    Segments[LineIndex].NDCPosition[0] = Line.NDCPosition[0];
+    Segments[LineIndex].NDCPosition[1] = Line.NDCPosition[1];
+    Segments[LineIndex].Extracted = Line.Extracted;
+    Segments[LineIndex].Visible = Line.Visible;
+}
+
+
 
 [numthreads(256, 1, 1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
@@ -165,7 +181,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     bool NeedExtractCrease = CreaseEnable > 0;
     float CreasePremultiplyAngleThreshold = length(CurrentFaceNormal) * (cos(CreaseAngleThreshold) + 0.000001f); //+1.0e-6 for Epsilon
 
-    bool CurrentIsBackFace = (SilhouettePremultiplyDotFactor < 0 && HideBackFaceEdge > 0)? true : false;
+    bool CurrentIsBackFace = SilhouettePremultiplyDotFactor < 0 ? true : false;
 
 
     if (CurrentFace.xy >= 1)
@@ -178,18 +194,24 @@ void CSMain (uint3 id : SV_DispatchThreadID)
         AddXY = AddXY || (NeedExtractCrease && IsCrease(CurrentFaceNormal, AdjFaceXYNormal, CreasePremultiplyAngleThreshold));
 
         XYIsBackFace = DotFactor < 0 ? true : false;
+        bool XYBackFacing = CurrentIsBackFace && XYIsBackFace;
 
-        if (AddXY && !(CurrentIsBackFace && XYIsBackFace))
+        LineSegment Line;
+        Line.LocalPosition[0] = Vertices[CurrentFace.x];
+        Line.LocalPosition[1] = Vertices[CurrentFace.y];
+        Line.NDCPosition[0] = GetNDCPosition(Vertices[CurrentFace.x]);
+        Line.NDCPosition[1] = GetNDCPosition(Vertices[CurrentFace.y]);
+        Line.Extracted = 0;
+        Line.Visible = XYBackFacing ? 0 : 1;
+
+        if (AddXY && !PreClipping(Line))
         {
-            LineTransformed Line;
-            Line.LocalPosition[0] = Vertices[CurrentFace.x];
-            Line.LocalPosition[1] = Vertices[CurrentFace.y];
-            Line.NDCPosition[0] = GetNDCPosition(Vertices[CurrentFace.x]);
-            Line.NDCPosition[1] = GetNDCPosition(Vertices[CurrentFace.y]);
-            if (!PreClipping(Line))
-                Output3DLines.Append(Line);
+            Line.Extracted = 1;
         }
+
+        Preprocess(Line, id.x, 0);
     }
+
     if (CurrentFace.zx >= 1)
     {
         float3 AdjVertexZX = Vertices[CurrentFace.zx - 1];
@@ -200,17 +222,22 @@ void CSMain (uint3 id : SV_DispatchThreadID)
         AddZX = AddZX || (NeedExtractCrease && IsCrease(CurrentFaceNormal, AdjFaceZXNormal, CreasePremultiplyAngleThreshold));
 
         ZXIsBackFace = DotFactor < 0 ? true : false;
+        bool ZXBackFacing = CurrentIsBackFace && ZXIsBackFace;
 
-        if (AddZX && !(CurrentIsBackFace && ZXIsBackFace))
+        LineSegment Line;
+        Line.LocalPosition[0] = Vertices[CurrentFace.z];
+        Line.LocalPosition[1] = Vertices[CurrentFace.x];
+        Line.NDCPosition[0] = GetNDCPosition(Vertices[CurrentFace.z]);
+        Line.NDCPosition[1] = GetNDCPosition(Vertices[CurrentFace.x]);
+        Line.Extracted = 0;
+        Line.Visible = ZXBackFacing ? 0 : 1;
+
+        if (AddZX && !PreClipping(Line))
         {
-            LineTransformed Line;
-            Line.LocalPosition[0] = Vertices[CurrentFace.z];
-            Line.LocalPosition[1] = Vertices[CurrentFace.x];
-            Line.NDCPosition[0] = GetNDCPosition(Vertices[CurrentFace.z]);
-            Line.NDCPosition[1] = GetNDCPosition(Vertices[CurrentFace.x]);
-            if(!PreClipping(Line))
-                Output3DLines.Append(Line); 
+            Line.Extracted = 1;
         }
+
+        Preprocess(Line, id.x, 1);
     }
 
     if (CurrentFace.yz >= 1)
@@ -223,17 +250,22 @@ void CSMain (uint3 id : SV_DispatchThreadID)
         AddYZ = AddYZ || (NeedExtractCrease && IsCrease(CurrentFaceNormal, AdjFaceYZNormal, CreasePremultiplyAngleThreshold));
 
         YZIsBackFace = DotFactor < 0 ? true : false;
+        bool YZBackFacing = CurrentIsBackFace && YZIsBackFace;
 
-        if (AddYZ && !(CurrentIsBackFace && YZIsBackFace))
+        LineSegment Line;
+        Line.LocalPosition[0] = Vertices[CurrentFace.y];
+        Line.LocalPosition[1] = Vertices[CurrentFace.z];
+        Line.NDCPosition[0] = GetNDCPosition(Vertices[CurrentFace.y]);
+        Line.NDCPosition[1] = GetNDCPosition(Vertices[CurrentFace.z]);
+        Line.Extracted = 0;
+        Line.Visible = YZBackFacing ? 0 : 1;
+
+        if (AddYZ && !PreClipping(Line))
         {
-            LineTransformed Line;
-            Line.LocalPosition[0] = Vertices[CurrentFace.y];
-            Line.LocalPosition[1] = Vertices[CurrentFace.z];
-            Line.NDCPosition[0] = GetNDCPosition(Vertices[CurrentFace.y]);
-            Line.NDCPosition[1] = GetNDCPosition(Vertices[CurrentFace.z]);
-            if (!PreClipping(Line))
-                Output3DLines.Append(Line);
+            Line.Extracted = 1;
         }
+
+        Preprocess(Line, id.x, 2);
     }
 
 

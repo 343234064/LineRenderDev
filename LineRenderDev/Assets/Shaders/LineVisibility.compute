@@ -16,15 +16,14 @@
 #endif
 
 
-struct LineTransformed
-{
-    float3 LocalPosition[2];
-    float4 NDCPosition[2];
-};
 
 struct LineSegment
 {
-    float3 point2d[2];
+    float3 LocalPosition[2];
+    float4 NDCPosition[2];
+
+    int Extracted;
+    int Visible;
 };
 
 cbuffer Constants
@@ -37,8 +36,8 @@ cbuffer Constants
     uint HideOccludedEdge;
 };
 
-StructuredBuffer<LineTransformed> Input3DLines;
-AppendStructuredBuffer<LineSegment> Output2DLines;
+StructuredBuffer<LineSegment> Input3DLines;
+//AppendStructuredBuffer<LineSegment> Output2DLines;
 
 Texture2D<float> SceneDepthTexture;
 SamplerState LinearClampSampler;
@@ -75,12 +74,7 @@ inline bool ZTest(float PositionDepth, float SceneDepth)
 [numthreads(1, 1, 1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
-    /* 抖动问题
-    * 
-    * 1.改动流程，compute部分需要移动到update depth texture之后 (使用commandbuffer.DispatchCompute, commandbuffer.DrawProceduralIndirect来添加到后面的流程)
-    * 2.从后处理获取到TAA的jittered参数
-    */
-    LineTransformed InputLine = Input3DLines[id.x];
+    LineSegment InputLine = Input3DLines[id.x];
 
     float3 ScreenPosition1 = ComputeScreenPosition(InputLine.NDCPosition[0]);
     float3 ScreenPosition2 = ComputeScreenPosition(InputLine.NDCPosition[1]);
@@ -88,6 +82,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     float Position1SceneDepth = (SceneDepthTexture.SampleLevel(LinearClampSampler, ScreenPosition1.xy, 0).r);
     float Position2SceneDepth = (SceneDepthTexture.SampleLevel(LinearClampSampler, ScreenPosition2.xy, 0).r);
 
+    /*
     if(ZTest(ScreenPosition1.z, Position1SceneDepth) && ZTest(ScreenPosition2.z, Position2SceneDepth))
     { 
         LineSegment OutputLine;
@@ -95,5 +90,5 @@ void CSMain (uint3 id : SV_DispatchThreadID)
         OutputLine.point2d[1] = InputLine.LocalPosition[1];
         Output2DLines.Append(OutputLine);
     }
-
+    */
 }

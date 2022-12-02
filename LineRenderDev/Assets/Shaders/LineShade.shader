@@ -25,15 +25,14 @@ Shader "LineRender/LineShader"{
 
 			UNITY_DECLARE_DEPTH_TEXTURE(_CameraDepthTexture);
 
-			struct LineSegment
-			{
-				float3 point3d[2];
-			};
 
-			struct LineTransformed
+			struct LineSegment
 			{
 				float3 LocalPosition[2];
 				float4 NDCPosition[2];
+
+				int Extracted;
+				int Visible;
 			};
 
 
@@ -44,6 +43,7 @@ Shader "LineRender/LineShader"{
 			{
 				float4 position : SV_POSITION;
 				float4 screenpos : TEXCOORD0;
+				float4 color : TEXCOORD1;
 			};
 
 			inline float4 ComputeNonStereoScreenPos1(float4 pos) {
@@ -59,7 +59,7 @@ Shader "LineRender/LineShader"{
 				//uint positionIndex = edgeIndex[vertex_id];
 				//float3 localposition = Positions[positionIndex];
 				LineSegment Line = Lines[instance_id];
-				float3 localposition = Line.point3d[vertex_id];
+				float3 localposition = Line.LocalPosition[vertex_id];
 
 				float4 worldposition = mul(ObjectWorldMatrix, float4(localposition, 1));
 				worldposition.xyz += WorldPositionOffset.xyz;
@@ -68,6 +68,18 @@ Shader "LineRender/LineShader"{
 				Output output = (Output)0;
 				output.position = position;
 				output.screenpos = ComputeNonStereoScreenPos1(position);
+				
+				if (Line.Extracted == 1)
+					output.color = float4(1.0, 1.0, 1.0, 1.0);
+				else
+					output.color = float4(1.0, 0.0, 1.0, 1.0);
+				
+				if (Line.Visible == 1)
+					output.color *= float4(1.0, 1.0, 1.0, 1.0);
+				else
+					output.color *= float4(0.0, 0.0, 0.0, 1.0);
+
+
 				return output;
 			}
 
@@ -77,7 +89,7 @@ Shader "LineRender/LineShader"{
 				fixed4 finalColor = fixed4(1, 1, 1, 1);
 
 				//if (((input.screenpos.z / input.screenpos.w)) >= depthTexValue)
-					finalColor = TintColor;
+					finalColor.rgb = TintColor.rgb * input.color.rgb;
 
 				return finalColor;
 			}

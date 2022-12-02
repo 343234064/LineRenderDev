@@ -136,7 +136,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 1.22
+      value: 4.96
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
       propertyPath: m_LocalPosition.y
@@ -176,7 +176,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -1500838157198093432, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: -264430861247414160, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
       propertyPath: m_Materials.Array.data[0]
@@ -196,7 +196,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 2509802017764886665, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
       propertyPath: m_Materials.Array.data[0]
@@ -204,7 +204,7 @@ PrefabInstance:
       objectReference: {fileID: 2100000, guid: fa560a387b88e894e892547c2f08260e, type: 2}
     - target: {fileID: 2866621852552652557, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
@@ -253,7 +253,7 @@ MonoBehaviour:
   SilhouetteEnable: 1
   OutineOnly: 1
   CreaseEnable: 1
-  CreaseAngleDegreeThreshold: 0
+  CreaseAngleDegreeThreshold: 91
   BorderEnable: 1
   MarkedEdgeEnable: 1
 --- !u!1 &247207320 stripped
@@ -407,7 +407,7 @@ MonoBehaviour:
   HideOccludedEdge: 1
   SilhouetteEnable: 1
   OutineOnly: 0
-  CreaseEnable: 1
+  CreaseEnable: 0
   CreaseAngleDegreeThreshold: 45
   BorderEnable: 1
   MarkedEdgeEnable: 1
@@ -904,7 +904,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   ExtractLineShader: {fileID: 7200000, guid: 085f920b49dee81489949e16e57f55be, type: 3}
   VisibleLineShader: {fileID: 7200000, guid: 2fbc58ccd536cc64287e0069b75f7de1, type: 3}
-  LineRenderMaterial: {fileID: 2100000, guid: 31067fb7262504c48bbbcef19a85fa60, type: 2}
   MeshInfoListForOnlyDisplay: []
 --- !u!1 &741890331
 GameObject:
@@ -1202,7 +1201,7 @@ PrefabInstance:
       objectReference: {fileID: 2100000, guid: fa560a387b88e894e892547c2f08260e, type: 2}
     - target: {fileID: -3957782524123411102, guid: f54c79e26b1ebb24b9758a10609c1121, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: -3270834789232462163, guid: f54c79e26b1ebb24b9758a10609c1121, type: 3}
       propertyPath: m_LocalPosition.z
@@ -1222,7 +1221,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2902008074560218088, guid: f54c79e26b1ebb24b9758a10609c1121, type: 3}
       propertyPath: m_LocalPosition.z
-      value: -0.00252
+      value: -0.00602
       objectReference: {fileID: 0}
     - target: {fileID: 2902008074560218088, guid: f54c79e26b1ebb24b9758a10609c1121, type: 3}
       propertyPath: m_LocalRotation.w
@@ -1258,7 +1257,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 806569774}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 36a8a83d7a4082943b8fa8f074e8b6e3, type: 3}
   m_Name: 
@@ -1742,7 +1741,7 @@ MonoBehaviour:
   SilhouetteEnable: 1
   OutineOnly: 1
   CreaseEnable: 1
-  CreaseAngleDegreeThreshold: 0
+  CreaseAngleDegreeThreshold: 91
   BorderEnable: 1
   MarkedEdgeEnable: 1
 --- !u!1 &1846664508 stripped
@@ -1842,7 +1841,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: c85fac795e22b984096c291961adffa8, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 6892417033642571503, guid: c85fac795e22b984096c291961adffa8, type: 3}
       propertyPath: m_Materials.Array.data[0]
