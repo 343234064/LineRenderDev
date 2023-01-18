@@ -73,7 +73,7 @@ public class LinesRenderer : MonoBehaviour
             LineMaterial MatSetting = LineObject.GetComponent<LineMaterial>();
             MatSetting.LineRenderMaterial.renderQueue = (int)RenderQueue.Geometry + 1;
 
-            LineContext Context = new LineContext(SubMesh.sharedMesh, LineObject.transform, MatSetting);
+            LineContext Context = new LineContext(SubMesh.sharedMesh, LineObject.transform, MatSetting, new Vector2(Screen.currentResolution.width, Screen.currentResolution.height));
 
             MeshInfo ToAdd = new MeshInfo();
             ToAdd.Context = Context;

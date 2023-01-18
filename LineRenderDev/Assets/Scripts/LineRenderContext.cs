@@ -21,25 +21,19 @@ public struct Array3<T>
 }
 
 
-public struct Bucket
+
+
+public struct Slice
 {
-    public int CapacityInPixel;
-    public int TargetLineIndex;
+    public int SegmentIndex;
+    public int SliceIndex;
 
-    public float StartTPosition;
-    public float EndTPosition;
-}
-
-public struct Stripe
-{
-    public int LineIndex;
-
-    public float LengthInPixel;
-    public float LengthInPixelTotalStripe;
+    public Vector2 PixelPostion1;
+    public Vector2 PixelPostion2;
 
     public static int Size()
     {
-        return sizeof(int) + sizeof(float) * 2;
+        return sizeof(int) * 2 + sizeof(float) * 4;
     }
 }
 
@@ -109,35 +103,46 @@ public class LineContext
     public LineMaterial LineMaterialSetting;
     public Transform RumtimeTransform;
 
+    public Vector2 ScreenResolution;
+
     public ComputeBuffer AdjacencyBuffer;
     public ComputeBuffer VerticesBuffer;
 
     public ComputeBuffer ConstantsBuffer;
     public ComputeBuffer SegmentBuffer;
+    public ComputeBuffer ShareDataBuffer;
+
+    public ComputeBuffer SliceBuffer;
+    public ComputeBuffer VisibleLineBuffer;
 
     public ComputeBuffer ExtractedLineArgBuffer;
     public int ExtractedLineArgBufferOffset;
-
-    public ComputeBuffer VisibleLineBuffer;
     public ComputeBuffer VisibleLineArgBuffer;
     public int VisibleLineArgBufferOffset;
 
-    public LineContext(Mesh meshObj, Transform transform, LineMaterial material)
+    public LineContext(Mesh meshObj, Transform transform, LineMaterial material, Vector2 Resolution)
     {
         RumtimeMesh = meshObj;
         RumtimeTransform = transform;
         LineMaterialSetting = material;
+
+        ScreenResolution = Resolution;
+        //Debug.Log(ScreenResolution.x+":"+ScreenResolution.y);
 
         AdjacencyBuffer = null;
         VerticesBuffer = null;
 
         ConstantsBuffer = null;
         SegmentBuffer = null;
+        ShareDataBuffer = null;
+
+        SliceBuffer = null;
+        VisibleLineBuffer = null;
 
         ExtractedLineArgBuffer = null;
-        VisibleLineBuffer = null;
-        VisibleLineArgBuffer = null;
         ExtractedLineArgBufferOffset = 0;
+
+        VisibleLineArgBuffer = null;        
         VisibleLineArgBufferOffset = 0;
     }
 
@@ -171,7 +176,20 @@ public class LineContext
         if (SegmentBuffer != null)
             SegmentBuffer.Release();
         SegmentBuffer = new ComputeBuffer(AdjTris.Length * 3, LineSegment.Size());
-        
+
+        if (ShareDataBuffer != null)
+            ShareDataBuffer.Release();
+        ShareDataBuffer = new ComputeBuffer(3, sizeof(int)); // total pixel length, 0, 0
+        int[] ShareData = new int[3] { 0, 0, 0 };
+        ShareDataBuffer.SetData(ShareData);
+
+        if (SliceBuffer != null)
+            SliceBuffer.Release();
+        /*0.5 should be reconsidered*/
+        SliceBuffer = new ComputeBuffer((int)(ScreenResolution.x * ScreenResolution.y * 0.5), Slice.Size(), ComputeBufferType.Append);
+        if (VisibleLineBuffer != null)
+            VisibleLineBuffer.Release();
+        VisibleLineBuffer = new ComputeBuffer(AdjTris.Length * 3, sizeof(int), ComputeBufferType.Append);
 
         if (ExtractedLineArgBuffer != null)
             ExtractedLineArgBuffer.Release();
@@ -182,10 +200,9 @@ public class LineContext
         //ExtractedLineArgBufferOffset = 0;
         ExtractedLineArgBufferOffset = sizeof(int);
 
+
         /*
-        if (VisibleLineBuffer != null)
-            VisibleLineBuffer.Release();
-        VisibleLineBuffer = new ComputeBuffer(AdjTris.Length * 3, LineSegment.Size(), ComputeBufferType.Append);
+
         if (VisibleLineArgBuffer != null)
             VisibleLineArgBuffer.Release();
         VisibleLineArgBuffer = new ComputeBuffer(4, sizeof(int), ComputeBufferType.IndirectArguments);
@@ -208,11 +225,16 @@ public class LineContext
             ConstantsBuffer.Release();
         if (SegmentBuffer != null)
             SegmentBuffer.Release();
+        if (ShareDataBuffer != null)
+            ShareDataBuffer.Release();
+
+        if (SliceBuffer != null)
+            SliceBuffer.Release();
+        if (VisibleLineBuffer != null)
+            VisibleLineBuffer.Release();
 
         if (ExtractedLineArgBuffer != null)
             ExtractedLineArgBuffer.Release();
-        if (VisibleLineBuffer != null)
-            VisibleLineBuffer.Release();
         if (VisibleLineArgBuffer != null)
             VisibleLineArgBuffer.Release();
     }
@@ -329,6 +351,10 @@ public class RenderLayer
         ExtractPass.SetInputBuffer("AdjacencyTriangles", Current.AdjacencyBuffer);
         ExtractPass.SetInputBuffer("Vertices", Current.VerticesBuffer);
         ExtractPass.SetInputBuffer("Segments", Current.SegmentBuffer);
+        ExtractPass.SetInputBuffer("ShareData", Current.ShareDataBuffer);
+        ExtractPass.SetInputBuffer("Slices", Current.SliceBuffer);
+        ExtractPass.SetInputBuffer("VisibleLines", Current.VisibleLineBuffer);
+
         ExtractPass.DispatchSize.x = ((int)(Current.AdjacencyBuffer.count / ExtractPass.CoreShaderGroupSize.x) + 1); //Max 65535 * 65535 * 65535 * 1024  ->16,776,960 x 2 tris?
         ExtractPass.DispatchSize.y = 1;
         ExtractPass.DispatchSize.z = 1;

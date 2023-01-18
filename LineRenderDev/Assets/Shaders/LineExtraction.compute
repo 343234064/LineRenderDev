@@ -1,44 +1,25 @@
 ﻿// Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel CSMain
 
-struct AdjFace
-{
-    uint x;
-    uint y;
-    uint z;
-    uint xy;
-    uint yz;
-    uint zx;
-};
+#include "Common.cginc"
 
-struct LineSegment
-{
-    float3 LocalPosition[2];
-    float4 NDCPosition[2];
-
-    int Extracted;
-    int Visible;
-};
-
-cbuffer Constants
-{
-    uint TotalAdjacencyTrianglesNum;
-    uint SilhouetteEnable;
-    uint CreaseEnable;
-    uint BorderEnable;
-    uint HideBackFaceEdge;
-    uint HideOccludedEdge;
-};
 
 
 StructuredBuffer<float3> Vertices;
 StructuredBuffer<AdjFace> AdjacencyTriangles;
 
 RWStructuredBuffer<LineSegment> Segments;
+RWStructuredBuffer<int> ShareData;
+
+AppendStructuredBuffer<Slice> Slices;
+AppendStructuredBuffer<int> VisibleLines;
+
 
 uniform float3 LocalSpaceViewPosition;
 uniform float CreaseAngleThreshold;
 uniform float4x4 WorldViewProjection;
+
+
 
 
 float3 ComputeNormal(float3 p1, float3 p2, float3 p3)
@@ -149,10 +130,30 @@ void Preprocess(LineSegment Line, uint id, uint offset)
     Segments[LineIndex].NDCPosition[1] = Line.NDCPosition[1];
     Segments[LineIndex].Extracted = Line.Extracted;
     Segments[LineIndex].Visible = Line.Visible;
+
+    if (Segments[LineIndex].Extracted == 1)
+    {
+        VisibleLines.Append(LineIndex);
+    }
+
+    //Do scan line 
+    float3 ScreenPosition1 = ComputeScreenPosition(Line.NDCPosition[0]);
+    float3 ScreenPosition2 = ComputeScreenPosition(Line.NDCPosition[1]);
+
+
 }
 
 
-
+/*
+* 后续优化：
+* 现在是一个thread检测3条边 -> 拆分成一个thread检测1条边
+* 由于条件分支容易使得一个thread的代码拆分到多个warp执行(比如一个分支一次warp另外一个分支一次warp)
+* 导致3条边同时检测下出现多个分支，这情况下可能效率还不如一次只检测1条边
+* 
+* 现在的三角形方式可能存在多条重复边：例如一个正方体只有18条边，但分成三角形检测后生成了21条边
+* 1.先单独修改compute shader变成一次检测一条边，看性能是否有提升
+* 2.如果有，就正式都修改成一次检测一条边的形式，C++的数据结构也改掉，就可以顺便解决掉重复边问题
+*/
 [numthreads(256, 1, 1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
