@@ -704,6 +704,7 @@ GameObject:
   - component: {fileID: 723381321}
   - component: {fileID: 723381316}
   - component: {fileID: 723381322}
+  - component: {fileID: 723381323}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -783,7 +784,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 723381315}
   m_LocalRotation: {x: 0.078293994, y: -0.2334143, z: 0.018858854, w: 0.9690367}
-  m_LocalPosition: {x: 15, y: 7.3, z: -26.68}
+  m_LocalPosition: {x: 15, y: 8.29, z: -27.44}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -902,9 +903,23 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1ac86d01aab9d19409d47886445ba512, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  ExtractLineShader: {fileID: 7200000, guid: 085f920b49dee81489949e16e57f55be, type: 3}
-  VisibleLineShader: {fileID: 7200000, guid: 2fbc58ccd536cc64287e0069b75f7de1, type: 3}
+  ExtractPassShader: {fileID: 7200000, guid: 085f920b49dee81489949e16e57f55be, type: 3}
+  SlicePassShader: {fileID: 7200000, guid: f3ebbb45789caa344b208929d4c23059, type: 3}
+  VisiblePassShader: {fileID: 7200000, guid: 2fbc58ccd536cc64287e0069b75f7de1, type: 3}
   MeshInfoListForOnlyDisplay: []
+--- !u!114 &723381323
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 723381315}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0b412e0f3ac66a84c895671147c24f8a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  SliceShader: {fileID: 7200000, guid: f3ebbb45789caa344b208929d4c23059, type: 3}
 --- !u!1 &741890331
 GameObject:
   m_ObjectHideFlags: 0
@@ -1841,7 +1856,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: c85fac795e22b984096c291961adffa8, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 6892417033642571503, guid: c85fac795e22b984096c291961adffa8, type: 3}
       propertyPath: m_Materials.Array.data[0]

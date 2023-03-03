@@ -1,0 +1,34 @@
+﻿// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel Visibility
+
+#include "Common.cginc"
+
+
+StructuredBuffer<LineSegment> Segments;
+AppendStructuredBuffer<LineSegment> Output2DLines;
+
+Texture2D<float> SceneDepthTexture;
+SamplerState LinearClampSampler;
+
+
+
+
+
+[numthreads(VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM, 1, 1)]
+void Visibility(uint3 id : SV_DispatchThreadID)
+{
+    LineSegment InputLine = Segments[id.x];
+
+    float3 ScreenPosition1 = InputLine.ScreenPosition[0];
+    float3 ScreenPosition2 = InputLine.ScreenPosition[1];
+
+    float Position1SceneDepth = (SceneDepthTexture.SampleLevel(LinearClampSampler, ScreenPosition1.xy, 0).r);
+    float Position2SceneDepth = (SceneDepthTexture.SampleLevel(LinearClampSampler, ScreenPosition2.xy, 0).r);
+
+    
+    if(ZTest(ScreenPosition1.z, Position1SceneDepth) && ZTest(ScreenPosition2.z, Position2SceneDepth))
+    { 
+        Output2DLines.Append(InputLine);
+    }
+    
+}

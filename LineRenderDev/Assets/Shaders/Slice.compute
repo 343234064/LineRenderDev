@@ -1,0 +1,188 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel SumSingleBucketInclusive
+#pragma kernel SumAllBucket
+#pragma kernel SumTotal
+#pragma kernel SumTotalAndSlice
+
+
+#include "Common.cginc"
+
+
+#define ENABLE_TEST 0
+
+#if ENABLE_TEST
+
+#define ELEMENT_TYPE uint
+
+uniform int InputSize;
+uniform int OutputSize;
+StructuredBuffer<uint> InputArray;
+RWStructuredBuffer<uint> OutputArray;
+
+#define GET_INPUT_ELEMENT_PASS1(idx) InputArray[idx]  
+#define GET_INPUT_ELEMENT_PASS2(idx) InputArray[idx]  
+#define GET_OUTPUT_ELEMENT(idx) OutputArray[idx]  
+#define INPUT_SIZE InputSize
+#define OUTPUT_SIZE OutputSize
+
+#else
+
+#define ELEMENT_TYPE uint
+
+StructuredBuffer<int> ArgBuffer;
+RWStructuredBuffer<LineSegment> InputArray;
+#define GET_INPUT_ELEMENT_PASS1(idx) InputArray[idx].PixelLength  
+#define GET_INPUT_ELEMENT_PASS2(idx) InputArray[idx].PixelLengthTotal  
+#define GET_OUTPUT_ELEMENT(idx) InputArray[idx].PixelLengthTotal  
+#define INPUT_SIZE ArgBuffer[0]
+#define OUTPUT_SIZE ArgBuffer[0]
+
+AppendStructuredBuffer<Slice> Slices;
+
+#endif
+
+
+RWStructuredBuffer<ELEMENT_TYPE> BucketArray;
+
+groupshared ELEMENT_TYPE##2 Bucket[SLICE_PASS_PER_THREAD_ELEMENT_NUM];
+
+
+
+ELEMENT_TYPE SumElements(uint GroupIndex, ELEMENT_TYPE Element)
+{
+	Bucket[GroupIndex].x = Element;
+	Bucket[GroupIndex].y = 0;
+	uint offset = 0;
+
+	[unroll]
+	for (offset = 2; offset <= SLICE_PASS_PER_THREAD_ELEMENT_NUM; offset <<= 1)
+	{
+		GroupMemoryBarrierWithGroupSync();
+
+		if ((GroupIndex & (offset - 1)) == (offset - 1))
+			Bucket[GroupIndex].x += Bucket[GroupIndex - offset / 2].x;
+	}
+	
+	if (GroupIndex == (SLICE_PASS_PER_THREAD_ELEMENT_NUM - 1))
+	{
+		Bucket[GroupIndex].x = 0;
+	}
+	
+	bool Pingpong = true;
+	int PingpongTimes = 0;
+	[unroll]
+	for (offset = SLICE_PASS_PER_THREAD_ELEMENT_NUM / 2; offset >= 1; offset >>= 1)
+	{
+		GroupMemoryBarrierWithGroupSync();
+
+		uint a = offset - 1;
+		uint b = offset | a;
+
+		if (Pingpong)
+		{
+			if ((GroupIndex & b) == b)
+			{
+				Bucket[GroupIndex].y = Bucket[GroupIndex - offset].x + Bucket[GroupIndex].x;
+			}
+			else if ((GroupIndex & a) == a)
+			{
+				Bucket[GroupIndex].y = Bucket[GroupIndex + offset].x;
+			}
+			else
+			{
+				Bucket[GroupIndex].y = Bucket[GroupIndex].x;
+			}
+		}
+		else
+		{
+			if ((GroupIndex & b) == b)
+			{
+				Bucket[GroupIndex].x = Bucket[GroupIndex - offset].y + Bucket[GroupIndex].y;
+			}
+			else if ((GroupIndex & a) == a)
+			{
+				Bucket[GroupIndex].x = Bucket[GroupIndex + offset].y;
+			}
+			else
+			{
+				Bucket[GroupIndex].x = Bucket[GroupIndex].y;
+			}
+		}
+
+		PingpongTimes += 1;
+		Pingpong = !Pingpong;
+	}
+	
+	//GroupMemoryBarrierWithGroupSync();
+
+	ELEMENT_TYPE Result = 0;
+	Result = (PingpongTimes % 2) ? Bucket[GroupIndex].y : Bucket[GroupIndex].x;
+
+	return Result + Element;
+}
+
+
+
+[numthreads(SLICE_PASS_PER_THREAD_ELEMENT_NUM, 1, 1)]
+void SumSingleBucketInclusive(uint3 id : SV_DispatchThreadID, uint gi : SV_GroupIndex)
+{
+	ELEMENT_TYPE Element = 0;
+	if (id.x < (uint)INPUT_SIZE)
+		Element = GET_INPUT_ELEMENT_PASS1(id.x);
+	ELEMENT_TYPE Result = SumElements(gi, Element);
+
+	GET_OUTPUT_ELEMENT(id.x) = (id.x < (uint)OUTPUT_SIZE) ? Result : 0;
+}
+
+
+[numthreads(SLICE_PASS_PER_THREAD_ELEMENT_NUM, 1, 1)]
+void SumAllBucket(uint3 id : SV_DispatchThreadID, uint gi : SV_GroupIndex)
+{
+	ELEMENT_TYPE Element = 0;
+	uint Index = id.x * SLICE_PASS_PER_THREAD_ELEMENT_NUM - 1;
+	if (Index < (uint)INPUT_SIZE && Index >= 0)
+		Element = GET_INPUT_ELEMENT_PASS2(Index);
+	ELEMENT_TYPE Result = SumElements(gi, Element);
+
+	BucketArray[id.x] = (id.x < (uint)SLICE_PASS_PER_THREAD_ELEMENT_NUM) ? Result : 0;
+}
+
+
+[numthreads(SLICE_PASS_PER_THREAD_ELEMENT_NUM, 1, 1)]
+void SumTotal(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID)
+{
+	if (id.x < (uint)OUTPUT_SIZE && gid.x < SLICE_PASS_PER_THREAD_ELEMENT_NUM) {
+		GET_OUTPUT_ELEMENT(id.x) = GET_OUTPUT_ELEMENT(id.x) + BucketArray[gid.x];
+	}
+}
+
+
+[numthreads(SLICE_PASS_PER_THREAD_ELEMENT_NUM, 1, 1)]
+void SumTotalAndSlice(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID)
+{
+	if (id.x < (uint)OUTPUT_SIZE && gid.x < SLICE_PASS_PER_THREAD_ELEMENT_NUM) {
+		ELEMENT_TYPE Current = GET_INPUT_ELEMENT_PASS1(id.x);
+		ELEMENT_TYPE CurrentSum = GET_OUTPUT_ELEMENT(id.x) + BucketArray[gid.x];
+		ELEMENT_TYPE CurrentSumPrev = CurrentSum - Current;
+		GET_OUTPUT_ELEMENT(id.x) = CurrentSum;
+
+		Slice Output;
+		Output.Visibility1 = 0;
+		Output.Visibility2 = 0;
+		Output.BeginSegmentIndex = id.x;
+
+		ELEMENT_TYPE Delta = CurrentSum % SLICE_PIXEL_SIZE;
+		int Rank = (int)(ceil(((float)CurrentSum) / SLICE_PIXEL_SIZE) - ceil(((float)CurrentSumPrev) / SLICE_PIXEL_SIZE));
+		if (Rank > 0)
+		{
+			ELEMENT_TYPE Prev = 0;
+			ELEMENT_TYPE BaseOffset = Current - Delta + 1;
+			for (int i = 0; i < Rank; i++) {
+				Output.BeginPixel = BaseOffset - SLICE_PIXEL_SIZE * i;
+				Slices.Append(Output);
+			}
+		}
+
+	}
+
+}

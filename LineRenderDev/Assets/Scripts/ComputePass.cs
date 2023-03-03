@@ -4,62 +4,99 @@ using UnityEngine;
 using UnityEngine.Rendering;
 
 
-public class ComputePass
+public class ComputeBufferUtils
 {
-    public class BufferParam
+    private static readonly ComputeBufferUtils instance = new ComputeBufferUtils();
+    private ComputeBuffer ArgBuffer;
+    private int[] Args;
+
+    static ComputeBufferUtils()
     {
-        public BufferParam(string ParamName, ComputeBuffer InBuffer, int Size)
-        {
-            PropertyName = ParamName;
-            Buffer = InBuffer;
-            BufferByteSize = Size;
-
-            ArgBuffer = null;
-            ArgBufferOffset = 0;
-            NeedCopyValue = false;
-        }
-
-        public BufferParam(string ParamName, ComputeBuffer InBuffer, int Size, ComputeBuffer InArgBuffer, int ArgBufferCopyValueOffset)
-        {
-            PropertyName = ParamName;
-            Buffer = InBuffer;
-            BufferByteSize = Size;
-
-            ArgBuffer = InArgBuffer;
-            ArgBufferOffset = ArgBufferCopyValueOffset;
-            NeedCopyValue = true;
-        }
-
-        public string PropertyName;
-        public ComputeBuffer Buffer;
-        public int BufferByteSize;
-
-        public ComputeBuffer ArgBuffer;
-        public int ArgBufferOffset;
-        public bool NeedCopyValue;
     }
 
+    private ComputeBufferUtils()
+    {
+        ArgBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.IndirectArguments);
+        Args = new int[1] { 0 };
+        ArgBuffer.SetData(Args);
+    }
+
+    public static ComputeBufferUtils Instance
+    {
+        get
+        {
+            return instance;
+        }
+    }
+
+
+    public int GetCount(ComputeBuffer Buffer)
+    {
+        ComputeBuffer.CopyCount(Buffer, ArgBuffer, 0);
+        ArgBuffer.GetData(Args, 0, 0, 1);
+        Debug.Log("++++++++++++++" + Args[0]);
+        return Args[0];
+    }
+
+    public void Print<T>(ComputeBuffer Buffer, int StartIndex, int EndIndex) where T : struct
+    {
+        int N = EndIndex - StartIndex;
+        T[] Array = new T[N];
+        Buffer.GetData(Array, 0, StartIndex, N);
+        for (int i = 0; i < N; i++)
+        {
+            Debug.LogFormat("index={0}: {1}", StartIndex + i, Array[i]);
+        }
+    }
+
+    public void PrintInLine<T>(ComputeBuffer Buffer, int StartIndex, int EndIndex) where T : struct
+    {
+        int N = EndIndex - StartIndex;
+        T[] Array = new T[N];
+        Buffer.GetData(Array, 0, StartIndex, N);
+        Debug.Log(System.String.Join("|", new List<T>(Array).ConvertAll(i => i.ToString()).ToArray()));
+    }
+
+    public void Print<T>(ComputeBuffer Buffer) where T : struct
+    {
+        int N = GetCount(Buffer);
+        T[] Array = new T[N];
+        Buffer.GetData(Array, 0, 0, N);
+        for (int i = 0; i < N; i++)
+        {
+            Debug.LogFormat("index={0}: {1}",  i, Array[i]);
+        }
+    }
+
+    public void PrintInLine<T>(ComputeBuffer Buffer) where T : struct
+    {
+        int N = GetCount(Buffer);
+        T[] Array = new T[N];
+        Buffer.GetData(Array, 0, 0, N);
+        Debug.Log(System.String.Join("|", new List<T>(Array).ConvertAll(i => i.ToString()).ToArray()));
+    }
+}
+
+public class ComputePass
+{
     public string Name;
     protected bool Available;
 
     public Array3<uint> CoreShaderGroupSize;
-    protected int CoreShaderKernelId;
-    protected ComputeShader CoreShader;
+    public int CoreShaderKernelId;
+    public ComputeShader CoreShader;
 
-    protected List<BufferParam> InputBuffers;
-    protected List<BufferParam> OutputBuffers;
-    protected List<BufferParam> ConstantsBuffers;
 
     public ComputePass()
     {
+        Name = "ComputePass";
         Available = false;
         CoreShaderGroupSize = new Array3<uint>(0, 0, 0);
-        InputBuffers = new List<BufferParam>();
-        OutputBuffers = new List<BufferParam>();
-        ConstantsBuffers = new List<BufferParam>();
+        CoreShaderKernelId = 0;
+        CoreShader = null;
     }
 
-    public virtual bool Init(string PassName, ComputeShader InputShader)
+    public virtual bool Init(string PassName, string KernelName, ComputeShader InputShader)
     {
         if (InputShader == null)
             return false;
@@ -67,8 +104,7 @@ public class ComputePass
         Name = PassName;
 
         CoreShader = InputShader;
-        CoreShaderKernelId = CoreShader.FindKernel("CSMain");
-        Debug.Log(CoreShaderKernelId);
+        CoreShaderKernelId = CoreShader.FindKernel(KernelName);
 
         CoreShader.GetKernelThreadGroupSizes(CoreShaderKernelId, out CoreShaderGroupSize.x, out CoreShaderGroupSize.y, out CoreShaderGroupSize.z);
 
@@ -78,103 +114,10 @@ public class ComputePass
 
     public virtual void Destroy()
     {
-        ClearConstantBuffer();
-        ClearInputBuffer();
-        ClearOutputBuffer();
-
         Available = false;
     }
 
-    public virtual void InternalRender(CommandBuffer RenderCommands, Array3<int> DispatchGroupSize)
-    {
-        foreach (BufferParam CBuffer in ConstantsBuffers)
-        {
-            RenderCommands.SetComputeConstantBufferParam(CoreShader, Shader.PropertyToID(CBuffer.PropertyName), CBuffer.Buffer, 0, CBuffer.BufferByteSize);
-        }
 
-        foreach (BufferParam IBuffer in InputBuffers)
-        {
-            RenderCommands.SetComputeBufferParam(CoreShader, CoreShaderKernelId, IBuffer.PropertyName, IBuffer.Buffer);
-        }
-
-        foreach (BufferParam OBuffer in OutputBuffers)
-        {
-            RenderCommands.SetComputeBufferParam(CoreShader, CoreShaderKernelId, OBuffer.PropertyName, OBuffer.Buffer);
-            RenderCommands.SetBufferCounterValue(OBuffer.Buffer, 0);
-        }
-
-        RenderCommands.DispatchCompute(CoreShader, CoreShaderKernelId, DispatchGroupSize.x, DispatchGroupSize.y, DispatchGroupSize.z);
-
-        foreach (BufferParam OBuffer in OutputBuffers)
-        {
-            if (OBuffer.NeedCopyValue)
-                RenderCommands.CopyCounterValue(OBuffer.Buffer, OBuffer.ArgBuffer, (uint)OBuffer.ArgBufferOffset);
-        }
-
-    }
-
-    public virtual void InternalRenderIndirect(CommandBuffer RenderCommands, ComputeBuffer DispatchArgBuffer, uint DispatchArgBufferOffset)
-    {
-        foreach (BufferParam CBuffer in ConstantsBuffers)
-        {
-            RenderCommands.SetComputeConstantBufferParam(CoreShader, Shader.PropertyToID(CBuffer.PropertyName), CBuffer.Buffer, 0, CBuffer.BufferByteSize);
-        }
-
-        foreach (BufferParam IBuffer in InputBuffers)
-        {
-            RenderCommands.SetComputeBufferParam(CoreShader, CoreShaderKernelId, IBuffer.PropertyName, IBuffer.Buffer);
-        }
-
-        foreach (BufferParam OBuffer in OutputBuffers)
-        {
-            RenderCommands.SetComputeBufferParam(CoreShader, CoreShaderKernelId, OBuffer.PropertyName, OBuffer.Buffer);
-            RenderCommands.SetBufferCounterValue(OBuffer.Buffer, 0);
-        }
-
-        RenderCommands.DispatchCompute(CoreShader, CoreShaderKernelId, DispatchArgBuffer, DispatchArgBufferOffset);
-
-
-        foreach (BufferParam OBuffer in OutputBuffers)
-        {
-            if (OBuffer.NeedCopyValue)
-                RenderCommands.CopyCounterValue(OBuffer.Buffer, OBuffer.ArgBuffer, (uint)OBuffer.ArgBufferOffset);
-
-        }
-
-    }
-
-    public virtual void SetConstantBuffer(string Name, ComputeBuffer Buffer, int BufferSize)
-    {
-        ConstantsBuffers.Add(new BufferParam(Name, Buffer, BufferSize));
-    }
-
-    public virtual void SetInputBuffer(string Name, ComputeBuffer Buffer)
-    {
-        InputBuffers.Add(new BufferParam(Name, Buffer, 0));
-    }
-
-    public virtual void SetOutputBuffer(string Name, ComputeBuffer Buffer)
-    {
-        OutputBuffers.Add(new BufferParam(Name, Buffer, 0));
-    }
-
-    public virtual void SetOutputBufferWithArgBuffer(string Name, ComputeBuffer Buffer, ComputeBuffer ArgBuffer, int ArgBufferCopyValueOffset)
-    {
-        OutputBuffers.Add(new BufferParam(Name, Buffer, 0, ArgBuffer, ArgBufferCopyValueOffset));
-    }
-
-    public virtual void ClearConstantBuffer()
-    {
-        ConstantsBuffers.Clear();
-    }
-
-    public virtual void ClearInputBuffer()
-    {
-        InputBuffers.Clear();
-    }
-
-    public virtual void ClearOutputBuffer()
-    {
-        OutputBuffers.Clear();
-    }
 }
+
+

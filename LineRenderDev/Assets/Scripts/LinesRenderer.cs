@@ -33,12 +33,16 @@ public class LinesRenderer : MonoBehaviour
     [TitleGroup("Global Shaders")]
 
     [AssetSelector(Filter = "Assets/")]
-    [Required("Extract Line Shader Is Required")]
-    public ComputeShader ExtractLineShader;
+    [Required("Extract Pass Shader Is Required")]
+    public ComputeShader ExtractPassShader;
 
     [AssetSelector(Paths = "Assets/")]
-    [Required("Visible Line Shader Is Required")]
-    public ComputeShader VisibleLineShader;
+    [Required("Slice Pass Shader Is Required")]
+    public ComputeShader SlicePassShader;
+
+    [AssetSelector(Paths = "Assets/")]
+    [Required("Visible Pass Shader Is Required")]
+    public ComputeShader VisiblePassShader;
 
 
     /// ///////////////////////////////////////////////////////
@@ -73,7 +77,7 @@ public class LinesRenderer : MonoBehaviour
             LineMaterial MatSetting = LineObject.GetComponent<LineMaterial>();
             MatSetting.LineRenderMaterial.renderQueue = (int)RenderQueue.Geometry + 1;
 
-            LineContext Context = new LineContext(SubMesh.sharedMesh, LineObject.transform, MatSetting, new Vector2(Screen.currentResolution.width, Screen.currentResolution.height));
+            LineContext Context = new LineContext(SubMesh.sharedMesh, LineObject.transform, MatSetting);
 
             MeshInfo ToAdd = new MeshInfo();
             ToAdd.Context = Context;
@@ -103,8 +107,9 @@ public class LinesRenderer : MonoBehaviour
         LineShader InputShaders = new LineShader();
         Renderer = new RenderLayer();
 
-        InputShaders.ExtractPassShader = ExtractLineShader;
-        InputShaders.VisibilityPassShader = VisibleLineShader;
+        InputShaders.ExtractPassShader = ExtractPassShader;
+        InputShaders.SlicePassShader = SlicePassShader;
+        InputShaders.VisibilityPassShader = VisiblePassShader;
         Renderer.Init(InputShaders);
 
         RenderCamera.AddCommandBuffer(CameraEvent.AfterForwardAlpha, Renderer.GetRenderCommand());
@@ -112,7 +117,8 @@ public class LinesRenderer : MonoBehaviour
 
     void Start()
     {
-       for(int i = 0; i<MeshInfoListForRender.Count; i++)
+        Array2<int> ScreenResolution = new Array2<int>(Screen.currentResolution.width, Screen.currentResolution.height);
+       for (int i = 0; i<MeshInfoListForRender.Count; i++)
         {
            MeshInfo Current = MeshInfoListForRender[i];
             if (!Current.Context.RumtimeTransform.gameObject.activeSelf)
@@ -197,6 +203,10 @@ public class LinesRenderer : MonoBehaviour
                 Renderer.EveryFrameParams.WorldViewProjectionMatrix = ViewProjectionMatrix * Current.Context.RumtimeTransform.localToWorldMatrix;
                 Renderer.EveryFrameParams.WorldViewMatrix = RenderCamera.worldToCameraMatrix * Current.Context.RumtimeTransform.localToWorldMatrix;
                 Renderer.EveryFrameParams.ObjectWorldMatrix = Current.Context.RumtimeTransform.localToWorldMatrix;
+                Renderer.EveryFrameParams.ScreenWidthScaled = camera.scaledPixelWidth;
+                Renderer.EveryFrameParams.ScreenHeightScaled = camera.scaledPixelHeight;
+                Renderer.EveryFrameParams.ScreenWidthFixed = Screen.currentResolution.width;
+                Renderer.EveryFrameParams.ScreenHeightFixed = Screen.currentResolution.height;
 
                 Renderer.Render(Current.Context);
             }

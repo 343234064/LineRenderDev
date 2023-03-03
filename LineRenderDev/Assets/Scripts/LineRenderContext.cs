@@ -1,9 +1,21 @@
 ﻿
-
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
+
+
+public struct Array2<T>
+{
+    public Array2(T _x, T _y)
+    {
+        x = _x;
+        y = _y;
+    }
+
+    public T x;
+    public T y;
+}
 
 
 public struct Array3<T>
@@ -23,46 +35,54 @@ public struct Array3<T>
 
 
 
-public struct Slice
-{
-    public int SegmentIndex;
-    public int SliceIndex;
-
-    public Vector2 PixelPostion1;
-    public Vector2 PixelPostion2;
-
-    public static int Size()
-    {
-        return sizeof(int) * 2 + sizeof(float) * 4;
-    }
-}
 
 public struct LineSegment
 {
-    public Vector3 LocalPosition1;
-    public Vector3 LocalPosition2;
-    public Vector4 NDCPositon1;
-    public Vector4 NDCPositon2;
+    Vector3 LocalPosition1;
+    Vector3 LocalPosition2;
+    Vector3 ScreenPosition1;
+    Vector3 ScreenPosition2;
 
-    public int Extracted;
-    public int Visible;
+    uint BackFacing;
+    uint PixelLength;
+    uint PixelLengthTotal;
+
+    public override string ToString() => $"LineSegment(PixelLength={PixelLength}), PixelLengthTotal={PixelLengthTotal})";
 
     public static int Size()
     {
-        return sizeof(float) * 4 * 2 + sizeof(float) * 3 * 2 + sizeof(int) * 2 ;
+        return sizeof(float) * 3 * 2 + sizeof(float) * 3 * 2 + sizeof(uint) * 3;
     }
 }
 
+public struct Slice
+{
+    uint Visibility1;
+    uint Visibility2;
+
+    uint BeginSegmentIndex;
+    uint BeginPixel;
+
+    public override string ToString() => $"Slice(Index={BeginSegmentIndex}), Pixel={BeginPixel})";
+
+    public static int Size()
+    {
+        return sizeof(uint) * 4;
+    }
+}
 
 
 public class LineShader
 {
     public ComputeShader ExtractPassShader;
+    public ComputeShader SlicePassShader;
     public ComputeShader VisibilityPassShader;
 
     public bool IsValid()
     {
         if (ExtractPassShader == null)
+            return false;
+        else if (SlicePassShader == null)
             return false;
         else if (VisibilityPassShader == null)
             return false;
@@ -79,6 +99,11 @@ public struct RenderParams
     public Matrix4x4 WorldViewProjectionMatrix;
     public Matrix4x4 WorldViewMatrix;
     public Matrix4x4 ObjectWorldMatrix;
+    public int ScreenWidthScaled;
+    public int ScreenHeightScaled;
+    public int ScreenWidthFixed;
+    public int ScreenHeightFixed;
+
 }
 
 public struct RenderConstants
@@ -103,45 +128,41 @@ public class LineContext
     public LineMaterial LineMaterialSetting;
     public Transform RumtimeTransform;
 
-    public Vector2 ScreenResolution;
+    public ComputeBuffer ConstantsBuffer;
 
     public ComputeBuffer AdjacencyBuffer;
     public ComputeBuffer VerticesBuffer;
 
-    public ComputeBuffer ConstantsBuffer;
     public ComputeBuffer SegmentBuffer;
-    public ComputeBuffer ShareDataBuffer;
+    public ComputeBuffer SegmentArgBuffer;
+    public int SegmentArgBufferOffset;
 
+    public ComputeBuffer BucketBuffer;
     public ComputeBuffer SliceBuffer;
-    public ComputeBuffer VisibleLineBuffer;
 
-    public ComputeBuffer ExtractedLineArgBuffer;
-    public int ExtractedLineArgBufferOffset;
+    public ComputeBuffer VisibleLineBuffer;
     public ComputeBuffer VisibleLineArgBuffer;
     public int VisibleLineArgBufferOffset;
 
-    public LineContext(Mesh meshObj, Transform transform, LineMaterial material, Vector2 Resolution)
+    public LineContext(Mesh meshObj, Transform transform, LineMaterial material)
     {
         RumtimeMesh = meshObj;
         RumtimeTransform = transform;
         LineMaterialSetting = material;
 
-        ScreenResolution = Resolution;
-        //Debug.Log(ScreenResolution.x+":"+ScreenResolution.y);
+        ConstantsBuffer = null;
 
         AdjacencyBuffer = null;
         VerticesBuffer = null;
 
-        ConstantsBuffer = null;
         SegmentBuffer = null;
-        ShareDataBuffer = null;
+        SegmentArgBuffer = null;
+        SegmentArgBufferOffset = 0;
 
+        BucketBuffer = null;
         SliceBuffer = null;
+
         VisibleLineBuffer = null;
-
-        ExtractedLineArgBuffer = null;
-        ExtractedLineArgBufferOffset = 0;
-
         VisibleLineArgBuffer = null;        
         VisibleLineArgBufferOffset = 0;
     }
@@ -150,16 +171,6 @@ public class LineContext
     {
         if (AdjTris == null)
             return false;
-
-        if (AdjacencyBuffer != null)
-            AdjacencyBuffer.Release();
-        AdjacencyBuffer = new ComputeBuffer(AdjTris.Length, AdjFace.Size());
-        AdjacencyBuffer.SetData(AdjTris);
-
-        if (VerticesBuffer != null)
-            VerticesBuffer.Release();
-        VerticesBuffer = new ComputeBuffer(RumtimeMesh.vertices.Length, sizeof(float) * 3);
-        VerticesBuffer.SetData(RumtimeMesh.vertices);
 
         if (ConstantsBuffer != null)
             ConstantsBuffer.Release();
@@ -173,68 +184,76 @@ public class LineContext
         Constants[0].HideOccludedEdge = (uint)(LineMaterialSetting.HideOccludedEdge ? 1 : 0);
         ConstantsBuffer.SetData(Constants);
 
+
+        if (AdjacencyBuffer != null)
+            AdjacencyBuffer.Release();
+        AdjacencyBuffer = new ComputeBuffer(AdjTris.Length, AdjFace.Size());
+        AdjacencyBuffer.SetData(AdjTris);
+
+        if (VerticesBuffer != null)
+            VerticesBuffer.Release();
+        VerticesBuffer = new ComputeBuffer(RumtimeMesh.vertices.Length, sizeof(float) * 3);
+        VerticesBuffer.SetData(RumtimeMesh.vertices);
+
+
+
         if (SegmentBuffer != null)
             SegmentBuffer.Release();
-        SegmentBuffer = new ComputeBuffer(AdjTris.Length * 3, LineSegment.Size());
+        SegmentBuffer = new ComputeBuffer(AdjTris.Length * 3, LineSegment.Size(), ComputeBufferType.Append);
+        SegmentBuffer.SetCounterValue(0);
+        if (SegmentArgBuffer != null)
+            SegmentArgBuffer.Release();
+        SegmentArgBuffer = new ComputeBuffer(7, sizeof(int), ComputeBufferType.IndirectArguments);
+        int[] SegmentArg = new int[7] { 0, 1, 1, 1, 0, 1, 1 }; // for slice pass counting, instance count/1024+1, 1, 1(for next dispatch x y z), instance count(temp), 1, 1(for next dispatch x y z), 
+        SegmentArgBuffer.SetData(SegmentArg);
+        SegmentArgBufferOffset = sizeof(int);
 
-        if (ShareDataBuffer != null)
-            ShareDataBuffer.Release();
-        ShareDataBuffer = new ComputeBuffer(3, sizeof(int)); // total pixel length, 0, 0
-        int[] ShareData = new int[3] { 0, 0, 0 };
-        ShareDataBuffer.SetData(ShareData);
-
+        if (BucketBuffer != null)
+            BucketBuffer.Release();
+        BucketBuffer = new ComputeBuffer(1024, sizeof(uint));
         if (SliceBuffer != null)
             SliceBuffer.Release();
-        /*0.5 should be reconsidered*/
-        SliceBuffer = new ComputeBuffer((int)(ScreenResolution.x * ScreenResolution.y * 0.5), Slice.Size(), ComputeBufferType.Append);
+        SliceBuffer = new ComputeBuffer(Screen.currentResolution.width * Screen.currentResolution.height / 128, Slice.Size(), ComputeBufferType.Append);
+        SliceBuffer.SetCounterValue(0);
+
         if (VisibleLineBuffer != null)
             VisibleLineBuffer.Release();
-        VisibleLineBuffer = new ComputeBuffer(AdjTris.Length * 3, sizeof(int), ComputeBufferType.Append);
-
-        if (ExtractedLineArgBuffer != null)
-            ExtractedLineArgBuffer.Release();
-        ExtractedLineArgBuffer = new ComputeBuffer(4, sizeof(int), ComputeBufferType.IndirectArguments);
-        //int[] ExtractedLineArg = new int[3] { 0, 1, 1 }; // instance count, 1, 1(for next dispatch x y z)
-        int[] ExtractedLineArg = new int[4] { 2, AdjTris.Length * 3, 0, 0 }; // vertex count, instance count, start vertex, start instance
-        ExtractedLineArgBuffer.SetData(ExtractedLineArg);
-        //ExtractedLineArgBufferOffset = 0;
-        ExtractedLineArgBufferOffset = sizeof(int);
-
-
-        /*
-
+        VisibleLineBuffer = new ComputeBuffer(AdjTris.Length * 3, LineSegment.Size(), ComputeBufferType.Append);
+        VisibleLineBuffer.SetCounterValue(0);
         if (VisibleLineArgBuffer != null)
             VisibleLineArgBuffer.Release();
         VisibleLineArgBuffer = new ComputeBuffer(4, sizeof(int), ComputeBufferType.IndirectArguments);
         int[] VisibleLineArg = new int[4] { 2, 1, 0, 0 }; // vertex count, instance count, start vertex, start instance
         VisibleLineArgBuffer.SetData(VisibleLineArg);
         VisibleLineArgBufferOffset = sizeof(int);
-        */
+        
 
         return true;
     }
 
     public void Destroy()
     {
+        if (ConstantsBuffer != null)
+            ConstantsBuffer.Release();
+
         if (AdjacencyBuffer != null)
             AdjacencyBuffer.Release();
         if (VerticesBuffer != null)
             VerticesBuffer.Release();
 
-        if (ConstantsBuffer != null)
-            ConstantsBuffer.Release();
         if (SegmentBuffer != null)
             SegmentBuffer.Release();
-        if (ShareDataBuffer != null)
-            ShareDataBuffer.Release();
+        if (SegmentArgBuffer != null)
+            SegmentArgBuffer.Release();
 
+        if (BucketBuffer != null)
+            BucketBuffer.Release();
         if (SliceBuffer != null)
             SliceBuffer.Release();
+
+
         if (VisibleLineBuffer != null)
             VisibleLineBuffer.Release();
-
-        if (ExtractedLineArgBuffer != null)
-            ExtractedLineArgBuffer.Release();
         if (VisibleLineArgBuffer != null)
             VisibleLineArgBuffer.Release();
     }
@@ -243,53 +262,6 @@ public class LineContext
 
 
 
-
-public class ExtractionPass : ComputePass
-{
-    public Array3<int> DispatchSize;
-
-    public ExtractionPass()
-    {
-        DispatchSize = new Array3<int>(1, 1, 1);
-    }
-
-    public void Render(CommandBuffer RenderCommands, RenderParams EveryFrameParams)
-    {
-        RenderCommands.SetComputeVectorParam(CoreShader, "LocalSpaceViewPosition", EveryFrameParams.LocalCameraPosition);
-        RenderCommands.SetComputeFloatParam(CoreShader, "CreaseAngleThreshold", EveryFrameParams.CreaseAngleThreshold);
-        RenderCommands.SetComputeMatrixParam(CoreShader, "WorldViewProjection", EveryFrameParams.WorldViewProjectionMatrix);
-        RenderCommands.SetComputeMatrixParam(CoreShader, "WorldView", EveryFrameParams.WorldViewMatrix);
-
-        base.InternalRender(RenderCommands, DispatchSize);
-    }
-}
-
-
-public class VisibilityPass : ComputePass
-{
-    public ComputeBuffer DispatchArguments;
-    public uint DispatchArgOffset;
-    //temp
-    public Array3<int> DispatchSize;
-
-    public VisibilityPass()
-    {
-        DispatchArguments = null;
-        DispatchArgOffset = 0;
-
-        //temp
-        DispatchSize = new Array3<int>(1, 1, 1);
-    }
-
-    public void Render(CommandBuffer RenderCommands, RenderParams EveryFrameParams)
-    {
-        RenderTargetIdentifier DepthRTIdentifier = new RenderTargetIdentifier(BuiltinRenderTextureType.Depth);
-        RenderCommands.SetComputeTextureParam(CoreShader, CoreShaderKernelId, "SceneDepthTexture", DepthRTIdentifier);
-
-        //base.InternalRenderIndirect(RenderCommands, DispatchArguments, DispatchArgOffset);
-        base.InternalRender(RenderCommands, DispatchSize);
-    }
-}
 
 
 public class RenderLayer
@@ -297,10 +269,14 @@ public class RenderLayer
     public RenderParams EveryFrameParams;
 
     private bool Available;
-    private ExtractionPass ExtractPass;
-    private VisibilityPass VisiblePass;
+    private ComputePass ExtractPass;
+    private ComputePass SlicePassPart1;
+    private ComputePass SlicePassPart2;
+    private ComputePass SlicePassPart3;
+    private ComputePass VisiblePass;
 
     private CommandBuffer RenderCommands;
+    private ComputeBuffer EmptyBuffer;
 
     public RenderLayer()
     {
@@ -308,8 +284,13 @@ public class RenderLayer
         RenderCommands = new CommandBuffer();
         EveryFrameParams = new RenderParams();
 
-        ExtractPass = new ExtractionPass();
-        VisiblePass = new VisibilityPass();
+        ExtractPass = new ComputePass();
+        SlicePassPart1 = new ComputePass();
+        SlicePassPart2 = new ComputePass();
+        SlicePassPart3 = new ComputePass();
+        VisiblePass = new ComputePass();
+
+        EmptyBuffer = null;
     }
 
     public bool Init(LineShader InputShaders)
@@ -320,10 +301,22 @@ public class RenderLayer
 
         RenderCommands.name = "Draw Lines";
 
-        if (!ExtractPass.Init("ExtractionPass", InputShaders.ExtractPassShader))
+        if (!ExtractPass.Init("ExtractionPass", "Extraction", InputShaders.ExtractPassShader))
             return false;
-        if (!VisiblePass.Init("VisibilityPass", InputShaders.VisibilityPassShader))
+        if (!SlicePassPart1.Init("SlicePassPart1", "SumSingleBucketInclusive", InputShaders.SlicePassShader))
             return false;
+        if (!SlicePassPart2.Init("SlicePassPart2", "SumAllBucket", InputShaders.SlicePassShader))
+            return false;
+        if (!SlicePassPart3.Init("SlicePassPart3", "SumTotalAndSlice", InputShaders.SlicePassShader))
+            return false;
+        if (!VisiblePass.Init("VisibilityPass", "Visibility", InputShaders.VisibilityPassShader))
+            return false;
+
+        if (EmptyBuffer != null)
+            EmptyBuffer.Release();
+        EmptyBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Append);
+        EmptyBuffer.SetData(new int[1] { 0 });
+        EmptyBuffer.SetCounterValue(0);
 
         Available = true;
         Debug.Log("Render Layer Init");
@@ -336,7 +329,13 @@ public class RenderLayer
         RenderCommands.Release();
 
         ExtractPass.Destroy();
+        SlicePassPart1.Destroy();
+        SlicePassPart2.Destroy();
+        SlicePassPart3.Destroy();
         VisiblePass.Destroy();
+
+        if (EmptyBuffer != null)
+            EmptyBuffer.Release();
 
         Available = false;
         Debug.Log("Render Layer Destroy");
@@ -347,36 +346,80 @@ public class RenderLayer
         if (!Available)
             return;
 
-        ExtractPass.SetConstantBuffer("Constants", Current.ConstantsBuffer, RenderConstants.Size());
-        ExtractPass.SetInputBuffer("AdjacencyTriangles", Current.AdjacencyBuffer);
-        ExtractPass.SetInputBuffer("Vertices", Current.VerticesBuffer);
-        ExtractPass.SetInputBuffer("Segments", Current.SegmentBuffer);
-        ExtractPass.SetInputBuffer("ShareData", Current.ShareDataBuffer);
-        ExtractPass.SetInputBuffer("Slices", Current.SliceBuffer);
-        ExtractPass.SetInputBuffer("VisibleLines", Current.VisibleLineBuffer);
+        //Reset
+        //Do this in slice pass
+        RenderCommands.SetBufferCounterValue(EmptyBuffer, 0);
+        RenderCommands.CopyCounterValue(EmptyBuffer, Current.SegmentArgBuffer, 0);
+        RenderCommands.SetBufferCounterValue(EmptyBuffer, 1);
+        RenderCommands.CopyCounterValue(EmptyBuffer, Current.SegmentArgBuffer, sizeof(int));
+        /*
+         *  ExtractPass
+         *  Limited:
+         *  Direct3D 11 DirectCompute 5.0:
+         *  numthreads max: D3D11_CS_THREAD_GROUP_MAX_X (1024) D3D11_CS_THREAD_GROUP_MAX_Y (1024) D3D11_CS_THREAD_GROUP_MAX_Z (64)
+         *  dispatch max: D3D11_CS_DISPATCH_MAX_THREAD_GROUPS_PER_DIMENSION (65535)
+         *  Max 65535 * 256  -> 16,776,960 tris
+         */
+        RenderCommands.SetComputeVectorParam(ExtractPass.CoreShader, "LocalSpaceViewPosition", EveryFrameParams.LocalCameraPosition);
+        RenderCommands.SetComputeFloatParam(ExtractPass.CoreShader, "CreaseAngleThreshold", EveryFrameParams.CreaseAngleThreshold);
+        RenderCommands.SetComputeMatrixParam(ExtractPass.CoreShader, "WorldViewProjection", EveryFrameParams.WorldViewProjectionMatrix);
+        //RenderCommands.SetComputeMatrixParam(ExtractPass.CoreShader, "WorldView", EveryFrameParams.WorldViewMatrix);
+        RenderCommands.SetComputeIntParam(ExtractPass.CoreShader, "ScreenWidth", EveryFrameParams.ScreenWidthScaled);
+        RenderCommands.SetComputeIntParam(ExtractPass.CoreShader, "ScreenHeight", EveryFrameParams.ScreenHeightScaled);
+        RenderCommands.SetComputeConstantBufferParam(ExtractPass.CoreShader, Shader.PropertyToID("Constants"), Current.ConstantsBuffer, 0, RenderConstants.Size());
+        RenderCommands.SetComputeBufferParam(ExtractPass.CoreShader, ExtractPass.CoreShaderKernelId, "AdjacencyTriangles", Current.AdjacencyBuffer);
+        RenderCommands.SetComputeBufferParam(ExtractPass.CoreShader, ExtractPass.CoreShaderKernelId, "Vertices", Current.VerticesBuffer);
+        RenderCommands.SetComputeBufferParam(ExtractPass.CoreShader, ExtractPass.CoreShaderKernelId, "ArgBuffer", Current.SegmentArgBuffer);
+        RenderCommands.SetComputeBufferParam(ExtractPass.CoreShader, ExtractPass.CoreShaderKernelId, "Segments", Current.SegmentBuffer);
+        RenderCommands.SetBufferCounterValue(Current.SegmentBuffer, 0);
+        RenderCommands.DispatchCompute(ExtractPass.CoreShader, ExtractPass.CoreShaderKernelId, ((int)(Current.AdjacencyBuffer.count / ExtractPass.CoreShaderGroupSize.x) + 1), 1, 1);
+        RenderCommands.CopyCounterValue(Current.SegmentBuffer, Current.SegmentArgBuffer, sizeof(int) * 4); //temp
 
-        ExtractPass.DispatchSize.x = ((int)(Current.AdjacencyBuffer.count / ExtractPass.CoreShaderGroupSize.x) + 1); //Max 65535 * 65535 * 65535 * 1024  ->16,776,960 x 2 tris?
-        ExtractPass.DispatchSize.y = 1;
-        ExtractPass.DispatchSize.z = 1;
- 
-        VisiblePass.SetConstantBuffer("Constants", Current.ConstantsBuffer, RenderConstants.Size());
-        VisiblePass.SetInputBuffer("Segments", Current.SegmentBuffer);
-        //VisiblePass.SetOutputBufferWithArgBuffer("Output2DLines", Current.VisibleLineBuffer, Current.VisibleLineArgBuffer, Current.VisibleLineArgBufferOffset);
-        //VisiblePass.DispatchArguments = Current.ExtractedLineArgBuffer;
-        //VisiblePass.DispatchArgOffset = (uint)Current.ExtractedLineArgBufferOffset;
-        VisiblePass.DispatchSize.x = (int)(Current.SegmentBuffer.count);
-        VisiblePass.DispatchSize.y = 1;
-        VisiblePass.DispatchSize.z = 1;
+
+        /*
+         * Slice Pass
+         * Limited:
+         * Max 1024 * 1024 -> 1,048,576 edges
+         */
+        RenderCommands.SetComputeBufferParam(SlicePassPart1.CoreShader, SlicePassPart1.CoreShaderKernelId, "InputArray", Current.SegmentBuffer);
+        RenderCommands.SetComputeBufferParam(SlicePassPart1.CoreShader, SlicePassPart1.CoreShaderKernelId, "ArgBuffer", Current.SegmentArgBuffer);
+        RenderCommands.DispatchCompute(SlicePassPart1.CoreShader, SlicePassPart1.CoreShaderKernelId, Current.SegmentArgBuffer, (uint)Current.SegmentArgBufferOffset);
+
+        RenderCommands.SetComputeBufferParam(SlicePassPart2.CoreShader, SlicePassPart2.CoreShaderKernelId, "InputArray", Current.SegmentBuffer);
+        RenderCommands.SetComputeBufferParam(SlicePassPart2.CoreShader, SlicePassPart2.CoreShaderKernelId, "ArgBuffer", Current.SegmentArgBuffer);
+        RenderCommands.SetComputeBufferParam(SlicePassPart2.CoreShader, SlicePassPart2.CoreShaderKernelId, "BucketArray", Current.BucketBuffer);
+        RenderCommands.DispatchCompute(SlicePassPart2.CoreShader, SlicePassPart2.CoreShaderKernelId, 1, 1, 1); //Max 1024 * 1024
+
+        RenderCommands.SetComputeBufferParam(SlicePassPart3.CoreShader, SlicePassPart3.CoreShaderKernelId, "InputArray", Current.SegmentBuffer);
+        RenderCommands.SetComputeBufferParam(SlicePassPart3.CoreShader, SlicePassPart3.CoreShaderKernelId, "ArgBuffer", Current.SegmentArgBuffer);
+        RenderCommands.SetComputeBufferParam(SlicePassPart3.CoreShader, SlicePassPart3.CoreShaderKernelId, "BucketArray", Current.BucketBuffer);
+        RenderCommands.SetComputeBufferParam(SlicePassPart3.CoreShader, SlicePassPart3.CoreShaderKernelId, "Slices", Current.SliceBuffer);
+        RenderCommands.SetBufferCounterValue(Current.SliceBuffer, 0);
+        RenderCommands.DispatchCompute(SlicePassPart3.CoreShader, SlicePassPart3.CoreShaderKernelId, Current.SegmentArgBuffer, (uint)Current.SegmentArgBufferOffset);
+
+
+        /*
+         * Visibility Pass
+         */
+        RenderTargetIdentifier DepthRTIdentifier = new RenderTargetIdentifier(BuiltinRenderTextureType.Depth);
+        RenderCommands.SetComputeTextureParam(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, "SceneDepthTexture", DepthRTIdentifier);
+        RenderCommands.SetComputeConstantBufferParam(VisiblePass.CoreShader, Shader.PropertyToID("Constants"), Current.ConstantsBuffer, 0, RenderConstants.Size());
+        RenderCommands.SetComputeBufferParam(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, "Segments", Current.SegmentBuffer);
+        RenderCommands.SetComputeBufferParam(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, "Output2DLines", Current.VisibleLineBuffer);
+        RenderCommands.SetBufferCounterValue(Current.VisibleLineBuffer, 0);
+        RenderCommands.DispatchCompute(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, Current.SegmentArgBuffer, sizeof(int) * 4);
+        RenderCommands.CopyCounterValue(Current.VisibleLineBuffer, Current.VisibleLineArgBuffer, (uint)Current.VisibleLineArgBufferOffset);
+
 
         Current.LineMaterialSetting.LineRenderMaterial.SetMatrix("ObjectWorldMatrix", EveryFrameParams.ObjectWorldMatrix);
-        Current.LineMaterialSetting.LineRenderMaterial.SetBuffer("Lines", Current.SegmentBuffer);
+        Current.LineMaterialSetting.LineRenderMaterial.SetBuffer("Lines", Current.VisibleLineBuffer);
 
-        ExtractPass.Render(RenderCommands, EveryFrameParams);
-        VisiblePass.Render(RenderCommands, EveryFrameParams);
 
-        RenderCommands.DrawProceduralIndirect(Matrix4x4.identity, Current.LineMaterialSetting.LineRenderMaterial, -1, MeshTopology.Lines, Current.ExtractedLineArgBuffer, 0); //VisibleLineArgBufferOffset
+        RenderCommands.DrawProceduralIndirect(Matrix4x4.identity, Current.LineMaterialSetting.LineRenderMaterial, -1, MeshTopology.Lines, Current.VisibleLineArgBuffer, 0);
 
- 
+        //RenderCommands.WaitAllAsyncReadbackRequests();
+        //ComputeBufferUtils.Instance.PrintInLine<LineSegment>(Current.SegmentBuffer);
+        //ComputeBufferUtils.Instance.PrintInLine<Slice>(Current.SliceBuffer);
     }
 
     public CommandBuffer GetRenderCommand()
@@ -387,13 +430,6 @@ public class RenderLayer
     public void ClearFrame()
     {
         
-        ExtractPass.ClearConstantBuffer();
-        ExtractPass.ClearInputBuffer();
-        ExtractPass.ClearOutputBuffer();
-
-        VisiblePass.ClearConstantBuffer();
-        VisiblePass.ClearInputBuffer();
-        VisiblePass.ClearOutputBuffer();
     }
 
     public void ClearCommandBuffer()

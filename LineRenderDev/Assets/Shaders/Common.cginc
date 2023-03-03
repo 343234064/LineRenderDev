@@ -18,6 +18,15 @@
 #endif
 
 
+#define EXTRACT_PASS_PER_THREAD_ELEMENT_NUM 256
+// Must be power of 2
+// Slice pass max handle num : BUCKET_ELEMENT_NUM * BUCKET_ELEMENT_NUM
+#define SLICE_PASS_PER_THREAD_ELEMENT_NUM 1024
+
+#define SLICE_PIXEL_SIZE 64
+#define VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM 1
+
+
 cbuffer Constants
 {
     uint TotalAdjacencyTrianglesNum;
@@ -41,19 +50,20 @@ struct AdjFace
 struct LineSegment
 {
     float3 LocalPosition[2];
-    float4 NDCPosition[2];
+    float3 ScreenPosition[2];
 
-    int Extracted;
-    int Visible;
+    uint BackFacing;
+    uint PixelLength;
+    uint PixelLengthTotal;
 };
 
 struct Slice
 {
-    int SegmentIndex;
-    int SliceIndex;
+    uint Visibility1;
+    uint Visibility2;
 
-    float2 PixelPostion1;
-    float2 PixelPostion2;
+    uint BeginSegmentIndex;
+    uint BeginPixel;
 };
 
 
@@ -64,7 +74,7 @@ struct Slice
 * In OpenGL, Z range in [-1.0, 1.0].
 * w might be 0(degenerate case)
 */
-inline float3 ComputeScreenPosition(float4 NDCPosition)
+float3 CalculateScreenPosition(float4 NDCPosition)
 {
     float3 ScreenPosition = float3(NDCPosition.x * 0.5f + 0.5f, NDCPosition.y * 0.5f + 0.5f, NDCPosition.z);
 #if FLIPPED_PROJECTION
@@ -74,4 +84,15 @@ inline float3 ComputeScreenPosition(float4 NDCPosition)
     ScreenPosition.z = ScreenPosition.z * 0.5f + 0.5f;
 #endif
     return ScreenPosition;
+}
+
+
+
+inline bool ZTest(float PositionDepth, float SceneDepth)
+{
+#if REVERSED_Z
+    return (PositionDepth >= SceneDepth) ? true : false;
+#else
+    return (PositionDepth <= SceneDepth) ? true : false;
+#endif
 }

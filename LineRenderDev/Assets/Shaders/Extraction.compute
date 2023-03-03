@@ -1,0 +1,274 @@
+﻿// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel Extraction
+
+#include "Common.cginc"
+
+
+
+StructuredBuffer<float3> Vertices;
+StructuredBuffer<AdjFace> AdjacencyTriangles;
+RWStructuredBuffer<int> ArgBuffer;
+AppendStructuredBuffer<LineSegment> Segments;
+
+uniform float3 LocalSpaceViewPosition;
+uniform float CreaseAngleThreshold;
+uniform float4x4 WorldViewProjection;
+uniform int ScreenWidth;
+uniform int ScreenHeight;
+
+
+
+float3 ComputeNormal(float3 p1, float3 p2, float3 p3)
+{
+    float3 U = p2 - p1;
+    float3 V = p3 - p1;
+
+    float3 Normal = float3(0.0f, 0.0f, 0.0f);
+    /*
+    Normal.x = U.y * V.z - U.z * V.y;
+    Normal.y = U.z * V.x - U.x * V.z;
+    Normal.z = U.x * V.y - U.y * V.x;
+    */
+    Normal = cross(U, V);
+    // No need to normalize
+    //Normal = normalize(Normal);
+
+    return Normal;
+}
+
+
+
+inline bool IsSilhouette(float DotFactor1, float DotFactor2)
+{
+    return step(DotFactor1 * DotFactor2, 0);
+}
+
+inline bool IsCrease(float3 Face1Normal, float3 Face2Normal, float AngleThreshold)
+{
+    /// a dot b / (|a| * |b|) <= cos(theta)
+    return step(dot(Face1Normal, Face2Normal) / length(Face2Normal), AngleThreshold);
+
+}
+
+
+#define NDCLEFT -1.0
+#define NDCRIGHT 1.0
+#define NDCTOP 1.0
+#define NDCBOTTOM -1.0
+
+inline bool IsIntersectWithXPlane(float3 LinePoint1, float LineKFactor, float XPlane, float2 LineXMinMax)
+{
+    float Y = (XPlane - LinePoint1.x) * LineKFactor + LinePoint1.y;
+    if ((Y >= NDCBOTTOM && Y <= NDCTOP) && (XPlane >= LineXMinMax.x && XPlane <= LineXMinMax.y)) return true;
+    else return false;
+}
+
+inline bool IsIntersectWithYPlane(float3 LinePoint1, float LineKFactor, float YPlane, float2 LineYMinMax)
+{
+    float X = (YPlane - LinePoint1.y) * LineKFactor + LinePoint1.x;
+    if ((X >= NDCLEFT && X <= NDCRIGHT) && (YPlane >= LineYMinMax.x && YPlane <= LineYMinMax.y)) return true;
+    else return false;
+}
+
+inline bool IsIn(float3 LinePoint1, float3 LinePoint2)
+{
+    bool Poine1IsIn = (LinePoint1.x >= NDCLEFT && LinePoint1.x <= NDCRIGHT) && (LinePoint1.y >= NDCBOTTOM && LinePoint1.y <= NDCTOP);
+    bool Poine2IsIn = (LinePoint2.x >= NDCLEFT && LinePoint2.x <= NDCRIGHT) && (LinePoint2.y >= NDCBOTTOM && LinePoint2.y <= NDCTOP);
+
+    return Poine1IsIn && Poine2IsIn;
+}
+
+bool PreClipping(float4 NDCPosition1, float4 NDCPosition2)
+{
+    float3 NDCPos1 = NDCPosition1.xyz;
+    float3 NDCPos2 = NDCPosition2.xyz;
+
+    if (IsIn(NDCPos1, NDCPos2))
+        return false;
+    else {
+        float KFactorX = (NDCPos2.y - NDCPos1.y) / (NDCPos2.x - NDCPos1.x);
+        float KFactorY = (NDCPos2.x - NDCPos1.x) / (NDCPos2.y - NDCPos1.y);
+        float2 LineXMinMax = float2(min(NDCPos1.x, NDCPos2.x), max(NDCPos1.x, NDCPos2.x));
+        float2 LineYMinMax = float2(min(NDCPos1.y, NDCPos2.y), max(NDCPos1.y, NDCPos2.y));
+
+        bool IntersectLeft = IsIntersectWithXPlane(NDCPos1, KFactorX, NDCLEFT, LineXMinMax);
+        bool IntersectRight = IsIntersectWithXPlane(NDCPos1, KFactorX, NDCRIGHT, LineXMinMax);
+        bool IntersectTop = IsIntersectWithYPlane(NDCPos1, KFactorY, NDCTOP, LineYMinMax);
+        bool IntersectBottom = IsIntersectWithYPlane(NDCPos1, KFactorY, NDCBOTTOM, LineYMinMax);
+
+        if (IntersectLeft || IntersectRight || IntersectTop || IntersectBottom)
+            return false;
+        else
+            return true;
+    }
+}
+
+float4 GetNDCPosition(float3 LocalPosition)
+{
+    float4 Transformed = mul(WorldViewProjection, float4(LocalPosition, 1.0));
+    //In NDC space, XY range in [-1.0, 1.0]
+    //In Direct3D, Z range in [0.0, 1.0]. (If is reversed-z, it will be [1.0, 0.0] in unity)
+    //In OpenGL, Z range in [-1.0, 1.0].
+    //w might be 0(degenerate case)
+    Transformed.xyz = Transformed.xyz / Transformed.w;
+
+    return Transformed;
+}
+
+uint CalculatePixelLength(float3 ScreenPosition1, float3 ScreenPosition2)
+{
+    float2 PixelPos1 = float2(ScreenPosition1.x * ScreenWidth, ScreenPosition1.y * ScreenHeight);
+    float2 PixelPos2 = float2(ScreenPosition2.x * ScreenWidth, ScreenPosition2.y * ScreenHeight);
+
+    float PixelLength = ceil(length(PixelPos2 - PixelPos1));
+
+    return (uint)(PixelLength);
+}
+
+
+void ArgBufferCounting()
+{
+    int Original = 0;
+    InterlockedAdd(ArgBuffer[0], 1, Original);
+    if((uint)(Original + 1) % SLICE_PASS_PER_THREAD_ELEMENT_NUM == 0)
+        InterlockedAdd(ArgBuffer[1], 1, Original);
+}
+
+
+/*
+* 后续优化：
+* 现在是一个thread检测3条边 -> 拆分成一个thread检测1条边
+* 由于条件分支容易使得一个thread的代码拆分到多个warp执行(比如一个分支一次warp另外一个分支一次warp)
+* 导致3条边同时检测下出现多个分支，这情况下可能效率还不如一次只检测1条边
+* 
+* 现在的三角形方式可能存在多条重复边：例如一个正方体只有18条边，但分成三角形检测后生成了21条边
+* 1.先单独修改compute shader变成一次检测一条边，看性能是否有提升
+* 2.如果有，就正式都修改成一次检测一条边的形式，C++的数据结构也改掉，就可以顺便解决掉重复边问题
+*/
+[numthreads(EXTRACT_PASS_PER_THREAD_ELEMENT_NUM, 1, 1)]
+void Extraction (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= TotalAdjacencyTrianglesNum) return;
+
+    AdjFace CurrentFace = AdjacencyTriangles[id.x];
+
+    float3 VertexX = Vertices[CurrentFace.x];
+    float3 VertexY = Vertices[CurrentFace.y];
+    float3 VertexZ = Vertices[CurrentFace.z];
+
+    bool AddXY = false;
+    bool AddYZ = false;
+    bool AddZX = false;
+
+    bool XYIsBackFace = false;
+    bool ZXIsBackFace = false;
+    bool YZIsBackFace = false;
+
+    float3 CurrentFaceNormal = ComputeNormal(VertexX, VertexY, VertexZ);
+
+    bool NeedExtractSilhouette =  SilhouetteEnable > 0;
+    float3 LocalViewVector = LocalSpaceViewPosition.xyz - (VertexX+VertexY+VertexZ)/3.0f;
+    float SilhouettePremultiplyDotFactor = dot(CurrentFaceNormal, LocalViewVector);
+
+    bool NeedExtractCrease = CreaseEnable > 0;
+    float CreasePremultiplyAngleThreshold = length(CurrentFaceNormal) * (cos(CreaseAngleThreshold) + 0.000001f); //+1.0e-6 for Epsilon
+
+    bool CurrentIsBackFace = SilhouettePremultiplyDotFactor < 0 ? true : false;
+
+
+    if (CurrentFace.xy >= 1)
+    {
+        float3 AdjVertexXY = Vertices[CurrentFace.xy - 1];
+        float3 AdjFaceXYNormal = ComputeNormal(VertexY, VertexX, AdjVertexXY);
+
+        float DotFactor = dot(LocalViewVector, AdjFaceXYNormal);
+        AddXY = AddXY || (NeedExtractSilhouette && IsSilhouette(SilhouettePremultiplyDotFactor, DotFactor));
+        AddXY = AddXY || (NeedExtractCrease && IsCrease(CurrentFaceNormal, AdjFaceXYNormal, CreasePremultiplyAngleThreshold));
+
+        XYIsBackFace = DotFactor < 0 ? true : false;
+        bool XYBackFacing = CurrentIsBackFace && XYIsBackFace;
+
+        float4 NDCPos1 = GetNDCPosition(Vertices[CurrentFace.x]);
+        float4 NDCPos2 = GetNDCPosition(Vertices[CurrentFace.y]);
+
+        if (AddXY && !PreClipping(NDCPos1, NDCPos2))
+        {
+            LineSegment Line;
+            Line.LocalPosition[0] = Vertices[CurrentFace.x];
+            Line.LocalPosition[1] = Vertices[CurrentFace.y];
+            Line.ScreenPosition[0] = CalculateScreenPosition(NDCPos1);
+            Line.ScreenPosition[1] = CalculateScreenPosition(NDCPos2);
+            Line.BackFacing = XYBackFacing ? 1 : 0;
+            Line.PixelLength = CalculatePixelLength(Line.ScreenPosition[0], Line.ScreenPosition[1]);
+            Line.PixelLengthTotal = 0;
+            Segments.Append(Line);
+            ArgBufferCounting();
+        }
+
+        
+    }
+
+    if (CurrentFace.zx >= 1)
+    {
+        float3 AdjVertexZX = Vertices[CurrentFace.zx - 1];
+        float3 AdjFaceZXNormal = ComputeNormal(VertexZ, AdjVertexZX, VertexX);
+
+        float DotFactor = dot(LocalViewVector, AdjFaceZXNormal);
+        AddZX = AddZX || (NeedExtractSilhouette && IsSilhouette(SilhouettePremultiplyDotFactor, DotFactor));
+        AddZX = AddZX || (NeedExtractCrease && IsCrease(CurrentFaceNormal, AdjFaceZXNormal, CreasePremultiplyAngleThreshold));
+
+        ZXIsBackFace = DotFactor < 0 ? true : false;
+        bool ZXBackFacing = CurrentIsBackFace && ZXIsBackFace;
+
+        float4 NDCPos1 = GetNDCPosition(Vertices[CurrentFace.z]);
+        float4 NDCPos2 = GetNDCPosition(Vertices[CurrentFace.x]);
+
+        if (AddZX && !PreClipping(NDCPos1, NDCPos2))
+        {
+            LineSegment Line;
+            Line.LocalPosition[0] = Vertices[CurrentFace.z];
+            Line.LocalPosition[1] = Vertices[CurrentFace.x];
+            Line.ScreenPosition[0] = CalculateScreenPosition(NDCPos1);
+            Line.ScreenPosition[1] = CalculateScreenPosition(NDCPos2);
+            Line.BackFacing = ZXBackFacing ? 1 : 0;
+            Line.PixelLength = CalculatePixelLength(Line.ScreenPosition[0], Line.ScreenPosition[1]);
+            Line.PixelLengthTotal = 0;
+            Segments.Append(Line);
+            ArgBufferCounting();
+        }
+
+    }
+
+    if (CurrentFace.yz >= 1)
+    {
+        float3 AdjVertexYZ = Vertices[CurrentFace.yz - 1];
+        float3 AdjFaceYZNormal = ComputeNormal(AdjVertexYZ, VertexZ, VertexY);
+
+        float DotFactor = dot(LocalViewVector, AdjFaceYZNormal);
+        AddYZ = AddYZ || (NeedExtractSilhouette && IsSilhouette(SilhouettePremultiplyDotFactor, DotFactor));
+        AddYZ = AddYZ || (NeedExtractCrease && IsCrease(CurrentFaceNormal, AdjFaceYZNormal, CreasePremultiplyAngleThreshold));
+
+        YZIsBackFace = DotFactor < 0 ? true : false;
+        bool YZBackFacing = CurrentIsBackFace && YZIsBackFace;
+
+        float4 NDCPos1 = GetNDCPosition(Vertices[CurrentFace.y]);
+        float4 NDCPos2 = GetNDCPosition(Vertices[CurrentFace.z]);
+
+        if (AddYZ && !PreClipping(NDCPos1, NDCPos2))
+        {
+            LineSegment Line;
+            Line.LocalPosition[0] = Vertices[CurrentFace.y];
+            Line.LocalPosition[1] = Vertices[CurrentFace.z];
+            Line.ScreenPosition[0] = CalculateScreenPosition(NDCPos1);
+            Line.ScreenPosition[1] = CalculateScreenPosition(NDCPos2);
+            Line.BackFacing = YZBackFacing ? 1 : 0;
+            Line.PixelLength = CalculatePixelLength(Line.ScreenPosition[0], Line.ScreenPosition[1]);
+            Line.PixelLengthTotal = 0;
+            Segments.Append(Line);
+            ArgBufferCounting();
+        }
+
+    }
+
+
+}
