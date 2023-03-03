@@ -53,7 +53,9 @@
     <UnityVersion>2021.2.6f1</UnityVersion>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Assets\Scripts\TestSlice.cs" />
     <Compile Include="Assets\ComputeTest\ProceduralComputeSpheres.cs" />
+    <Compile Include="Assets\Scripts\ComputePass.cs" />
     <Compile Include="Assets\Scripts\LinesRendererWithAnimate.cs" />
     <Compile Include="Assets\Scripts\SimpleCameraController.cs" />
     <Compile Include="Assets\Scripts\GenerateAdjacencyEdge.cs" />
@@ -66,13 +68,15 @@
     <Compile Include="Assets\Scripts\LineMaterial.cs" />
   </ItemGroup>
   <ItemGroup>
-     <None Include="Assets\Shaders\LineShade.shader" />
+     <None Include="Assets\Shaders\Shade.shader" />
+     <None Include="Assets\Shaders\Common.cginc" />
      <None Include="Assets\ComputeTest\ComputeShaderTest.compute" />
      <None Include="Assets\Shaders\TestAdjacencyShade.shader" />
-     <None Include="Assets\Shaders\LineExtraction.compute" />
+     <None Include="Assets\Shaders\Slice.compute" />
+     <None Include="Assets\Shaders\Extraction.compute" />
      <None Include="Assets\Shaders\RenderDepth.compute" />
      <None Include="Assets\ComputeTest\ProceduralSpheres.shader" />
-     <None Include="Assets\Shaders\LineVisibility.compute" />
+     <None Include="Assets\Shaders\Visibility.compute" />
     <Reference Include="UnityEngine">
       <HintPath>D:\Program Files\Unity\2021.2.6f1\Editor\Data\Managed\UnityEngine\UnityEngine.dll</HintPath>
     </Reference>
