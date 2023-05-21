@@ -34,7 +34,7 @@ public class ComputeBufferUtils
     {
         ComputeBuffer.CopyCount(Buffer, ArgBuffer, 0);
         ArgBuffer.GetData(Args, 0, 0, 1);
-        Debug.Log("++++++++++++++" + Args[0]);
+        //Debug.Log("++++++++++++++" + Args[0]);
         return Args[0];
     }
 

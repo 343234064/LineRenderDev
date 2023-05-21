@@ -23,11 +23,8 @@ public class LineMaterial : MonoBehaviour
     [Tooltip("Material to render line")]
     public Material LineRenderMaterial;
 
-    [Tooltip("Bounding volume for each single edge")]
-    public Bounds EdgeBoundingVolume = new Bounds(Vector3.zero, Vector3.one * 20.0f);
-
     /// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    
+
     [TitleGroup("Visibility")]
 
     [Tooltip("Hide edge that lies on back face")]

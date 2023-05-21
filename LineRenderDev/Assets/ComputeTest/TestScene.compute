@@ -1,0 +1,115 @@
+﻿// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+
+#define RESULT_BUFFER_TYPE uint3
+RWStructuredBuffer<RESULT_BUFFER_TYPE> Result;
+
+groupshared uint VisibilityCache[2];
+
+void SaveVisibility(bool Visibility, uint Index, bool Skip)
+{
+    uint CacheIndex = Index >> 5;
+    uint Offset = Index - 32 * CacheIndex;
+
+    /*
+    * | <------------  | | <------------  |
+    */
+    uint Mask = ((Skip ? 0 : 1) << Offset);
+    if (Visibility)
+        InterlockedOr(VisibilityCache[CacheIndex], Mask);
+    else
+        InterlockedAnd(VisibilityCache[CacheIndex], ~Mask);
+}
+
+bool LoadVisibility(uint Index)
+{
+    uint CacheIndex = Index >> 5;
+    uint Offset = Index - 32 * CacheIndex;
+
+    /*
+    * | <------------  | | <------------  |
+    */
+    uint Mask = 1 << Offset;
+    uint Cache = VisibilityCache[CacheIndex];
+    return (Cache & Mask) > 0;
+}
+
+int FirstBitZeroLow(uint Src, uint StartIndexFromLow, uint MaxSearchLength)
+{
+    uint Length = 32 - StartIndexFromLow;//firstbithigh(Src) + 1 - StartIndexFromLow;
+    uint SrcWithOffset = Src >> StartIndexFromLow;
+
+    //if (SrcWithOffset == uint(0)) return StartIndexFromLow;
+    //if (SrcWithOffset == uint(4294967295)) return -1;
+
+    uint PosFromStartIndex = firstbitlow(~SrcWithOffset); // return #ffffffff(4294967295) if failed
+
+    PosFromStartIndex = min(PosFromStartIndex, MaxSearchLength);
+    return PosFromStartIndex < Length ? (PosFromStartIndex + StartIndexFromLow) : -1;
+}
+
+int ExtractTailIndex(uint HeadIndex)
+{
+    uint CacheIndex = HeadIndex >> 5;
+    uint HeadOffset = HeadIndex - 32 * CacheIndex;
+    uint Cache = VisibilityCache[CacheIndex];
+
+    //change this if VISIBILITY_CACHE_NUM change
+    //only 2 step(64 size) to avoid writing loop 
+    uint PosOffset = HeadIndex;
+    int Pos = FirstBitZeroLow(Cache, HeadOffset,0);
+    if (Pos < 0 && CacheIndex < 1)
+    {
+        CacheIndex += 1;
+        HeadOffset = 0;
+        PosOffset = 32 * CacheIndex;
+        Cache = VisibilityCache[CacheIndex];
+        Pos = FirstBitZeroLow(Cache, HeadOffset,0);
+    }
+    /*
+    [unroll]
+    while (CacheIndex < VISIBILITY_CACHE_NUM)
+    {
+        int Pos = FirstBitZeroLow(Cache, HeadOffset);
+        if (Pos >= 0) break;
+
+        HeadOffset = 0;
+        CacheIndex += 1;
+        Cache = VisibilityCache[CacheIndex];
+    };*/
+
+    int Result = Pos + PosOffset - ((Pos > 0) ? 1 : 0);
+    
+    return  Pos >= 0 ? Result : 63;
+}
+
+
+[numthreads(64,1,1)]
+void CSMain (uint3 gid : SV_GroupID, uint gi : SV_GroupIndex, uint3 id : SV_DispatchThreadID)
+{
+    uint ri = gi % 2;
+    VisibilityCache[ri] = 0;
+    GroupMemoryBarrierWithGroupSync();
+
+    uint CurrentGroupPixelPosition = gi;
+    
+    bool IsVisible = (CurrentGroupPixelPosition % 7 == 0) ? false : true;
+    SaveVisibility(IsVisible, CurrentGroupPixelPosition, false);
+    GroupMemoryBarrierWithGroupSync();
+    
+
+    
+    uint test1 = firstbitlow(1);
+    uint test2 = firstbithigh(0);
+
+    int test3 = FirstBitZeroLow(4294967295, 0, 35);
+    uint test4 = test3 >= 0 ? test3 : 4294967295;
+    
+    bool v = LoadVisibility(27);
+    uint i = ExtractTailIndex(32);
+
+    Result[id.x] = RESULT_BUFFER_TYPE(test3, test3, test3);
+
+
+}

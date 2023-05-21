@@ -13,9 +13,12 @@ AppendStructuredBuffer<LineSegment> Segments;
 uniform float3 LocalSpaceViewPosition;
 uniform float CreaseAngleThreshold;
 uniform float4x4 WorldViewProjection;
+uniform float4x4 WorldViewProjectionForClipping;
 uniform int ScreenWidth;
 uniform int ScreenHeight;
 
+
+#define DEBUG_CLIPPING 0
 
 
 float3 ComputeNormal(float3 p1, float3 p2, float3 p3)
@@ -51,78 +54,161 @@ inline bool IsCrease(float3 Face1Normal, float3 Face2Normal, float AngleThreshol
 }
 
 
-#define NDCLEFT -1.0
-#define NDCRIGHT 1.0
-#define NDCTOP 1.0
-#define NDCBOTTOM -1.0
+#define CLIPLEFT(p) -p.w
+#define CLIPRIGHT(p) p.w
+#define CLIPTOP(p) p.w
+#define CLIPBOTTOM(p) -p.w
+#if NEGATIVE_CLIP_Z_VALUE
+#define CLIPFAR(p) p.w  //ReverseZ do not matter
+#define CLIPNEAR(p) -p.w
+#else
+#define CLIPFAR(p) p.w  //ReverseZ do not matter
+#define CLIPNEAR(p) 0.0f
+#endif
 
-inline bool IsIntersectWithXPlane(float3 LinePoint1, float LineKFactor, float XPlane, float2 LineXMinMax)
+inline bool InX(float4 P) { return P.x >= CLIPLEFT(P) && P.x <= CLIPRIGHT(P); }
+inline bool InY(float4 P) { return P.y >= CLIPBOTTOM(P) && P.y <= CLIPTOP(P); }
+inline bool InZ(float4 P) { return P.z >= CLIPNEAR(P) && P.z <= CLIPFAR(P); }
+
+int IsIn(float4 ClipPoint1, float4 ClipPoint2)
 {
-    float Y = (XPlane - LinePoint1.x) * LineKFactor + LinePoint1.y;
-    if ((Y >= NDCBOTTOM && Y <= NDCTOP) && (XPlane >= LineXMinMax.x && XPlane <= LineXMinMax.y)) return true;
-    else return false;
+    bool P1X = InX(ClipPoint1);
+    bool P1Y = InY(ClipPoint1);
+    bool P1Z = InZ(ClipPoint1);
+    bool P1In = P1X && P1Y && P1Z;
+
+    bool P2X = InX(ClipPoint2);
+    bool P2Y = InY(ClipPoint2);
+    bool P2Z = InZ(ClipPoint2);
+    bool P2In = P2X && P2Y && P2Z;
+
+    int State = P1In && P2In ? 0 : -1;
+    State = P1In && !P2In ? 1 : State;
+    State = !P1In && P2In ? 2 : State;
+
+    return State;
 }
 
-inline bool IsIntersectWithYPlane(float3 LinePoint1, float LineKFactor, float YPlane, float2 LineYMinMax)
+float IntersectWithXPlane(float ClipPlaneP1, float ClipPlaneP2, float4 P1, float4 P2, uint InterectVecIndex, inout uint InterectVec)
 {
-    float X = (YPlane - LinePoint1.y) * LineKFactor + LinePoint1.x;
-    if ((X >= NDCLEFT && X <= NDCRIGHT) && (YPlane >= LineYMinMax.x && YPlane <= LineYMinMax.y)) return true;
-    else return false;
-}
-
-inline bool IsIn(float3 LinePoint1, float3 LinePoint2)
-{
-    bool Poine1IsIn = (LinePoint1.x >= NDCLEFT && LinePoint1.x <= NDCRIGHT) && (LinePoint1.y >= NDCBOTTOM && LinePoint1.y <= NDCTOP);
-    bool Poine2IsIn = (LinePoint2.x >= NDCLEFT && LinePoint2.x <= NDCRIGHT) && (LinePoint2.y >= NDCBOTTOM && LinePoint2.y <= NDCTOP);
-
-    return Poine1IsIn && Poine2IsIn;
-}
-
-bool PreClipping(float4 NDCPosition1, float4 NDCPosition2)
-{
-    float3 NDCPos1 = NDCPosition1.xyz;
-    float3 NDCPos2 = NDCPosition2.xyz;
-
-    if (IsIn(NDCPos1, NDCPos2))
-        return false;
-    else {
-        float KFactorX = (NDCPos2.y - NDCPos1.y) / (NDCPos2.x - NDCPos1.x);
-        float KFactorY = (NDCPos2.x - NDCPos1.x) / (NDCPos2.y - NDCPos1.y);
-        float2 LineXMinMax = float2(min(NDCPos1.x, NDCPos2.x), max(NDCPos1.x, NDCPos2.x));
-        float2 LineYMinMax = float2(min(NDCPos1.y, NDCPos2.y), max(NDCPos1.y, NDCPos2.y));
-
-        bool IntersectLeft = IsIntersectWithXPlane(NDCPos1, KFactorX, NDCLEFT, LineXMinMax);
-        bool IntersectRight = IsIntersectWithXPlane(NDCPos1, KFactorX, NDCRIGHT, LineXMinMax);
-        bool IntersectTop = IsIntersectWithYPlane(NDCPos1, KFactorY, NDCTOP, LineYMinMax);
-        bool IntersectBottom = IsIntersectWithYPlane(NDCPos1, KFactorY, NDCBOTTOM, LineYMinMax);
-
-        if (IntersectLeft || IntersectRight || IntersectTop || IntersectBottom)
-            return false;
-        else
-            return true;
+    float KFactor = P2.x - P1.x - ClipPlaneP2 + ClipPlaneP1;
+    float T = (KFactor == 0.0f) ? -1.0f : ((ClipPlaneP1 - P1.x) / KFactor);
+    uint Intersect = 0;
+    if (T >= 0.0f && T <= 1.0f)
+    {
+        float4 IntersectP = P1 + T * (P2 - P1);
+        Intersect = (InY(IntersectP) && InZ(IntersectP)) ? 1 : 0;
     }
+    InterectVec = InterectVec | (Intersect << InterectVecIndex);
+
+    return T;
 }
 
-float4 GetNDCPosition(float3 LocalPosition)
+float IntersectWithYPlane(float ClipPlaneP1, float ClipPlaneP2, float4 P1, float4 P2, uint InterectVecIndex, inout uint InterectVec)
+{
+    float KFactor = P2.y - P1.y - ClipPlaneP2 + ClipPlaneP1;
+    float T = (KFactor == 0.0f) ? -1.0f : ((ClipPlaneP1 - P1.y) / KFactor);
+    uint Intersect = 0;
+    if (T >= 0.0f && T <= 1.0f)
+    {
+        float4 IntersectP = P1 + T * (P2 - P1);
+        Intersect = (InX(IntersectP) && InZ(IntersectP)) ? 1 : 0;
+    }
+    InterectVec = InterectVec | (Intersect << InterectVecIndex);
+
+    return T;
+}
+
+float IntersectWithZPlane(float ClipPlaneP1, float ClipPlaneP2, float4 P1, float4 P2, uint InterectVecIndex, inout uint InterectVec)
+{
+    float KFactor = P2.z - P1.z - ClipPlaneP2 + ClipPlaneP1;
+    float T = (KFactor == 0.0f) ? -1.0f : ((ClipPlaneP1 - P1.z) / KFactor);
+    uint Intersect = 0;
+    if (T >= 0.0f && T <= 1.0f)
+    {
+        float4 IntersectP = P1 + T * (P2 - P1);
+        Intersect = (InX(IntersectP) && InY(IntersectP)) ? 1 : 0;
+    }
+    InterectVec = InterectVec | (Intersect << InterectVecIndex);
+
+    return T;
+}
+
+float3 PreClipping(float4 ClipPosition1, float4 ClipPosition2)
+{
+    float4 ClipPos1 = ClipPosition1;
+    float4 ClipPos2 = ClipPosition2;
+
+    if (ClipPos1.w == 0.0f || ClipPos2.w == 0.0f)
+        return float3(-1.0f, 0.0f, 0.0f);
+
+    float3 Result = float3(1.0f, 0.0f, 1.0f);
+    int State = IsIn(ClipPos1, ClipPos2);
+    if (State != 0)
+    {
+        float IntersectT[6] = { 0.0f, 0.0f, 0.0f, 0.0f,  0.0f, 0.0f };
+        uint InterectVec = 0;
+        IntersectT[0] = IntersectWithXPlane(CLIPLEFT(ClipPos1), CLIPLEFT(ClipPos2), ClipPos1, ClipPos2, 0, InterectVec);
+        IntersectT[1] = IntersectWithXPlane(CLIPRIGHT(ClipPos1), CLIPRIGHT(ClipPos2), ClipPos1, ClipPos2, 1, InterectVec);
+        IntersectT[2] = IntersectWithYPlane(CLIPTOP(ClipPos1), CLIPTOP(ClipPos2), ClipPos1, ClipPos2, 2, InterectVec);
+        IntersectT[3] = IntersectWithYPlane(CLIPBOTTOM(ClipPos1), CLIPBOTTOM(ClipPos2), ClipPos1, ClipPos2, 3, InterectVec);
+        IntersectT[4] = IntersectWithZPlane(CLIPNEAR(ClipPos1), CLIPNEAR(ClipPos2), ClipPos1, ClipPos2, 4, InterectVec);
+        IntersectT[5] = IntersectWithZPlane(CLIPFAR(ClipPos1), CLIPFAR(ClipPos2), ClipPos1, ClipPos2, 5, InterectVec);
+
+        uint IntersectIndex1 = firstbitlow(InterectVec);
+        uint IntersectIndex2 = firstbithigh(InterectVec);
+        if (State == 1)
+        {
+            Result.xz = IntersectIndex1 < 6 ? float2(1.0f, IntersectT[IntersectIndex1]) : float2(-1.0f, Result.z);
+        }
+        else if (State == 2)
+        {
+            Result.xy = IntersectIndex1 < 6 ? float2(1.0f, IntersectT[IntersectIndex1]) : float2(-1.0f, Result.y);
+        }
+        else
+        {
+            Result.xyz = (IntersectIndex1 < 6 && IntersectIndex2 < 6) ? float3(1.0f, IntersectT[IntersectIndex1], IntersectT[IntersectIndex2]) : float3(-1.0f, 0.0f, 0.0f);
+            float T1 = Result.y;
+            float T2 = Result.z;
+            Result.y = min(T1, T2);
+            Result.z = max(T1, T2);
+        }
+        
+    }
+
+    return Result;
+}
+
+inline float4 ClampPosition(float4 P)
+{
+    //return float4(min(CLIPRIGHT(P), max(CLIPLEFT(P), P.x)), min(CLIPTOP(P), max(CLIPBOTTOM(P), P.y)), min(CLIPFAR(P), max(CLIPNEAR(P), P.z)), P.w);
+    return P;
+}
+
+float4 CalculateClipSpacePosition(float3 LocalPosition)
 {
     float4 Transformed = mul(WorldViewProjection, float4(LocalPosition, 1.0));
-    //In NDC space, XY range in [-1.0, 1.0]
-    //In Direct3D, Z range in [0.0, 1.0]. (If is reversed-z, it will be [1.0, 0.0] in unity)
-    //In OpenGL, Z range in [-1.0, 1.0].
-    //w might be 0(degenerate case)
-    Transformed.xyz = Transformed.xyz / Transformed.w;
+    //Transformed.xyz = Transformed.xyz / Transformed.w;
 
     return Transformed;
 }
 
-uint CalculatePixelLength(float3 ScreenPosition1, float3 ScreenPosition2)
+float4 CalculateClipSpacePositionForClipping(float3 LocalPosition)
 {
-    float2 PixelPos1 = float2(ScreenPosition1.x * ScreenWidth, ScreenPosition1.y * ScreenHeight);
-    float2 PixelPos2 = float2(ScreenPosition2.x * ScreenWidth, ScreenPosition2.y * ScreenHeight);
+    float4 Transformed = mul(WorldViewProjectionForClipping, float4(LocalPosition, 1.0));
+
+    return Transformed;
+}
+
+uint2 CalculatePixelLength(float2 UnifyNDCPosition1, float2 UnifyNDCPosition2)
+{
+    float2 PixelPos1 = float2(UnifyNDCPosition1.x * ScreenWidth, UnifyNDCPosition1.y * ScreenHeight);
+    float2 PixelPos2 = float2(UnifyNDCPosition2.x * ScreenWidth, UnifyNDCPosition2.y * ScreenHeight);
 
     float PixelLength = ceil(length(PixelPos2 - PixelPos1));
+    float ShrinkPixelLength = PixelLength > 2.0 ? (1.0 + floor(PixelLength * 0.5)) : PixelLength;
 
-    return (uint)(PixelLength);
+    return uint2((uint)PixelLength, (uint)(ShrinkPixelLength));
 }
 
 
@@ -188,19 +274,33 @@ void Extraction (uint3 id : SV_DispatchThreadID)
         XYIsBackFace = DotFactor < 0 ? true : false;
         bool XYBackFacing = CurrentIsBackFace && XYIsBackFace;
 
-        float4 NDCPos1 = GetNDCPosition(Vertices[CurrentFace.x]);
-        float4 NDCPos2 = GetNDCPosition(Vertices[CurrentFace.y]);
+        float4 ClipPos1BeforeClip = CalculateClipSpacePosition(Vertices[CurrentFace.x]);
+        float4 ClipPos2BeforeClip = CalculateClipSpacePosition(Vertices[CurrentFace.y]);
+        float4 Pos1ForClipping = ClipPos1BeforeClip;
+        float4 Pos2ForClipping = ClipPos2BeforeClip;
+#if DEBUG_CLIPPING
+        Pos1ForClipping = CalculateClipSpacePositionForClipping(Vertices[CurrentFace.x]);
+        Pos2ForClipping = CalculateClipSpacePositionForClipping(Vertices[CurrentFace.y]);
+#endif
 
-        if (AddXY && !PreClipping(NDCPos1, NDCPos2))
+        float3 ClipState = PreClipping(Pos1ForClipping, Pos2ForClipping);
+        float4 ClipPos1 = ClampPosition(float4(ClipPos1BeforeClip + ClipState.y * (ClipPos2BeforeClip - ClipPos1BeforeClip)));
+        float4 ClipPos2 = ClampPosition(float4(ClipPos1BeforeClip + ClipState.z * (ClipPos2BeforeClip - ClipPos1BeforeClip)));
+
+        if (AddXY && ClipState.x >= 0.0f)
         {
             LineSegment Line;
-            Line.LocalPosition[0] = Vertices[CurrentFace.x];
-            Line.LocalPosition[1] = Vertices[CurrentFace.y];
-            Line.ScreenPosition[0] = CalculateScreenPosition(NDCPos1);
-            Line.ScreenPosition[1] = CalculateScreenPosition(NDCPos2);
+            Line.ClipPosition[0] = ClipPos1;
+            Line.ClipPosition[1] = ClipPos2;
+            float4 NDCPos1 = CalculateNDCPosition(ClipPos1);
+            float4 NDCPos2 = CalculateNDCPosition(ClipPos2);
+            Line.NDCPosition[0] = UnifyNDCPosition(NDCPos1);
+            Line.NDCPosition[1] = UnifyNDCPosition(NDCPos2);
             Line.BackFacing = XYBackFacing ? 1 : 0;
-            Line.PixelLength = CalculatePixelLength(Line.ScreenPosition[0], Line.ScreenPosition[1]);
-            Line.PixelLengthTotal = 0;
+            uint2 PixelLength = CalculatePixelLength(Line.NDCPosition[0].xy, Line.NDCPosition[1].xy);
+            Line.PixelLength = PixelLength.x;
+            Line.PixelLengthShrink = PixelLength.y;
+            Line.PixelLengthShrinkTotal = 0;
             Segments.Append(Line);
             ArgBufferCounting();
         }
@@ -220,19 +320,33 @@ void Extraction (uint3 id : SV_DispatchThreadID)
         ZXIsBackFace = DotFactor < 0 ? true : false;
         bool ZXBackFacing = CurrentIsBackFace && ZXIsBackFace;
 
-        float4 NDCPos1 = GetNDCPosition(Vertices[CurrentFace.z]);
-        float4 NDCPos2 = GetNDCPosition(Vertices[CurrentFace.x]);
+        float4 ClipPos1BeforeClip = CalculateClipSpacePosition(Vertices[CurrentFace.z]);
+        float4 ClipPos2BeforeClip = CalculateClipSpacePosition(Vertices[CurrentFace.x]);
+        float4 Pos1ForClipping = ClipPos1BeforeClip;
+        float4 Pos2ForClipping = ClipPos2BeforeClip;
+#if DEBUG_CLIPPING
+        Pos1ForClipping = CalculateClipSpacePositionForClipping(Vertices[CurrentFace.z]);
+        Pos2ForClipping = CalculateClipSpacePositionForClipping(Vertices[CurrentFace.x]);
+#endif
 
-        if (AddZX && !PreClipping(NDCPos1, NDCPos2))
+        float3 ClipState = PreClipping(Pos1ForClipping, Pos2ForClipping);
+        float4 ClipPos1 = ClampPosition(float4(ClipPos1BeforeClip + ClipState.y * (ClipPos2BeforeClip - ClipPos1BeforeClip)));
+        float4 ClipPos2 = ClampPosition(float4(ClipPos1BeforeClip + ClipState.z * (ClipPos2BeforeClip - ClipPos1BeforeClip)));
+
+        if (AddZX && ClipState.x >= 0.0f)
         {
             LineSegment Line;
-            Line.LocalPosition[0] = Vertices[CurrentFace.z];
-            Line.LocalPosition[1] = Vertices[CurrentFace.x];
-            Line.ScreenPosition[0] = CalculateScreenPosition(NDCPos1);
-            Line.ScreenPosition[1] = CalculateScreenPosition(NDCPos2);
+            Line.ClipPosition[0] = ClipPos1;
+            Line.ClipPosition[1] = ClipPos2;
+            float4 NDCPos1 = CalculateNDCPosition(ClipPos1);
+            float4 NDCPos2 = CalculateNDCPosition(ClipPos2);
+            Line.NDCPosition[0] = UnifyNDCPosition(NDCPos1);
+            Line.NDCPosition[1] = UnifyNDCPosition(NDCPos2);
             Line.BackFacing = ZXBackFacing ? 1 : 0;
-            Line.PixelLength = CalculatePixelLength(Line.ScreenPosition[0], Line.ScreenPosition[1]);
-            Line.PixelLengthTotal = 0;
+            uint2 PixelLength = CalculatePixelLength(Line.NDCPosition[0].xy, Line.NDCPosition[1].xy);
+            Line.PixelLength = PixelLength.x;
+            Line.PixelLengthShrink = PixelLength.y;
+            Line.PixelLengthShrinkTotal = 0;
             Segments.Append(Line);
             ArgBufferCounting();
         }
@@ -251,19 +365,33 @@ void Extraction (uint3 id : SV_DispatchThreadID)
         YZIsBackFace = DotFactor < 0 ? true : false;
         bool YZBackFacing = CurrentIsBackFace && YZIsBackFace;
 
-        float4 NDCPos1 = GetNDCPosition(Vertices[CurrentFace.y]);
-        float4 NDCPos2 = GetNDCPosition(Vertices[CurrentFace.z]);
+        float4 ClipPos1BeforeClip = CalculateClipSpacePosition(Vertices[CurrentFace.y]);
+        float4 ClipPos2BeforeClip = CalculateClipSpacePosition(Vertices[CurrentFace.z]);
+        float4 Pos1ForClipping = ClipPos1BeforeClip;
+        float4 Pos2ForClipping = ClipPos2BeforeClip;
+#if DEBUG_CLIPPING
+        Pos1ForClipping = CalculateClipSpacePositionForClipping(Vertices[CurrentFace.y]);
+        Pos2ForClipping = CalculateClipSpacePositionForClipping(Vertices[CurrentFace.z]);
+#endif
 
-        if (AddYZ && !PreClipping(NDCPos1, NDCPos2))
+        float3 ClipState = PreClipping(Pos1ForClipping, Pos2ForClipping); 
+        float4 ClipPos1 = ClampPosition(float4(ClipPos1BeforeClip + ClipState.y * (ClipPos2BeforeClip - ClipPos1BeforeClip)));
+        float4 ClipPos2 = ClampPosition(float4(ClipPos1BeforeClip + ClipState.z * (ClipPos2BeforeClip - ClipPos1BeforeClip)));
+
+        if (AddYZ && ClipState.x >= 0.0f)
         {
             LineSegment Line;
-            Line.LocalPosition[0] = Vertices[CurrentFace.y];
-            Line.LocalPosition[1] = Vertices[CurrentFace.z];
-            Line.ScreenPosition[0] = CalculateScreenPosition(NDCPos1);
-            Line.ScreenPosition[1] = CalculateScreenPosition(NDCPos2);
+            Line.ClipPosition[0] = ClipPos1;
+            Line.ClipPosition[1] = ClipPos2;
+            float4 NDCPos1 = CalculateNDCPosition(ClipPos1);
+            float4 NDCPos2 = CalculateNDCPosition(ClipPos2);
+            Line.NDCPosition[0] = UnifyNDCPosition(NDCPos1);
+            Line.NDCPosition[1] = UnifyNDCPosition(NDCPos2);
             Line.BackFacing = YZBackFacing ? 1 : 0;
-            Line.PixelLength = CalculatePixelLength(Line.ScreenPosition[0], Line.ScreenPosition[1]);
-            Line.PixelLengthTotal = 0;
+            uint2 PixelLength = CalculatePixelLength(Line.NDCPosition[0].xy, Line.NDCPosition[1].xy);
+            Line.PixelLength = PixelLength.x;
+            Line.PixelLengthShrink = PixelLength.y;
+            Line.PixelLengthShrinkTotal = 0;
             Segments.Append(Line);
             ArgBufferCounting();
         }

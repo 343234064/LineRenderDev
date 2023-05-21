@@ -29,11 +29,11 @@ RWStructuredBuffer<uint> OutputArray;
 
 #define ELEMENT_TYPE uint
 
-StructuredBuffer<int> ArgBuffer;
+StructuredBuffer<uint> ArgBuffer;
 RWStructuredBuffer<LineSegment> InputArray;
-#define GET_INPUT_ELEMENT_PASS1(idx) InputArray[idx].PixelLength  
-#define GET_INPUT_ELEMENT_PASS2(idx) InputArray[idx].PixelLengthTotal  
-#define GET_OUTPUT_ELEMENT(idx) InputArray[idx].PixelLengthTotal  
+#define GET_INPUT_ELEMENT_PASS1(idx) InputArray[idx].PixelLengthShrink  
+#define GET_INPUT_ELEMENT_PASS2(idx) InputArray[idx].PixelLengthShrinkTotal  
+#define GET_OUTPUT_ELEMENT(idx) InputArray[idx].PixelLengthShrinkTotal  
 #define INPUT_SIZE ArgBuffer[0]
 #define OUTPUT_SIZE ArgBuffer[0]
 
@@ -167,18 +167,36 @@ void SumTotalAndSlice(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID)
 		GET_OUTPUT_ELEMENT(id.x) = CurrentSum;
 
 		Slice Output;
-		Output.Visibility1 = 0;
-		Output.Visibility2 = 0;
-		Output.BeginSegmentIndex = id.x;
+		uint BeginSegmentIndex = id.x;
 
 		ELEMENT_TYPE Delta = CurrentSum % SLICE_PIXEL_SIZE;
-		int Rank = (int)(ceil(((float)CurrentSum) / SLICE_PIXEL_SIZE) - ceil(((float)CurrentSumPrev) / SLICE_PIXEL_SIZE));
+		float RankCurrent = ((float)CurrentSum) / ((float)SLICE_PIXEL_SIZE);
+		float RankPrev = ((float)CurrentSumPrev) / ((float)SLICE_PIXEL_SIZE);
+		int Rank = (int)(floor(RankCurrent) - floor(RankPrev));
+
+		if (id.x == 0)
+		{
+			Slice FirstSlice;
+			FirstSlice.BeginSegmentIndex = 0;
+			FirstSlice.BeginPixel = 1;
+			FirstSlice.debug = CurrentSum;
+			Slices.Append(FirstSlice);
+		}
 		if (Rank > 0)
 		{
 			ELEMENT_TYPE Prev = 0;
 			ELEMENT_TYPE BaseOffset = Current - Delta + 1;
 			for (int i = 0; i < Rank; i++) {
-				Output.BeginPixel = BaseOffset - SLICE_PIXEL_SIZE * i;
+				BeginSegmentIndex = id.x;
+				Output.BeginPixel = BaseOffset - SLICE_PIXEL_SIZE * i;//BeginPixelShrink start from 1
+				Output.debug = CurrentSum;
+				
+				if (Output.BeginPixel > Current)
+				{
+					BeginSegmentIndex = BeginSegmentIndex + 1;
+					Output.BeginPixel = Output.BeginPixel - Current;
+				}
+				Output.BeginSegmentIndex = BeginSegmentIndex;
 				Slices.Append(Output);
 			}
 		}

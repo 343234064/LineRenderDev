@@ -3,7 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
-
+using UnityEditor;
 using Sirenix.OdinInspector;
 
 //[ExecuteAlways]
@@ -49,8 +49,17 @@ public class LinesRenderer : MonoBehaviour
     [TitleGroup("Meshes")]
     public List<MeshInfoForDisplay> MeshInfoListForOnlyDisplay;
 
+    /// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    /// 
+    [TitleGroup("Debug")]
+    [Tooltip("This wii slow down the frame rate")]
+    public bool ShowDebugStatistics = false;
+
     /// ////////////////////////////////////////////////////////
     private Camera RenderCamera;
+    private Camera SceneEditorCamera;
+    private Camera GamerCamera;
+
     private List<MeshInfo> MeshInfoListForRender;
     private RenderLayer Renderer;
 
@@ -94,8 +103,15 @@ public class LinesRenderer : MonoBehaviour
     {
         Debug.Log("Line Renderer Enabled.");
 
-        RenderCamera = GetComponent<Camera>();
-        if(RenderCamera == null)
+        SceneView EditorSceneView = SceneView.lastActiveSceneView;
+        SceneEditorCamera = EditorSceneView.camera;
+        GamerCamera = GetComponent<Camera>();
+
+        RenderCamera = GamerCamera;
+        // Debug clipping
+        // RenderCamera = SceneEditorCamera;
+
+        if (GamerCamera == null)
         {
             Debug.LogError("This (Line Renderer) script must be attached to a camera object.");
         }
@@ -191,6 +207,7 @@ public class LinesRenderer : MonoBehaviour
         Renderer.ClearCommandBuffer();
 
         Matrix4x4 ViewProjectionMatrix = GL.GetGPUProjectionMatrix(RenderCamera.projectionMatrix, true) * RenderCamera.worldToCameraMatrix;
+        Matrix4x4 ViewProjectionMatrixForClipping = GL.GetGPUProjectionMatrix(GamerCamera.projectionMatrix, true) * GamerCamera.worldToCameraMatrix;
         foreach (MeshInfo Current in MeshInfoListForRender)
         {
             if(Current.Available)
@@ -201,8 +218,7 @@ public class LinesRenderer : MonoBehaviour
                 Renderer.EveryFrameParams.LocalCameraPosition = Current.Context.RumtimeTransform.InverseTransformPoint(Camera.main.transform.position);
                 Renderer.EveryFrameParams.CreaseAngleThreshold = (180.0f - Current.Context.LineMaterialSetting.CreaseAngleDegreeThreshold) * (0.017453292519943294f);
                 Renderer.EveryFrameParams.WorldViewProjectionMatrix = ViewProjectionMatrix * Current.Context.RumtimeTransform.localToWorldMatrix;
-                Renderer.EveryFrameParams.WorldViewMatrix = RenderCamera.worldToCameraMatrix * Current.Context.RumtimeTransform.localToWorldMatrix;
-                Renderer.EveryFrameParams.ObjectWorldMatrix = Current.Context.RumtimeTransform.localToWorldMatrix;
+                Renderer.EveryFrameParams.WorldViewProjectionMatrixForClipping = ViewProjectionMatrixForClipping * Current.Context.RumtimeTransform.localToWorldMatrix;
                 Renderer.EveryFrameParams.ScreenWidthScaled = camera.scaledPixelWidth;
                 Renderer.EveryFrameParams.ScreenHeightScaled = camera.scaledPixelHeight;
                 Renderer.EveryFrameParams.ScreenWidthFixed = Screen.currentResolution.width;
