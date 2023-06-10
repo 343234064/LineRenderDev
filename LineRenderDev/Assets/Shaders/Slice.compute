@@ -31,7 +31,7 @@ RWStructuredBuffer<uint> OutputArray;
 
 StructuredBuffer<uint> ArgBuffer;
 RWStructuredBuffer<LineSegment> InputArray;
-#define GET_INPUT_ELEMENT_PASS1(idx) InputArray[idx].PixelLengthShrink  
+#define GET_INPUT_ELEMENT_PASS1(idx) InputArray[idx].PixelLengthShrink
 #define GET_INPUT_ELEMENT_PASS2(idx) InputArray[idx].PixelLengthShrinkTotal  
 #define GET_OUTPUT_ELEMENT(idx) InputArray[idx].PixelLengthShrinkTotal  
 #define INPUT_SIZE ArgBuffer[0]

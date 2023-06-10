@@ -36,6 +36,23 @@ public struct Array3<T>
     public override string ToString() => $"({x}, {y}, {z})";
 }
 
+public struct Array4<T>
+{
+    public Array4(T _x, T _y, T _z, T _w)
+    {
+        x = _x;
+        y = _y;
+        z = _z;
+        w = _w;
+    }
+
+    public T x;
+    public T y;
+    public T z;
+    public T w;
+
+    public override string ToString() => $"({x}, {y}, {z}, {w})";
+}
 
 
 
@@ -52,7 +69,7 @@ public struct LineSegment
     uint PixelLengthShrink;
     uint PixelLengthShrinkTotal;
 
-    public override string ToString() => $"LineSegment(PixelSLength={PixelLengthShrink}), PixelLengthSTotal={PixelLengthShrinkTotal})";
+    public override string ToString() => $"LineSegment(PixelSLength={PixelLengthShrink}), PixelSLengthTotal={PixelLengthShrinkTotal})";
 
     public static int Size()
     {
@@ -76,8 +93,8 @@ public struct Slice
 
 public struct PlainLine
 {
-    Vector3 NDCPosition1;
-    Vector3 NDCPosition2;
+    Vector2 NDCPosition1;
+    Vector2 NDCPosition2;
     uint BackFacing;
     uint SliceIndex;
     float debug;
@@ -86,7 +103,7 @@ public struct PlainLine
 
     public static int Size()
     {
-        return sizeof(float) * 3 * 2 + sizeof(uint) + sizeof(float) + sizeof(uint);
+        return sizeof(float) * 2 * 2 + sizeof(uint) + sizeof(float) + sizeof(uint);
     }
 }
 
@@ -117,8 +134,7 @@ public struct RenderParams
     public float CreaseAngleThreshold;
     public Matrix4x4 WorldViewProjectionMatrix;
     public Matrix4x4 WorldViewProjectionMatrixForClipping;
-    public int ScreenWidthScaled;
-    public int ScreenHeightScaled;
+    public Vector4 ScreenScaledResolution;
     public int ScreenWidthFixed;
     public int ScreenHeightFixed;
 
@@ -403,8 +419,7 @@ public class RenderLayer
         RenderCommands.SetComputeFloatParam(ExtractPass.CoreShader, "CreaseAngleThreshold", EveryFrameParams.CreaseAngleThreshold);
         RenderCommands.SetComputeMatrixParam(ExtractPass.CoreShader, "WorldViewProjection", EveryFrameParams.WorldViewProjectionMatrix);
         RenderCommands.SetComputeMatrixParam(ExtractPass.CoreShader, "WorldViewProjectionForClipping", EveryFrameParams.WorldViewProjectionMatrixForClipping);
-        RenderCommands.SetComputeIntParam(ExtractPass.CoreShader, "ScreenWidth", EveryFrameParams.ScreenWidthScaled);
-        RenderCommands.SetComputeIntParam(ExtractPass.CoreShader, "ScreenHeight", EveryFrameParams.ScreenHeightScaled);
+        RenderCommands.SetComputeVectorParam(ExtractPass.CoreShader, "ScreenScaledResolution", EveryFrameParams.ScreenScaledResolution);
         RenderCommands.SetComputeConstantBufferParam(ExtractPass.CoreShader, Shader.PropertyToID("Constants"), Current.ConstantsBuffer, 0, RenderConstants.Size());
         RenderCommands.SetComputeBufferParam(ExtractPass.CoreShader, ExtractPass.CoreShaderKernelId, "AdjacencyTriangles", Current.AdjacencyBuffer);
         RenderCommands.SetComputeBufferParam(ExtractPass.CoreShader, ExtractPass.CoreShaderKernelId, "Vertices", Current.VerticesBuffer);
@@ -445,6 +460,7 @@ public class RenderLayer
          */
         RenderTargetIdentifier DepthRTIdentifier = new RenderTargetIdentifier(BuiltinRenderTextureType.Depth);
         RenderCommands.SetComputeConstantBufferParam(VisiblePass.CoreShader, Shader.PropertyToID("Constants"), Current.ConstantsBuffer, 0, RenderConstants.Size());
+        RenderCommands.SetComputeVectorParam(VisiblePass.CoreShader, "ScreenScaledResolution", EveryFrameParams.ScreenScaledResolution);
         RenderCommands.SetComputeTextureParam(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, "SceneDepthTexture", DepthRTIdentifier);
         RenderCommands.SetComputeBufferParam(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, "Segments", Current.SegmentBuffer);
         RenderCommands.SetComputeBufferParam(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, "Slices", Current.SliceBuffer);

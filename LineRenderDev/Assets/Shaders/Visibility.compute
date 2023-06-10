@@ -13,10 +13,12 @@ AppendStructuredBuffer<PlainLine> VisibleLines;
 Texture2D<float> SceneDepthTexture;
 SamplerState LinearClampSampler;
 
+uniform float4  ScreenScaledResolution;
+
 /*
 * Groupshared memory is limited to 16KB per group.
 * A single thread is limited to a 256 byte region of groupshared memory for writing.
-* 12 bytes * 64 + 4 bytes * 2 = 768 bytes + 8 bytes
+* 16 bytes * 64 + 4 bytes * 2 = 1024 bytes + 8 bytes
 */
 groupshared float4 PointCache[VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM];
 groupshared uint VisibilityCache[VISIBILITY_CACHE_NUM];
@@ -53,9 +55,10 @@ bool LoadVisibility(uint Index)
     return (Cache & Mask) > 0;
 }
 
-inline void SavePoint(float3 Point, uint Index, bool Valid)
+inline void SavePoint(float4 Point, uint Index, bool Valid)
 {
-    PointCache[Index] = float4(Point, Valid ? 1.0f : 0.0f);
+    float4 ToSave = Valid ? Point : float4(-5.0f, 0.0f, 0.0f, 0.0f);//-5.0 is impossible in NDC Space
+    PointCache[Index] = ToSave;
 }
 
 inline float4 LoadPoint(uint Index)
@@ -64,7 +67,7 @@ inline float4 LoadPoint(uint Index)
 }
 
 
-int FirstBitZeroLow(uint Src, uint StartIndexFromLow, uint MaxSearchLength)
+int FirstBitZeroLow(uint Src, uint StartIndexFromLow)
 {
     uint Length = 32 - StartIndexFromLow;//firstbithigh(Src) + 1 - StartIndexFromLow;
     uint SrcWithOffset = Src >> StartIndexFromLow;
@@ -74,12 +77,12 @@ int FirstBitZeroLow(uint Src, uint StartIndexFromLow, uint MaxSearchLength)
 
     uint PosFromStartIndex = firstbitlow(~SrcWithOffset); // return #ffffffff(4294967295) if failed
 
-    PosFromStartIndex = min(PosFromStartIndex, MaxSearchLength);
+    //PosFromStartIndex = min(PosFromStartIndex, MaxSearchLength);
     return PosFromStartIndex < Length ? (PosFromStartIndex + StartIndexFromLow) : -1;
 }
 
 
-int ExtractTailIndex(uint HeadIndex, uint MaxSearchLength)
+int2 ExtractLatestZeroBit(uint HeadIndex, uint MaxSearchLength)
 {
     uint CacheIndex = HeadIndex >> 5;
     uint HeadOffset = HeadIndex - 32 * CacheIndex;
@@ -87,13 +90,13 @@ int ExtractTailIndex(uint HeadIndex, uint MaxSearchLength)
 
     //change this if VISIBILITY_CACHE_NUM change
     //only 2 step(64 size) to avoid writing loop 
-    int Pos = FirstBitZeroLow(Cache, HeadOffset, MaxSearchLength);
+    int Pos = FirstBitZeroLow(Cache, HeadOffset);
     if (Pos < 0 && CacheIndex < 1)
     {
         CacheIndex += 1;
         HeadOffset = 0;
         Cache = VisibilityCache[CacheIndex];
-        Pos = FirstBitZeroLow(Cache, HeadOffset, max(0, MaxSearchLength-32));
+        Pos = FirstBitZeroLow(Cache, HeadOffset);
     }
     /*
     [unroll]
@@ -107,28 +110,51 @@ int ExtractTailIndex(uint HeadIndex, uint MaxSearchLength)
         Cache = VisibilityCache[CacheIndex];
     };*/
 
-    return  Pos >= 0 ? (Pos + CacheIndex * 32) : 63;
+    int2 Result = (Pos >= 0) ? int2(Pos + CacheIndex * 32, 1) : int2(SLICE_PIXEL_SIZE - 1, 0);
+    Result = (Result.x - HeadIndex > MaxSearchLength) ? int2(HeadIndex + MaxSearchLength, 0) : Result;
+    return  Result;
 }
   
 
 float SampleSceneDepth(float2 uv)
 {
-    return SceneDepthTexture.SampleLevel(LinearClampSampler, uv, 0).r;
+    float2 TexelSize = ScreenScaledResolution.zw;
+
+    float2 Offset1 = float2(1.3846153846f, 0);
+    float2 Offset2 = float2(3.2307692308f, 0);
+    
+    float S0 = SceneDepthTexture.SampleLevel(LinearClampSampler, uv, 0).r * 0.2270270270f;
+    S0 += SceneDepthTexture.SampleLevel(LinearClampSampler, uv + (Offset1 * TexelSize), 0).r * 0.3162162162f;
+    S0 += SceneDepthTexture.SampleLevel(LinearClampSampler, uv - (Offset1 * TexelSize), 0).r * 0.3162162162f;
+    S0 += SceneDepthTexture.SampleLevel(LinearClampSampler, uv + (Offset2 * TexelSize), 0).r * 0.0702702703f;
+    S0 += SceneDepthTexture.SampleLevel(LinearClampSampler, uv - (Offset2 * TexelSize), 0).r * 0.0702702703f;
+
+    return S0;
+    /*
+    float S0 = SceneDepthTexture.SampleLevel(LinearClampSampler, uv, 0).r;
+    float S1 = SceneDepthTexture.SampleLevel(LinearClampSampler, uv + float2(TexelSize.x, 0.0f), 0).r;
+    float S2 = SceneDepthTexture.SampleLevel(LinearClampSampler, uv + float2(0.0f, TexelSize.y), 0).r;
+    float S3 = SceneDepthTexture.SampleLevel(LinearClampSampler, uv + float2(-TexelSize.x, 0.0f), 0).r;
+    float S4 = SceneDepthTexture.SampleLevel(LinearClampSampler, uv + float2(0.0f, -TexelSize.y), 0).r;
+    return S0 * 0.5f + (S1 + S2 + S3 + S4) * 0.125f;
+    */
+    
 }
 
 
 
-uint CalculatePixelPosition(uint PixelLength, uint TotalLength, uint CurrentLength, uint BeginIndex, uint Index)
+uint2 CalculatePixelPosition(uint PixelLength, uint CurrentSegmentLengthShrinkTotalInSlice, uint CurrentSegmentLengthShrink, uint BeginIndexInCurrentSegmentShrink, uint CurrentSliceIndex)
 {
-    uint TotalLengthExclusive = TotalLength - CurrentLength;
-    uint Offset = max(0, Index - TotalLengthExclusive);
+    uint TotalLengthExclusive = CurrentSegmentLengthShrinkTotalInSlice - CurrentSegmentLengthShrink;
+    uint Offset = max(0, CurrentSliceIndex - TotalLengthExclusive);
 
-    uint PixelPositionShrink = BeginIndex + Offset;
+    uint PixelPositionShrink = BeginIndexInCurrentSegmentShrink + Offset;
 
     uint PixelPosition = max(1, PixelPositionShrink * 2 - 1);
+    PixelPosition = PixelPosition + ((CurrentSliceIndex == (SLICE_PIXEL_SIZE - 1)) ? 1 : 0); //1-pixel gap left between slices
     PixelPosition = min(PixelPosition, PixelLength);
 
-    return PixelPosition;
+    return uint2(PixelPosition, PixelPositionShrink);
 }
 
 
@@ -186,36 +212,76 @@ void Visibility(uint3 gid : SV_GroupID, uint gi : SV_GroupIndex)
     }
 
     LineSegment TargetSegment = Segments[BeginSegmentID];
-    uint TargetPixelPosition = CalculatePixelPosition(TargetSegment.PixelLength, LengthFromBegin, RemainingSegmentLength, BeginPixelShrink, CurrentGroupPixelPosition);
+    uint2 PixelPosition = CalculatePixelPosition(TargetSegment.PixelLength, LengthFromBegin, RemainingSegmentLength, BeginPixelShrink, CurrentGroupPixelPosition);
+    uint TargetPixelPosition = PixelPosition.x;
+    uint TargetPixelPositionShrink = PixelPosition.y;
 
     float4 ClipPosition1 = TargetSegment.ClipPosition[0];
     float4 ClipPosition2 = TargetSegment.ClipPosition[1];
     float2 NDCPosition1 = TargetSegment.NDCPosition[0].xy;
     float2 NDCPosition2 = TargetSegment.NDCPosition[1].xy;
 
-    float TProjected = saturate(((float)TargetPixelPosition - 0.5) / (float)TargetSegment.PixelLength); //TargetPixelPosition - 0.5 to pixel center
-    float TUnProject = (TProjected * TargetSegment.ClipPosition[0].w) / ((1.0f - TProjected) * TargetSegment.ClipPosition[1].w + TProjected * TargetSegment.ClipPosition[1].w);
+    float InvPixelLength = 1.0f / (float)TargetSegment.PixelLength;
+    float TProjectedCenter = saturate(((float)TargetPixelPosition - 0.5f) * InvPixelLength);
+    float TProjectedStart = saturate(((float)TargetPixelPosition - 1.0f) * InvPixelLength);
+    float TProjectedEnd= saturate(((float)TargetPixelPosition) * InvPixelLength);
+
+    float TUnProject = (TProjectedCenter * TargetSegment.ClipPosition[0].w) / ((1.0f - TProjectedCenter) * TargetSegment.ClipPosition[1].w + TProjectedCenter * TargetSegment.ClipPosition[1].w);
     
-    float2 SamplePositionProjected = NDCPosition1 + (NDCPosition2 - NDCPosition1) * TProjected;
-    float4 SamplePositionUnProject = ClipPosition1 + (ClipPosition2 - ClipPosition1) * TUnProject; //使用NDC坐标before透视除法
+    float2 SamplePositionProjected = NDCPosition1 + (NDCPosition2 - NDCPosition1) * TProjectedCenter;
+    float4 SamplePositionUnProject = ClipPosition1 + (ClipPosition2 - ClipPosition1) * TUnProject; //Clip space before perspective division
 
-    float SamplePositionProjectedZ = GetUnifyNDCZ(SamplePositionUnProject.z / SamplePositionUnProject.w); //使用CalculateScreenPosition里的z
+    float SamplePositionProjectedZ = GetUnifyNDCZ(SamplePositionUnProject.z / SamplePositionUnProject.w);
     float SceneDepth = SampleSceneDepth(SamplePositionProjected.xy);
-    bool IsVisible = ZTest(SamplePositionProjectedZ, SceneDepth);
+    bool IsVisible = true;// ZTest(SamplePositionProjectedZ, SceneDepth);
 
-    float3 CurrentPoint = float3(SamplePositionProjected, SamplePositionProjectedZ);
+    float2 SamplePositionProjectedStart = NDCPosition1 + (NDCPosition2 - NDCPosition1) * TProjectedStart;
+    float2 SamplePositionProjectedEnd = NDCPosition1 + (NDCPosition2 - NDCPosition1) * TProjectedEnd;
+    float4 CurrentPoint = float4(SamplePositionProjectedStart, SamplePositionProjectedEnd);
 
     SavePoint(CurrentPoint, CurrentGroupPixelPosition, ValidPoint);
     SaveVisibility(IsVisible, CurrentGroupPixelPosition, ValidPoint);
     GroupMemoryBarrierWithGroupSync();
 
 
+    bool Left = (CurrentGroupPixelPosition > 0) && (TargetPixelPosition > 1) && LoadVisibility(CurrentGroupPixelPosition - 1);
+    bool Right = (CurrentGroupPixelPosition < (VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM - 1)) && (TargetPixelPosition < TargetSegment.PixelLength) && LoadVisibility(CurrentGroupPixelPosition + 1);
+
+    bool IsHead = !Left ;
+    bool IsTail = !Right;
+
+    //考虑只有一个像素长度的线段
+    //1.MaxSearchLength
+    //2.ExtractTailIndex返回的是最近的0所在的位置
+    //3.当所有的像素小于1长度时，1111111111111111这种的情况要考虑线段位置截断，即MaxSearchLength的限制
+    //4.当只有1个像素时，LoadPoint获得的将是同一个点，该如何处理
+    
+    if (IsVisible && IsHead && ValidPoint)
+    {
+        uint MaxSearchLength = max(0, TargetSegment.PixelLengthShrink - TargetPixelPositionShrink);//计算shrink后的剩余像素
+        int2 ZeroBitIndex = ExtractLatestZeroBit(CurrentGroupPixelPosition, MaxSearchLength);
+        int TailIndex = ZeroBitIndex.x - ZeroBitIndex.y;
+
+        float4 Head = CurrentPoint;
+        float4 Tail = LoadPoint(TailIndex);
+        if (Tail.x >= -1.0f) {
+            PlainLine NewLine;
+            NewLine.NDCPosition[0] = Head.xy;
+            NewLine.NDCPosition[1] = Tail.zw;
+            NewLine.BackFacing = TargetSegment.BackFacing;
+            NewLine.debug = CurrentSlice.debug;
+            NewLine.SliceIndex = gid.x;
+            VisibleLines.Append(NewLine);
+        }
+        
+    }
+    /*
     bool vis = LoadVisibility(CurrentGroupPixelPosition);
     float4 p = LoadPoint(CurrentGroupPixelPosition);
-    if (p.w>0.0 && vis) {
+    if (p.x >= -1.0f && vis ) {
         PlainLine NewLine;
-        NewLine.NDCPosition[0] = p.xyz;
-        NewLine.NDCPosition[1] = float3(p.xy + normalize(NDCPosition2 - NDCPosition1) * 0.001, p.z);
+        NewLine.NDCPosition[0] = p.xy;
+        NewLine.NDCPosition[1] = p.zw;// float2(p.xy + normalize(NDCPosition2 - NDCPosition1) * 0.001);
         // if (IsTail) NewLine.NDCPosition[1] = float3(p.xy + normalize(NDCPosition1 - NDCPosition2) * 0.011, p.z);
         // else if (IsHead) NewLine.NDCPosition[1] = float3(p.xy + normalize(NDCPosition2 - NDCPosition1) * 0.011, p.z);
         NewLine.BackFacing = CurrentSlice.BeginPixel;
@@ -224,12 +290,11 @@ void Visibility(uint3 gid : SV_GroupID, uint gi : SV_GroupIndex)
         //if (CurrentGroupPixelPosition % 2 == 0 && IsVisible)
 
         VisibleLines.Append(NewLine);
-
-
     }
+    */
 }
 
-
+/*
 [numthreads(VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM, 1, 1)]
 void Visibility__Old(uint3 gid : SV_GroupID, uint gi : SV_GroupIndex, uint3 id : SV_DispatchThreadID)
 {
@@ -276,6 +341,7 @@ if(ZTest(ScreenPosition1.z, Position1SceneDepth) && ZTest(ScreenPosition2.z, Pos
     * 18.输出该可见线段
     */
     // reset
+/*
     uint ri = gi % VISIBILITY_CACHE_NUM;
     VisibilityCache[ri] = 0;
     GroupMemoryBarrierWithGroupSync();
@@ -372,6 +438,7 @@ if(ZTest(ScreenPosition1.z, Position1SceneDepth) && ZTest(ScreenPosition2.z, Pos
         }
    }*/
     
+/*
     uint ReverseIndex = CurrentGroupPixelPosition;
     bool vis = LoadVisibility(CurrentGroupPixelPosition);
     float4 p = LoadPoint(CurrentGroupPixelPosition);
@@ -391,3 +458,4 @@ if(ZTest(ScreenPosition1.z, Position1SceneDepth) && ZTest(ScreenPosition2.z, Pos
 
     }
 }
+*/

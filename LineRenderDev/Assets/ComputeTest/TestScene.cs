@@ -23,7 +23,7 @@ public class TestScene : MonoBehaviour
 
         DispatchThreadGroupSize = 100;
 
-        ResultBuffer = new ComputeBuffer((int)(ThreadGroupSize * DispatchThreadGroupSize), sizeof(uint) * 3);
+        ResultBuffer = new ComputeBuffer((int)(ThreadGroupSize * DispatchThreadGroupSize), sizeof(uint) * 4);
         
     }
 
@@ -34,7 +34,7 @@ public class TestScene : MonoBehaviour
       
         Shader.Dispatch(Kernel, (int)DispatchThreadGroupSize, 1, 1);
 
-        ComputeBufferUtils.Instance.PrintInLine<Array3<uint>>(ResultBuffer, 0, 10);
+        ComputeBufferUtils.Instance.PrintInLine<Array4<uint>>(ResultBuffer, 0, 10);
     }
 
     void OnDestroy()

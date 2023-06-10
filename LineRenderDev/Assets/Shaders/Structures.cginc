@@ -43,8 +43,7 @@ struct LineSegment
 
 struct PlainLine
 {
-    float3 NDCPosition[2];
-
+    float2 NDCPosition[2];
     uint BackFacing;
     
     uint SliceIndex;

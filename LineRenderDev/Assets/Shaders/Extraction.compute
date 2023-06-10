@@ -14,8 +14,8 @@ uniform float3 LocalSpaceViewPosition;
 uniform float CreaseAngleThreshold;
 uniform float4x4 WorldViewProjection;
 uniform float4x4 WorldViewProjectionForClipping;
-uniform int ScreenWidth;
-uniform int ScreenHeight;
+uniform float4  ScreenScaledResolution;
+
 
 
 #define DEBUG_CLIPPING 0
@@ -202,6 +202,9 @@ float4 CalculateClipSpacePositionForClipping(float3 LocalPosition)
 
 uint2 CalculatePixelLength(float2 UnifyNDCPosition1, float2 UnifyNDCPosition2)
 {
+    float ScreenWidth = ScreenScaledResolution.x;
+    float ScreenHeight = ScreenScaledResolution.y;
+
     float2 PixelPos1 = float2(UnifyNDCPosition1.x * ScreenWidth, UnifyNDCPosition1.y * ScreenHeight);
     float2 PixelPos2 = float2(UnifyNDCPosition2.x * ScreenWidth, UnifyNDCPosition2.y * ScreenHeight);
 
@@ -218,6 +221,22 @@ void ArgBufferCounting()
     InterlockedAdd(ArgBuffer[0], 1, Original);
     if((uint)(Original + 1) % SLICE_PASS_PER_THREAD_ELEMENT_NUM == 0)
         InterlockedAdd(ArgBuffer[1], 1, Original);
+}
+
+
+inline void FillLineSegment(float4 ClipPos1, float4 ClipPos2, bool BackFacing, inout LineSegment output)
+{
+    output.ClipPosition[0] = ClipPos1;
+    output.ClipPosition[1] = ClipPos2;
+    float4 NDCPos1 = CalculateNDCPosition(ClipPos1);
+    float4 NDCPos2 = CalculateNDCPosition(ClipPos2);
+    output.NDCPosition[0] = UnifyNDCPosition(NDCPos1);
+    output.NDCPosition[1] = UnifyNDCPosition(NDCPos2);
+    output.BackFacing = BackFacing ? 1 : 0;
+    uint2 PixelLength = CalculatePixelLength(output.NDCPosition[0].xy, output.NDCPosition[1].xy);
+    output.PixelLength = PixelLength.x;
+    output.PixelLengthShrink = PixelLength.y;
+    output.PixelLengthShrinkTotal = 0;
 }
 
 
@@ -289,18 +308,8 @@ void Extraction (uint3 id : SV_DispatchThreadID)
 
         if (AddXY && ClipState.x >= 0.0f)
         {
-            LineSegment Line;
-            Line.ClipPosition[0] = ClipPos1;
-            Line.ClipPosition[1] = ClipPos2;
-            float4 NDCPos1 = CalculateNDCPosition(ClipPos1);
-            float4 NDCPos2 = CalculateNDCPosition(ClipPos2);
-            Line.NDCPosition[0] = UnifyNDCPosition(NDCPos1);
-            Line.NDCPosition[1] = UnifyNDCPosition(NDCPos2);
-            Line.BackFacing = XYBackFacing ? 1 : 0;
-            uint2 PixelLength = CalculatePixelLength(Line.NDCPosition[0].xy, Line.NDCPosition[1].xy);
-            Line.PixelLength = PixelLength.x;
-            Line.PixelLengthShrink = PixelLength.y;
-            Line.PixelLengthShrinkTotal = 0;
+            LineSegment Line = (LineSegment)0;
+            FillLineSegment(ClipPos1, ClipPos2, XYBackFacing, Line);
             Segments.Append(Line);
             ArgBufferCounting();
         }
@@ -335,18 +344,8 @@ void Extraction (uint3 id : SV_DispatchThreadID)
 
         if (AddZX && ClipState.x >= 0.0f)
         {
-            LineSegment Line;
-            Line.ClipPosition[0] = ClipPos1;
-            Line.ClipPosition[1] = ClipPos2;
-            float4 NDCPos1 = CalculateNDCPosition(ClipPos1);
-            float4 NDCPos2 = CalculateNDCPosition(ClipPos2);
-            Line.NDCPosition[0] = UnifyNDCPosition(NDCPos1);
-            Line.NDCPosition[1] = UnifyNDCPosition(NDCPos2);
-            Line.BackFacing = ZXBackFacing ? 1 : 0;
-            uint2 PixelLength = CalculatePixelLength(Line.NDCPosition[0].xy, Line.NDCPosition[1].xy);
-            Line.PixelLength = PixelLength.x;
-            Line.PixelLengthShrink = PixelLength.y;
-            Line.PixelLengthShrinkTotal = 0;
+            LineSegment Line = (LineSegment)0;
+            FillLineSegment(ClipPos1, ClipPos2, ZXBackFacing, Line);
             Segments.Append(Line);
             ArgBufferCounting();
         }
@@ -380,18 +379,8 @@ void Extraction (uint3 id : SV_DispatchThreadID)
 
         if (AddYZ && ClipState.x >= 0.0f)
         {
-            LineSegment Line;
-            Line.ClipPosition[0] = ClipPos1;
-            Line.ClipPosition[1] = ClipPos2;
-            float4 NDCPos1 = CalculateNDCPosition(ClipPos1);
-            float4 NDCPos2 = CalculateNDCPosition(ClipPos2);
-            Line.NDCPosition[0] = UnifyNDCPosition(NDCPos1);
-            Line.NDCPosition[1] = UnifyNDCPosition(NDCPos2);
-            Line.BackFacing = YZBackFacing ? 1 : 0;
-            uint2 PixelLength = CalculatePixelLength(Line.NDCPosition[0].xy, Line.NDCPosition[1].xy);
-            Line.PixelLength = PixelLength.x;
-            Line.PixelLengthShrink = PixelLength.y;
-            Line.PixelLengthShrinkTotal = 0;
+            LineSegment Line = (LineSegment)0;
+            FillLineSegment(ClipPos1, ClipPos2, YZBackFacing, Line);
             Segments.Append(Line);
             ArgBufferCounting();
         }

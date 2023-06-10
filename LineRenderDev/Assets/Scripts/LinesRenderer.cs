@@ -219,8 +219,7 @@ public class LinesRenderer : MonoBehaviour
                 Renderer.EveryFrameParams.CreaseAngleThreshold = (180.0f - Current.Context.LineMaterialSetting.CreaseAngleDegreeThreshold) * (0.017453292519943294f);
                 Renderer.EveryFrameParams.WorldViewProjectionMatrix = ViewProjectionMatrix * Current.Context.RumtimeTransform.localToWorldMatrix;
                 Renderer.EveryFrameParams.WorldViewProjectionMatrixForClipping = ViewProjectionMatrixForClipping * Current.Context.RumtimeTransform.localToWorldMatrix;
-                Renderer.EveryFrameParams.ScreenWidthScaled = camera.scaledPixelWidth;
-                Renderer.EveryFrameParams.ScreenHeightScaled = camera.scaledPixelHeight;
+                Renderer.EveryFrameParams.ScreenScaledResolution = new Vector4(camera.scaledPixelWidth, camera.scaledPixelHeight, 1.0f / camera.scaledPixelWidth, 1.0f / camera.scaledPixelHeight);
                 Renderer.EveryFrameParams.ScreenWidthFixed = Screen.currentResolution.width;
                 Renderer.EveryFrameParams.ScreenHeightFixed = Screen.currentResolution.height;
 

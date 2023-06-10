@@ -136,15 +136,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 4.96
+      value: -3.72
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -0.998065
+      value: -0.43
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 0.24882984
+      value: -12.39
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
       propertyPath: m_LocalRotation.w
@@ -298,7 +298,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9b3070a7a496da54a91aaac165c88dc9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  AdjacencyData: Assets/Models/YJS_Mod.adjacency
+  AdjacencyData: 
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 8546376762de97c4da90c9ab15aeb1dc, type: 2}
   HideBackFaceEdge: 1
@@ -410,7 +410,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9b3070a7a496da54a91aaac165c88dc9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  AdjacencyData: 
+  AdjacencyData: Assets/Models/SphereAndTorus.adjacency
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 72573a12241edb447b73e548bb04a52e, type: 2}
   HideBackFaceEdge: 1
@@ -438,7 +438,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9b3070a7a496da54a91aaac165c88dc9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  AdjacencyData: Assets/Models/YJS_Mod.adjacency
+  AdjacencyData: 
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 92e9153264e7971439a727f014d15963, type: 2}
   HideBackFaceEdge: 1
@@ -645,7 +645,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9b3070a7a496da54a91aaac165c88dc9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  AdjacencyData: Assets/Models/YJS_Mod.adjacency
+  AdjacencyData: 
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: e66b108cc851a9d4097f51ddc5db72f1, type: 2}
   HideBackFaceEdge: 1
@@ -1196,7 +1196,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: f54c79e26b1ebb24b9758a10609c1121, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 2902008074560218088, guid: f54c79e26b1ebb24b9758a10609c1121, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1321,7 +1321,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: b7cd0f82d67026a458d782fa44abf5e4, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 7961116743903408561, guid: b7cd0f82d67026a458d782fa44abf5e4, type: 3}
       propertyPath: m_IsActive
@@ -1394,7 +1394,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9b3070a7a496da54a91aaac165c88dc9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  AdjacencyData: 
+  AdjacencyData: Assets/Models/SphereAndTorus.adjacency
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 1444b3bab0a1db8428c12433c8f10792, type: 2}
   HideBackFaceEdge: 1
@@ -1599,7 +1599,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: d3225e1bf00327942bb9801169f9a8ec, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 7772571541225618823, guid: d3225e1bf00327942bb9801169f9a8ec, type: 3}
       propertyPath: m_Materials.Array.data[0]
@@ -1809,7 +1809,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: c85fac795e22b984096c291961adffa8, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 6892417033642571503, guid: c85fac795e22b984096c291961adffa8, type: 3}
       propertyPath: m_Materials.Array.data[0]
