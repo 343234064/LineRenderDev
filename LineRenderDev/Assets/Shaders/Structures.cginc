@@ -27,6 +27,8 @@ struct Slice
 {
     uint BeginSegmentIndex;
     uint BeginPixel;
+
+    //temp
     float debug;
 };
 
@@ -46,6 +48,8 @@ struct PlainLine
     float2 NDCPosition[2];
     uint BackFacing;
     
+    //temp
     uint SliceIndex;
     float debug;
+    float debug2;
 };

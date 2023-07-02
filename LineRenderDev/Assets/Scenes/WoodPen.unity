@@ -245,7 +245,7 @@ MonoBehaviour:
   AdjacencyData: Assets/Models/BoxAndBox.adjacency
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 31067fb7262504c48bbbcef19a85fa60, type: 2}
-  HideBackFaceEdge: 0
+  HideBackFaceEdge: 1
   HideOccludedEdge: 0
   SilhouetteEnable: 1
   OutineOnly: 1
@@ -750,14 +750,14 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 723381315}
-  m_LocalRotation: {x: 0.078293994, y: -0.2334143, z: 0.018858854, w: 0.9690367}
-  m_LocalPosition: {x: 0.8, y: 1.4, z: -20.5}
+  m_LocalRotation: {x: 0.13229503, y: -0.12112513, z: 0.016290652, w: 0.98364705}
+  m_LocalPosition: {x: 1.477472, y: 8.708289, z: -38.12882}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
   m_RootOrder: 0
-  m_LocalEulerAnglesHint: {x: 9.238, y: -27.086, z: 0}
+  m_LocalEulerAnglesHint: {x: 15.32, y: -14.04, z: 0}
 --- !u!114 &723381320
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1196,7 +1196,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: f54c79e26b1ebb24b9758a10609c1121, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 2902008074560218088, guid: f54c79e26b1ebb24b9758a10609c1121, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1397,8 +1397,8 @@ MonoBehaviour:
   AdjacencyData: Assets/Models/SphereAndTorus.adjacency
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 1444b3bab0a1db8428c12433c8f10792, type: 2}
-  HideBackFaceEdge: 1
-  HideOccludedEdge: 1
+  HideBackFaceEdge: 0
+  HideOccludedEdge: 0
   SilhouetteEnable: 1
   OutineOnly: 1
   CreaseEnable: 1
@@ -1599,7 +1599,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: d3225e1bf00327942bb9801169f9a8ec, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 7772571541225618823, guid: d3225e1bf00327942bb9801169f9a8ec, type: 3}
       propertyPath: m_Materials.Array.data[0]
@@ -1704,8 +1704,8 @@ MonoBehaviour:
   AdjacencyData: Assets/Models/BoxAndBox.adjacency
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 27029fe0085574a4593b3b97c75f92b4, type: 2}
-  HideBackFaceEdge: 0
-  HideOccludedEdge: 0
+  HideBackFaceEdge: 1
+  HideOccludedEdge: 1
   SilhouetteEnable: 1
   OutineOnly: 1
   CreaseEnable: 1
@@ -1809,7 +1809,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: c85fac795e22b984096c291961adffa8, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 6892417033642571503, guid: c85fac795e22b984096c291961adffa8, type: 3}
       propertyPath: m_Materials.Array.data[0]

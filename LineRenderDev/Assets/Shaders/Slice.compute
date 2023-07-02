@@ -197,7 +197,8 @@ void SumTotalAndSlice(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID)
 					Output.BeginPixel = Output.BeginPixel - Current;
 				}
 				Output.BeginSegmentIndex = BeginSegmentIndex;
-				Slices.Append(Output);
+				if(BeginSegmentIndex < INPUT_SIZE)
+					Slices.Append(Output);
 			}
 		}
 

@@ -34,16 +34,16 @@ float3 ComputeNormal(float3 p1, float3 p2, float3 p3)
     */
     Normal = cross(U, V);
     // No need to normalize
-    //Normal = normalize(Normal);
+    Normal = normalize(Normal);
 
     return Normal;
 }
 
 
-
+#define BACK_FACE_THRESHOLD 0.00001f
 inline bool IsSilhouette(float DotFactor1, float DotFactor2)
 {
-    return step(DotFactor1 * DotFactor2, 0);
+    return step(DotFactor1 * DotFactor2, BACK_FACE_THRESHOLD);
 }
 
 inline bool IsCrease(float3 Face1Normal, float3 Face2Normal, float AngleThreshold)
@@ -265,20 +265,11 @@ void Extraction (uint3 id : SV_DispatchThreadID)
     bool AddYZ = false;
     bool AddZX = false;
 
-    bool XYIsBackFace = false;
-    bool ZXIsBackFace = false;
-    bool YZIsBackFace = false;
-
     float3 CurrentFaceNormal = ComputeNormal(VertexX, VertexY, VertexZ);
 
     bool NeedExtractSilhouette =  SilhouetteEnable > 0;
-    float3 LocalViewVector = LocalSpaceViewPosition.xyz - (VertexX+VertexY+VertexZ)/3.0f;
-    float SilhouettePremultiplyDotFactor = dot(CurrentFaceNormal, LocalViewVector);
-
     bool NeedExtractCrease = CreaseEnable > 0;
     float CreasePremultiplyAngleThreshold = length(CurrentFaceNormal) * (cos(CreaseAngleThreshold) + 0.000001f); //+1.0e-6 for Epsilon
-
-    bool CurrentIsBackFace = SilhouettePremultiplyDotFactor < 0 ? true : false;
 
 
     if (CurrentFace.xy >= 1)
@@ -286,12 +277,16 @@ void Extraction (uint3 id : SV_DispatchThreadID)
         float3 AdjVertexXY = Vertices[CurrentFace.xy - 1];
         float3 AdjFaceXYNormal = ComputeNormal(VertexY, VertexX, AdjVertexXY);
 
-        float DotFactor = dot(LocalViewVector, AdjFaceXYNormal);
-        AddXY = AddXY || (NeedExtractSilhouette && IsSilhouette(SilhouettePremultiplyDotFactor, DotFactor));
+        float3 LocalViewVector = normalize(LocalSpaceViewPosition.xyz - (VertexX + VertexY) / 2.0f);
+        float DotFactorCurrentFace = dot(CurrentFaceNormal, LocalViewVector);
+        float DotFactorAdjFace = dot(AdjFaceXYNormal, LocalViewVector);
+        
+        AddXY = AddXY || (NeedExtractSilhouette && IsSilhouette(DotFactorCurrentFace, DotFactorAdjFace));
         AddXY = AddXY || (NeedExtractCrease && IsCrease(CurrentFaceNormal, AdjFaceXYNormal, CreasePremultiplyAngleThreshold));
 
-        XYIsBackFace = DotFactor < 0 ? true : false;
-        bool XYBackFacing = CurrentIsBackFace && XYIsBackFace;
+        bool CurrentIsBackFace = step(DotFactorCurrentFace, BACK_FACE_THRESHOLD);
+        bool AdjIsBackFace = step(DotFactorAdjFace, BACK_FACE_THRESHOLD);
+        bool XYBackFacing = CurrentIsBackFace && AdjIsBackFace;
 
         float4 ClipPos1BeforeClip = CalculateClipSpacePosition(Vertices[CurrentFace.x]);
         float4 ClipPos2BeforeClip = CalculateClipSpacePosition(Vertices[CurrentFace.y]);
@@ -322,12 +317,16 @@ void Extraction (uint3 id : SV_DispatchThreadID)
         float3 AdjVertexZX = Vertices[CurrentFace.zx - 1];
         float3 AdjFaceZXNormal = ComputeNormal(VertexZ, AdjVertexZX, VertexX);
 
-        float DotFactor = dot(LocalViewVector, AdjFaceZXNormal);
-        AddZX = AddZX || (NeedExtractSilhouette && IsSilhouette(SilhouettePremultiplyDotFactor, DotFactor));
+        float3 LocalViewVector = normalize(LocalSpaceViewPosition.xyz - (VertexX + VertexZ) / 2.0f);
+        float DotFactorCurrentFace = dot(CurrentFaceNormal, LocalViewVector);
+        float DotFactorAdjFace = dot(AdjFaceZXNormal, LocalViewVector);
+
+        AddZX = AddZX || (NeedExtractSilhouette && IsSilhouette(DotFactorCurrentFace, DotFactorAdjFace));
         AddZX = AddZX || (NeedExtractCrease && IsCrease(CurrentFaceNormal, AdjFaceZXNormal, CreasePremultiplyAngleThreshold));
 
-        ZXIsBackFace = DotFactor < 0 ? true : false;
-        bool ZXBackFacing = CurrentIsBackFace && ZXIsBackFace;
+        bool CurrentIsBackFace = step(DotFactorCurrentFace, BACK_FACE_THRESHOLD);
+        bool AdjIsBackFace = step(DotFactorAdjFace, BACK_FACE_THRESHOLD);
+        bool ZXBackFacing = CurrentIsBackFace && AdjIsBackFace;
 
         float4 ClipPos1BeforeClip = CalculateClipSpacePosition(Vertices[CurrentFace.z]);
         float4 ClipPos2BeforeClip = CalculateClipSpacePosition(Vertices[CurrentFace.x]);
@@ -357,12 +356,16 @@ void Extraction (uint3 id : SV_DispatchThreadID)
         float3 AdjVertexYZ = Vertices[CurrentFace.yz - 1];
         float3 AdjFaceYZNormal = ComputeNormal(AdjVertexYZ, VertexZ, VertexY);
 
-        float DotFactor = dot(LocalViewVector, AdjFaceYZNormal);
-        AddYZ = AddYZ || (NeedExtractSilhouette && IsSilhouette(SilhouettePremultiplyDotFactor, DotFactor));
+        float3 LocalViewVector = normalize(LocalSpaceViewPosition.xyz - (VertexY + VertexZ) / 2.0f);
+        float DotFactorCurrentFace = dot(CurrentFaceNormal, LocalViewVector);
+        float DotFactorAdjFace = dot(AdjFaceYZNormal, LocalViewVector);
+
+        AddYZ = AddYZ || (NeedExtractSilhouette && IsSilhouette(DotFactorCurrentFace, DotFactorAdjFace));
         AddYZ = AddYZ || (NeedExtractCrease && IsCrease(CurrentFaceNormal, AdjFaceYZNormal, CreasePremultiplyAngleThreshold));
 
-        YZIsBackFace = DotFactor < 0 ? true : false;
-        bool YZBackFacing = CurrentIsBackFace && YZIsBackFace;
+        bool CurrentIsBackFace = step(DotFactorCurrentFace, BACK_FACE_THRESHOLD);
+        bool AdjIsBackFace = step(DotFactorAdjFace, BACK_FACE_THRESHOLD);
+        bool YZBackFacing = CurrentIsBackFace && AdjIsBackFace;
 
         float4 ClipPos1BeforeClip = CalculateClipSpacePosition(Vertices[CurrentFace.y]);
         float4 ClipPos2BeforeClip = CalculateClipSpacePosition(Vertices[CurrentFace.z]);

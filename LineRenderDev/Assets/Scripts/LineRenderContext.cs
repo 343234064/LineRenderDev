@@ -69,7 +69,7 @@ public struct LineSegment
     uint PixelLengthShrink;
     uint PixelLengthShrinkTotal;
 
-    public override string ToString() => $"LineSegment(PixelSLength={PixelLengthShrink}), PixelSLengthTotal={PixelLengthShrinkTotal})";
+    public override string ToString() => $"LineSegment(PixelSLength={PixelLengthShrink}), PixelSLengthTotal={PixelLengthShrinkTotal}, Index={BackFacing})";
 
     public static int Size()
     {
@@ -83,7 +83,7 @@ public struct Slice
     uint BeginPixel;
     float debug;
 
-    public override string ToString() => $"Slice({BeginSegmentIndex},{BeginPixel})";
+    public override string ToString() => $"Slice({BeginSegmentIndex},{BeginPixel}, {debug})";
 
     public static int Size()
     {
@@ -98,12 +98,13 @@ public struct PlainLine
     uint BackFacing;
     uint SliceIndex;
     float debug;
+    float debug2;
 
-    public override string ToString() => $"PlainLine({SliceIndex},{debug},{BackFacing},{NDCPosition1})";
+    public override string ToString() => $"PlainLine({SliceIndex},{debug},{debug2})";
 
     public static int Size()
     {
-        return sizeof(float) * 2 * 2 + sizeof(uint) + sizeof(float) + sizeof(uint);
+        return sizeof(float) * 2 * 2 + sizeof(uint) + sizeof(float)*2 + sizeof(uint);
     }
 }
 
@@ -473,7 +474,6 @@ public class RenderLayer
 
         Current.LineMaterialSetting.LineRenderMaterial.SetBuffer("Lines", Current.VisibleLineBuffer);
 
-        
         RenderCommands.DrawProceduralIndirect(Matrix4x4.identity, Current.LineMaterialSetting.LineRenderMaterial, -1, MeshTopology.Lines, Current.VisibleLineArgBuffer, 0);
 
         /*
