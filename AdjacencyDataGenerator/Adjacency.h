@@ -10,6 +10,7 @@
 typedef unsigned char Byte;
 typedef unsigned int uint;
 
+using namespace std;
 
 //Not commutative
 inline unsigned int HashCombine(unsigned int A, unsigned int C)
@@ -37,7 +38,7 @@ inline size_t HashCombine2(size_t A, size_t C)
 	return value;
 }
 
-
+#define EPS 0.000001f
 struct Vertex3
 {
 	Vertex3(float _x = 0, float _y = 0, float _z = 0) :
@@ -46,10 +47,15 @@ struct Vertex3
 		hash = HashCombine2(std::hash<float>()(x), std::hash<float>()(y));
 		hash = HashCombine2(hash, std::hash<float>()(z));
 	}
+	Vertex3(const Vertex3& v):
+		x(v.x), y(v.y), z(v.z), hash(v.hash)
+	{}
 
 	bool operator==(const Vertex3& other) const
 	{
-		return (x == other.x && y == other.y && z == other.z);
+		return ((abs(x - other.x) < EPS) 
+			&& (abs(y - other.y) < EPS)
+			&& (abs(z - other.z) < EPS));
 	}
 
 	bool operator!=(const Vertex3& other) const
@@ -57,20 +63,27 @@ struct Vertex3
 		return !(*this == other);
 	}
 
-
 	float x;
 	float y;
 	float z;
 	size_t hash;
 };
 
-struct Index
+class Index
 {
-	Index() :
+public:
+	Index():
 		value(0), actual_value(0)
-	{}
+	{
+		hash = std::hash<uint>()(0);
+	}
 	Index(uint _value, uint _actual_value):
 		value(_value), actual_value(_actual_value)
+	{
+		hash = std::hash<uint>()(_value);
+	}
+	Index(const Index& _index):
+		value(_index.value), actual_value(_index.actual_value), hash(_index.hash)
 	{}
 
 	bool operator<(const Index& other) const
@@ -92,22 +105,33 @@ struct Index
 	{
 		value = other;
 		actual_value = other;
+		hash = std::hash<uint>()(other);
+
 		return *this;
 	}
 
+	size_t hash;
 	uint value;
 	uint actual_value;
 };
 
-struct Face
+class Face
 {
-	explicit Face(Index _x, Index _y, Index _z):
-		x(_x), y(_y), z(_z), IsRead(false), BlackWhite(0) {}
+public:
+	explicit Face(Index _x, Index _y, Index _z, uint e1, uint e2, uint e3):
+		x(_x), y(_y), z(_z), 
+		xy(e1), yz(e2), zx(e3),
+		IsRead(false), IsAddToAdjFaceList(false), BlackWhite(0) {}
 	Index x;
 	Index y;
 	Index z;
+	//edge index
+	uint xy;
+	uint yz;
+	uint zx;
 
 	bool IsRead;
+	bool IsAddToAdjFaceList;
 	int BlackWhite;
 
 	Index GetOppositePoint(Index v1, Index  v2)
@@ -149,16 +173,18 @@ class Edge
 {
 public:
 	Edge(uint _v1, uint _v2, uint _actual_v1, uint _actual_v2) :
-		v1(_v1, _actual_v1), v2(_v2, _actual_v2)
+		v1(_v1, _actual_v1), v2(_v2, _actual_v2), id(0)
 	{
 		hash = HashCombine(std::min(v1.value, v2.value), std::max(v1.value, v2.value));
 	}
 	Edge(Index _v1, Index _v2) :
-		v1(_v1), v2(_v2)
+		v1(_v1), v2(_v2), id(0)
 	{
 		hash = HashCombine(std::min(v1.value, v2.value), std::max(v1.value, v2.value));
 	}
-
+	Edge(const Edge& e):
+		v1(e.v1), v2(e.v2), hash(e.hash), id(e.id)
+	{}
 
 	bool operator==(const Edge& other) const
 	{
@@ -173,9 +199,19 @@ public:
 	size_t hash;
 	Index v1;
 	Index v2;
+
+	uint id;
 };
 
 namespace std {
+	template <> struct hash<Index>
+	{
+		size_t operator()(const Index& x) const
+		{
+			return x.hash;
+		}
+	};
+
 	template <> struct hash<Edge>
 	{
 		size_t operator()(const Edge& x) const
@@ -193,22 +229,10 @@ namespace std {
 	};
 }
 
-struct AdjFace
+class AdjFace
 {
-	AdjFace() :
-		x(0, 0), y(0, 0), z(0, 0)
-	{
-		adjPoint[0] = 0;
-		adjPoint[1] = 0;
-		adjPoint[2] = 0;
-		adjFaceIndex[0] = 0;
-		adjFaceIndex[1] = 0;
-		adjFaceIndex[2] = 0;
-		hasAdjFace[0] = false;
-		hasAdjFace[1] = false;
-		hasAdjFace[2] = false;
-		faceIndex = 0;
-	}
+public:
+	AdjFace() = delete;
 	AdjFace(const Face& face) :
 		x(face.x),
 		y(face.y),
@@ -236,10 +260,39 @@ struct AdjFace
 	bool hasAdjFace[3];
 
 	uint faceIndex;
+public:
+	static uint ByteSize()
+	{
+		return sizeof(uint) * 6;
+	}
 };
 
-struct VertexContext
+class AdjVertex
 {
+public:
+	AdjVertex() = delete;
+	AdjVertex(const Vertex3& _v) :
+		x(_v.x), y(_v.y), z(_v.z), adjId(0), adjSerializedId(0), adjNum(0)
+	{}
+
+	float x;
+	float y;
+	float z;
+	uint adjId;
+	uint adjSerializedId;
+	uint adjNum;
+
+public:
+	static uint ByteSize()
+	{
+		return 3 * sizeof(float) + 2 * sizeof(uint);
+	}
+};
+
+
+class VertexContext
+{
+public:
 	VertexContext() :
 		Name("None"),
 		BytesData(nullptr),
@@ -251,53 +304,74 @@ struct VertexContext
 	std::string Name;
 	Byte* BytesData;
 	std::vector<Vertex3> RawVertex;
-	std::unordered_map<Vertex3, uint> VertexList;
+	// shrinked vertex list without repeated vertex
+	std::vector<AdjVertex> VertexList;
+	// vertex data -> merged vertex  index
+	std::unordered_map<Vertex3, uint> VertexMap;
+	// actual vertex index in BytesData -> merged vertex  index 
 	std::unordered_map<uint, uint> IndexMap;
+
 	uint TotalLength;
 	uint VertexLength;
 
 	uint CurrentVertexPos;
 	uint CurrentVertexId;
 
+public:
 	void DumpIndexMap()
 	{
-		std::ofstream OutFile("IndexMap.txt", std::ios::out);
+		std::ofstream OutFile(Name + "_IndexMap.txt", std::ios::out);
 		for (std::unordered_map<uint, uint>::iterator it = IndexMap.begin(); it != IndexMap.end(); it++)
 		{
-			OutFile << "Index : " << it->first << " -> " << it->second <<  std::endl;
+			OutFile << "Index : " << " actual: " << it->first  << " -> " << "virtual:" << it->second << std::endl;
 		}
 		OutFile.close();
 	}
 
 	void DumpVertexList()
 	{
-		std::ofstream OutFile("VertexList.txt", std::ios::out);
-		for (std::unordered_map<Vertex3, uint>::iterator it = VertexList.begin(); it != VertexList.end(); it++)
+		std::ofstream OutFile(Name + "_VertexList.txt", std::ios::out);
+		uint i = 0;
+		for (std::vector<AdjVertex>::iterator it = VertexList.begin(); it != VertexList.end(); it++, i++)
 		{
-			OutFile << "Vertex : " << it->first.x << "," << it->first.y << "," << it->first.z << "|" << it->second << std::endl;
+			OutFile << "Vertex : id " << i << " | " << it->x << "," << it->y << "," << it->z << " | adjId: " << it->adjId << " adjNum: " << it->adjNum << std::endl;
+		}
+		OutFile.close();
+	}
+
+	void DumpVertexMap()
+	{
+		std::ofstream OutFile(Name + "_VertexMap.txt", std::ios::out);
+		uint i = 0;
+		for (std::unordered_map<Vertex3, uint>::iterator it = VertexMap.begin(); it != VertexMap.end(); it++, i++)
+		{
+			OutFile << "Vertex : id " << i << " | " << it->first.x << "," << it->first.y << "," << it->first.z << " | virtual: " << it->second << std::endl;
 		}
 		OutFile.close();
 	}
 
 	void DumpRawVertexList()
 	{
-		std::ofstream OutFile("RawVertexList.txt", std::ios::out);
+		std::ofstream OutFile(Name + "_RawVertexList.txt", std::ios::out);
 		for (std::vector<Vertex3>::iterator it = RawVertex.begin(); it != RawVertex.end(); it++)
 		{
 			OutFile << "Vertex : " << it->x << "," << it->y << "," << it->z  << std::endl;
 		}
 		OutFile.close();
 	}
+
 };
 
-struct SourceContext
+class SourceContext
 {
+public:
 	SourceContext():
 		Name("None"),
 		BytesData(nullptr), 
 		TotalLength(0), 
 		IndicesLength(0),
 		TriangleNum(0),
+		TotalAdjacencyVertexNum(0),
 		CurrentFacePos(0),
 		CurrentIndexPos(0),
 		VertexData(nullptr)
@@ -305,53 +379,84 @@ struct SourceContext
 
 	std::string Name;
 	Byte* BytesData;
+	//Pass0
+	VertexContext* VertexData;
 	//Pass1
 	std::vector<Face> FaceList;
-	std::unordered_map<Edge, FacePair> EdgeList;
+	std::vector<Edge> EdgeList;
+	std::unordered_map<Edge, FacePair> EdgeFaceList;
 	//Pass2
 	std::queue<uint> FaceIdQueue;
 	std::set<uint> FaceIdPool;
 	std::vector<AdjFace> AdjacencyFaceList;
 	//Pass3
 	std::vector<AdjFace> AdjacencyFaceListShrink;
+	//Pass4
+	std::unordered_map<uint, std::set<uint>> AdjacencyVertexMap; // vertex -> adjacency vertex
+	//Pass5
+	std::vector<std::vector<uint>> AdjacencyVertexList;
+
 
 	uint TotalLength;
 	uint IndicesLength;
 	uint TriangleNum;
+	uint TotalAdjacencyVertexNum;
 
 	uint CurrentFacePos;
 	uint CurrentIndexPos;
 
-	//Pass0
-	VertexContext* VertexData;
+public:
+	uint GetVertexDataByteSize()
+	{
+		return (uint)(VertexData->VertexList.size() * AdjVertex::ByteSize());
+	}
+	uint GetAdjacencyVertexListByteSize()
+	{
+		return (uint)(TotalAdjacencyVertexNum * sizeof(uint));
+	}
+	uint GetAdjacencyFaceListByteSize()
+	{
+		return (uint)(AdjacencyFaceListShrink.size() * AdjFace::ByteSize());
+	}
 
 	void DumpFaceList()
 	{
-		std::ofstream OutFile("FaceList.txt", std::ios::out);
-		for (std::vector<Face>::iterator it = FaceList.begin(); it != FaceList.end(); it++)
+		std::ofstream OutFile(Name + "_FaceList.txt", std::ios::out);
+		uint i = 0;
+		for (std::vector<Face>::iterator it = FaceList.begin(); it != FaceList.end(); it++, i++)
 		{
-			OutFile << "Face: " << it->x.actual_value << ", " << it->y.actual_value << ", " << it->z.actual_value << std::endl;
+			OutFile << "Face: id " << i << " | " << it->x.value << ", " << it->y.value << ", " << it->z.value << "|" << it->xy << ", " << it->yz << ", " << it->zx << std::endl;
 		}
 		OutFile.close();
 	}
 
 	void DumpEdgeList()
 	{
-		std::ofstream OutFile("EdgeList.txt", std::ios::out);
-		for (std::unordered_map<Edge, FacePair>::iterator it = EdgeList.begin(); it != EdgeList.end(); it++)
+		std::ofstream OutFile(Name + "_EdgeList.txt", std::ios::out);
+		for (std::vector<Edge>::iterator it = EdgeList.begin(); it != EdgeList.end(); it++)
 		{
-			OutFile << "Edge: " << it->first.v1.actual_value << ", " << it->first.v2.actual_value << "|" << "(" << it->second.face1 << "," << it->second.set1 << ") " << "(" << it->second.face2 << "," << it->second.set2 << ")" << std::endl;
+			OutFile << "Edge: id " << it->id << " | " << it->v1.value << ", " << it->v2.value << std::endl;
+		}
+		OutFile.close();
+	}
+
+	void DumpEdgeFaceList()
+	{
+		std::ofstream OutFile(Name + "_EdgeFaceList.txt", std::ios::out);
+		for (std::unordered_map<Edge, FacePair>::iterator it = EdgeFaceList.begin(); it != EdgeFaceList.end(); it++)
+		{
+			OutFile << "EdgeFace: " << it->first.v1.value << ", " << it->first.v2.value << "|" << "(" << it->second.face1 << "," << it->second.set1 << ") " << "(" << it->second.face2 << "," << it->second.set2 << ")" << std::endl;
 		}
 		OutFile.close();
 	}
 
 	void DumpAdjacencyFaceList()
 	{
-		std::ofstream OutFile("AdjList.txt", std::ios::out);
+		std::ofstream OutFile(Name + "_AdjList.txt", std::ios::out);
 		for (std::vector<AdjFace>::iterator it = AdjacencyFaceList.begin(); it != AdjacencyFaceList.end(); it++)
 		{
-			OutFile << "AdjFace: " << it->x.actual_value << ", " << it->y.actual_value << ", " << it->z.actual_value << " | " 
-				<< it->adjPoint[0].actual_value << "(" << it->hasAdjFace[0] << ") " << it->adjPoint[1].actual_value << "(" << it->hasAdjFace[1] << ") " << it->adjPoint[2].actual_value << "(" << it->hasAdjFace[2] << ") " 
+			OutFile << "AdjFace: " << it->x.value << ", " << it->y.value << ", " << it->z.value << " | "
+				<< it->adjPoint[0].value << "(" << it->hasAdjFace[0] << ") " << it->adjPoint[1].value << "(" << it->hasAdjFace[1] << ") " << it->adjPoint[2].value << "(" << it->hasAdjFace[2] << ") "
 				<< " | " << it->adjFaceIndex[0] << ", " << it->adjFaceIndex[1] << ", "  << it->adjFaceIndex[2]<< std::endl;
 		}
 		OutFile.close();
@@ -359,12 +464,28 @@ struct SourceContext
 
 	void DumpAdjacencyFaceListShrink()
 	{
-		std::ofstream OutFile("AdjList.txt", std::ios::out);
+		std::ofstream OutFile(Name + "_AdjList.txt", std::ios::out);
 		for (std::vector<AdjFace>::iterator it = AdjacencyFaceListShrink.begin(); it != AdjacencyFaceListShrink.end(); it++)
 		{
-			OutFile << "AdjFace: " << it->x.actual_value << ", " << it->y.actual_value << ", " << it->z.actual_value << " | "
-				<< it->adjPoint[0].actual_value << "(" << it->hasAdjFace[0] << ") " << it->adjPoint[1].actual_value << "(" << it->hasAdjFace[1] << ") " << it->adjPoint[2].actual_value << "(" << it->hasAdjFace[2] << ") "
+			OutFile << "AdjFace: " << it->x.value << ", " << it->y.value << ", " << it->z.value << " | "
+				<< it->adjPoint[0].value << "(" << it->hasAdjFace[0] << ") " << it->adjPoint[1].value << "(" << it->hasAdjFace[1] << ") " << it->adjPoint[2].value << "(" << it->hasAdjFace[2] << ") "
 				<< " | " << it->adjFaceIndex[0] << ", " << it->adjFaceIndex[1] << ", " << it->adjFaceIndex[2] << std::endl;
+		}
+		OutFile.close();
+	}
+
+	void DumpAdjacencyVertexList()
+	{
+		std::ofstream OutFile(Name + "_AdjVertex.txt", std::ios::out);
+		for (std::vector<AdjVertex>::iterator it = VertexData->VertexList.begin(); it != VertexData->VertexList.end(); it++)
+		{
+			OutFile << "AdjVertex: " << it->x << ", " << it->y << ", " << it->z << " | "
+				<< " adjId: " << it->adjId << " adjSerializedId: " << it->adjSerializedId << " | " << " adjNum: " << it->adjNum << " | ";
+			for (std::vector<uint>::iterator it2 = AdjacencyVertexList[it->adjId].begin(); it2 != AdjacencyVertexList[it->adjId].end(); it2++)
+			{
+				OutFile << *it2 << " ";
+			}
+			OutFile << std::endl;
 		}
 		OutFile.close();
 	}
@@ -420,7 +541,7 @@ public:
 	void* RunFunc0(void* SourceData, double* OutProgressPerRun);
 
 	//Pass 1
-	bool GetReady1(std::filesystem::path& FilePath, bool NeedMergeDuplicateVertex = false);
+	bool GetReady1(std::filesystem::path& FilePath);
 	void* RunFunc1(void* SourceData, double* OutProgressPerRun);
 	
 	//Pass 2
@@ -430,6 +551,15 @@ public:
 	//Pass 3
 	bool GetReady3();
 	void* RunFunc3(void* SourceData, double* OutProgressPerRun);
+
+	//Pass 4
+	bool GetReady4();
+	void* RunFunc4(void* SourceData, double* OutProgressPerRun);
+
+	//Pass 5
+	bool GetReady5();
+	void* RunFunc5(void* SourceData, double* OutProgressPerRun);
+
 
 	double GetProgress()
 	{
@@ -514,7 +644,10 @@ public:
 		MessageString = "";
 	}
 
-	void ExportAdjacencyList(std::filesystem::path& FilePath);
+
+	void Export(std::filesystem::path& FilePath);
+	
+	
 
 private:
 	bool HandleAdjacencyFace(
@@ -529,6 +662,11 @@ private:
 		uint EdgeIndex,
 		SourceContext* Src,
 		uint* OutAdjFaceId);
+
+	void ExportAdjacencyFaceList(Byte* Buffer, uint* BytesOffset, const SourceContext* Context);
+	void ExportAdjacencyVertexList(Byte* Buffer, uint* BytesOffset, const SourceContext* Context);
+	void ExportVertexData(Byte* Buffer, uint* BytesOffset, const SourceContext* Context);
+
 private:
 	ThreadProcesser* AsyncProcesser;
 	std::string ErrorString;

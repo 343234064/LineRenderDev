@@ -16,7 +16,7 @@
 #define VER_ELEMENT_LENGTH 4
 
 
-inline int BytesToUnsignedIntegerLittleEndian(Byte* Src, int Offset)
+inline int BytesToUnsignedIntegerLittleEndian(Byte* Src, uint Offset)
 {
 	return static_cast<int>(static_cast<Byte>(Src[Offset]) |
 		static_cast<Byte>(Src[Offset + 1]) << 8 |
@@ -24,7 +24,7 @@ inline int BytesToUnsignedIntegerLittleEndian(Byte* Src, int Offset)
 		static_cast<Byte>(Src[Offset + 3]) << 24);
 }
 
-inline float BytesToFloatLittleEndian(Byte* Src, int Offset)
+inline float BytesToFloatLittleEndian(Byte* Src, uint Offset)
 {
 	uint32_t value = static_cast<uint32_t>(Src[Offset]) |
 		static_cast<uint32_t>(Src[Offset + 1]) << 8 |
@@ -34,15 +34,6 @@ inline float BytesToFloatLittleEndian(Byte* Src, int Offset)
 	return *reinterpret_cast<float*>(&value);
 }
  
-
-inline void WriteUnsignedIntegerToBytesLittleEndian(Byte* Src, int Offset, uint Value)
-{
-	Src[Offset] = Value & 0x000000ff;
-	Src[Offset + 1] = (Value & 0x0000ff00) >> 8;
-	Src[Offset + 2] = (Value & 0x00ff0000) >> 16;
-	Src[Offset + 3] = (Value & 0xff000000) >> 24;
-}
-
 inline std::string BytesToASCIIString(Byte* Src, int Offset, int Length)
 {
 	char* Buffer = new char[size_t(Length) + 1];
@@ -55,9 +46,26 @@ inline std::string BytesToASCIIString(Byte* Src, int Offset, int Length)
 }
 
 
-inline void WriteASCIIStringToBytes(Byte* Dst, int Offset, std::string& Value)
+inline void WriteUnsignedIntegerToBytesLittleEndian(Byte* Src, uint* Offset, uint Value)
 {
-	memcpy(Dst + Offset, Value.c_str(), Value.length());
+	Src[*Offset] = Value & 0x000000ff;
+	Src[*Offset + 1] = (Value & 0x0000ff00) >> 8;
+	Src[*Offset + 2] = (Value & 0x00ff0000) >> 16;
+	Src[*Offset + 3] = (Value & 0xff000000) >> 24;
+	*Offset += 4;
+}
+
+inline void WriteASCIIStringToBytes(Byte* Dst, uint* Offset, std::string& Value)
+{
+	memcpy(Dst + *Offset, Value.c_str(), Value.length());
+	*Offset += Value.length();
+}
+
+inline void WriteFloatToBytesLittleEndian(Byte* Src, uint* Offset, float Value)
+{
+	uint* T = (uint*)&Value;
+	uint V = *T;
+	WriteUnsignedIntegerToBytesLittleEndian(Src, Offset, V);
 }
 
 
@@ -170,19 +178,22 @@ void* AdjacencyProcesser::RunFunc0(void* SourceData, double* OutProgressPerRun)
 	float z = BytesToFloatLittleEndian(Src->BytesData, Src->CurrentVertexPos); Src->CurrentVertexPos += VER_ELEMENT_LENGTH;
 
 	Vertex3 v = Vertex3(x, y, z);
-	uint VertexId = Src->CurrentVertexId;
+	uint ActualVertexId = Src->CurrentVertexId;
 
 	Src->RawVertex.emplace_back(v);
 
-	std::unordered_map<Vertex3, uint>::iterator it = Src->VertexList.find(v);
-	if (it == Src->VertexList.end())
+	// VertexMap : vertex data -> virtual vertex  index
+	std::unordered_map<Vertex3, uint>::iterator it = Src->VertexMap.find(v);
+	if (it == Src->VertexMap.end())
 	{
-		Src->VertexList.insert(std::unordered_map<Vertex3, uint>::value_type(v, VertexId));
-		Src->IndexMap.insert(std::unordered_map<uint, uint>::value_type(VertexId, VertexId));
+		uint MergedVertexId = Src->VertexList.size();
+		Src->VertexMap.insert(std::unordered_map<Vertex3, uint>::value_type(v, MergedVertexId));
+		Src->IndexMap.insert(std::unordered_map<uint, uint>::value_type(ActualVertexId, MergedVertexId));
+		Src->VertexList.push_back(v);
 	}
 	else
 	{
-		Src->IndexMap.insert(std::unordered_map<uint, uint>::value_type(VertexId, it->second));
+		Src->IndexMap.insert(std::unordered_map<uint, uint>::value_type(ActualVertexId, it->second));
 	}
 	Src->CurrentVertexId++;
 
@@ -196,7 +207,7 @@ void* AdjacencyProcesser::RunFunc0(void* SourceData, double* OutProgressPerRun)
 }
 
 
-bool AdjacencyProcesser::GetReady1(std::filesystem::path& FilePath, bool NeedMergeDuplicateVertex)
+bool AdjacencyProcesser::GetReady1(std::filesystem::path& FilePath)
 {
 	if (AsyncProcesser == nullptr)
 	{
@@ -204,14 +215,9 @@ bool AdjacencyProcesser::GetReady1(std::filesystem::path& FilePath, bool NeedMer
 	}
 	else
 	{
-		if(!NeedMergeDuplicateVertex)
-			Clear();
-		else
-		{
-			AsyncProcesser->Clear();
-			ErrorString = "";
-			MessageString = "";
-		}
+		AsyncProcesser->Clear();
+		ErrorString = "";
+		MessageString = "";
 	}
 
 
@@ -277,16 +283,11 @@ bool AdjacencyProcesser::GetReady1(std::filesystem::path& FilePath, bool NeedMer
 		Context->TriangleNum = IndicesLength / 3;
 		Context->CurrentFacePos = 0;
 		Context->CurrentIndexPos = 0;
-		if (!NeedMergeDuplicateVertex)
-		{
-			VertexContext* VertexData = new VertexContext();
-			VertexContextList.push_back(VertexData);
-			Context->VertexData = VertexData;
-		}
-		else
-			Context->VertexData = VertexContextList[i];
+		Context->VertexData = VertexContextList[i];
 
 		Context->FaceList.reserve(Context->TriangleNum);
+		Context->EdgeList.clear();
+		Context->EdgeFaceList.clear();
 
 		WRITE_MESSAGE_DIGIT("Mesh: ", i);
 		WRITE_MESSAGE_DIGIT("Triangle: ", Context->TriangleNum);
@@ -325,7 +326,8 @@ void* AdjacencyProcesser::RunFunc1(void* SourceData, double* OutProgressPerRun)
 	uint z = BytesToUnsignedIntegerLittleEndian(Src->BytesData, Src->CurrentIndexPos); Src->CurrentIndexPos += ELEMENT_LENGTH;
 
 	uint FaceId = Src->CurrentFacePos;
-
+	
+	//IndexMap : actual vertex index in BytesData -> merged vertex  index 
 	std::unordered_map<uint, uint>& IndexMap = Src->VertexData->IndexMap;
 	std::unordered_map<uint, uint>::iterator it;
 	uint actual_x = x, actual_y = y, actual_z = z;
@@ -340,17 +342,17 @@ void* AdjacencyProcesser::RunFunc1(void* SourceData, double* OutProgressPerRun)
 	Index iy(y, actual_y);
 	Index iz(z, actual_z);
 
-	Edge e1 = Edge(ix, iy);
-	Edge e2 = Edge(iy, iz);
-	Edge e3 = Edge(iz, ix);
+	Edge e1(ix, iy);
+	Edge e2(iy, iz);
+	Edge e3(iz, ix);
 
 	FacePair adj = FacePair();
 	adj.face1 = FaceId;
 	adj.set1 = true;
 
 	std::unordered_map<Edge, FacePair>::iterator it1;
-	it1 = Src->EdgeList.find(e1);
-	if (it1 != Src->EdgeList.end())
+	it1 = Src->EdgeFaceList.find(e1);
+	if (it1 != Src->EdgeFaceList.end())
 	{
 #if DEBUG_1
 		if (it1->second.set2 == true)
@@ -365,6 +367,7 @@ void* AdjacencyProcesser::RunFunc1(void* SourceData, double* OutProgressPerRun)
 			it1->second.face2 = FaceId;
 			it1->second.set2 = true;
 		}
+		e1.id = it1->first.id;
 
 #if DEBUG_2
 		ErrorString += "Write Edge: Found " + std::to_string(e1.v1.actual_value) + ", " + std::to_string(e1.v2.actual_value) + " | " + std::to_string(it1->second.face1) + ", " + std::to_string(it1->second.face2) + "\n";
@@ -372,14 +375,18 @@ void* AdjacencyProcesser::RunFunc1(void* SourceData, double* OutProgressPerRun)
 	}
 	else
 	{
-		Src->EdgeList.insert(std::unordered_map<Edge, FacePair>::value_type(e1, adj));
+		e1.id = Src->EdgeList.size();
+
+		Src->EdgeFaceList.insert(std::unordered_map<Edge, FacePair>::value_type(e1, adj));
+		Src->EdgeList.push_back(e1);
+		
 #if DEBUG_2
 		ErrorString += "Write Edge: NOTFound " + std::to_string(e1.v1.actual_value) + ", " + std::to_string(e1.v2.actual_value) + " | " + std::to_string(adj.face1) + ", " + std::to_string(adj.face2) + "\n";
 #endif
 	}
 
-	std::unordered_map<Edge, FacePair>::iterator it2 = Src->EdgeList.find(e2);
-	if (it2 != Src->EdgeList.end())
+	std::unordered_map<Edge, FacePair>::iterator it2 = Src->EdgeFaceList.find(e2);
+	if (it2 != Src->EdgeFaceList.end())
 	{
 #if DEBUG_1
 		if (it2->second.set2 == true)
@@ -394,20 +401,26 @@ void* AdjacencyProcesser::RunFunc1(void* SourceData, double* OutProgressPerRun)
 			it2->second.face2 = FaceId;
 			it2->second.set2 = true;
 		}
+		e2.id = it2->first.id;
+
 #if DEBUG_2
 		ErrorString += "Write Edge: Found " + std::to_string(e2.v1.actual_value) + ", " + std::to_string(e2.v2.actual_value) + " | " + std::to_string(it2->second.face1) + ", " + std::to_string(it2->second.face2) + "\n";
 #endif
 	}
 	else
 	{
-		Src->EdgeList.insert(std::unordered_map<Edge, FacePair>::value_type(e2, adj));
+		e2.id = Src->EdgeList.size();
+
+		Src->EdgeFaceList.insert(std::unordered_map<Edge, FacePair>::value_type(e2, adj));
+		Src->EdgeList.push_back(e2);
+
 #if DEBUG_2
 		ErrorString += "Write Edge: NOTFound " + std::to_string(e2.v1.actual_value) + ", " + std::to_string(e2.v2.actual_value) + " | " + std::to_string(adj.face1) + ", " + std::to_string(adj.face2) + "\n";
 #endif
 	}
 
-	std::unordered_map<Edge, FacePair>::iterator it3 = Src->EdgeList.find(e3);
-	if (it3 != Src->EdgeList.end())
+	std::unordered_map<Edge, FacePair>::iterator it3 = Src->EdgeFaceList.find(e3);
+	if (it3 != Src->EdgeFaceList.end())
 	{
 #if DEBUG_1
 		if (it3->second.set2 == true)
@@ -422,21 +435,26 @@ void* AdjacencyProcesser::RunFunc1(void* SourceData, double* OutProgressPerRun)
 			it3->second.face2 = FaceId;
 			it3->second.set2 = true;
 		}
+		e3.id = it3->first.id;
+
 #if DEBUG_2
 		ErrorString += "Write Edge: Found " + std::to_string(e3.v1.actual_value) + ", " + std::to_string(e3.v2.actual_value) + " | " + std::to_string(it3->second.face1) + ", " + std::to_string(it3->second.face2) + "\n";
 #endif
 	}
 	else
 	{
-		Src->EdgeList.insert(std::unordered_map<Edge, FacePair>::value_type(e3, adj));
+		e3.id = Src->EdgeList.size();
+
+		Src->EdgeFaceList.insert(std::unordered_map<Edge, FacePair>::value_type(e3, adj));
+		Src->EdgeList.push_back(e3);
+
 #if DEBUG_2
-		ErrorString += "Write Edge: NOTFound " + std::to_string(e3.v1.actual_value) + ", " + std::to_string(e3.v2.actual_value) + " | " + std::to_string(adj.face1) + ", " + std::to_string(adj.face2) + "\n";
+		ErrorString += "Write Edge: NOT Found " + std::to_string(e3.v1.actual_value) + ", " + std::to_string(e3.v2.actual_value) + " | " + std::to_string(adj.face1) + ", " + std::to_string(adj.face2) + "\n";
 #endif
 	}
 
-	Src->FaceList.emplace_back(Face(ix, iy, iz));
+	Src->FaceList.emplace_back(Face(ix, iy, iz, e1.id, e2.id, e3.id));
 	Src->FaceIdPool.insert(Src->CurrentFacePos);
-
 
 
 	Src->CurrentFacePos++;
@@ -467,7 +485,7 @@ bool AdjacencyProcesser::GetReady2()
 	for (int i = 0; i < TriangleContextList.size(); i++) {
 		WRITE_MESSAGE_DIGIT("Mesh: ", i);
 		WRITE_MESSAGE_DIGIT("Face: ", TriangleContextList[i]->FaceList.size());
-		WRITE_MESSAGE_DIGIT("Edge: ", TriangleContextList[i]->EdgeList.size());
+		WRITE_MESSAGE_DIGIT("Edge: ", TriangleContextList[i]->EdgeFaceList.size());
 	}
 
 
@@ -514,8 +532,8 @@ bool AdjacencyProcesser::HandleAdjacencyFace(
 	uint* OutAdjFaceId, AdjFace* OutAdjFace)
 {
 	bool HasAdjFace = false;
-	std::unordered_map<Edge, FacePair>::iterator it = Src->EdgeList.find(EdgeToSearch);
-	if (it != Src->EdgeList.end())
+	std::unordered_map<Edge, FacePair>::iterator it = Src->EdgeFaceList.find(EdgeToSearch);
+	if (it != Src->EdgeFaceList.end())
 	{
 		FacePair& adj = it->second;
 		if (adj.set1 && adj.face1 != CurrentFaceId)
@@ -555,8 +573,8 @@ bool AdjacencyProcesser::QueryAdjacencyFace(
 	uint* OutAdjFaceId)
 {
 	bool HasAdjFace = false;
-	std::unordered_map<Edge, FacePair>::iterator it = Src->EdgeList.find(EdgeToSearch);
-	if (it != Src->EdgeList.end())
+	std::unordered_map<Edge, FacePair>::iterator it = Src->EdgeFaceList.find(EdgeToSearch);
+	if (it != Src->EdgeFaceList.end())
 	{
 		FacePair& adj = it->second;
 		if (adj.set1 && adj.face1 != CurrentFaceId)
@@ -783,18 +801,34 @@ void* AdjacencyProcesser::RunFunc3(void* SourceData, double* OutProgressPerRun)
 	bool IsAdjWhite2 = true;
 	bool IsAdjWhite3 = true;
 	if (CurrentAdjFace.hasAdjFace[0]) {
-		IsAdjWhite1 = Src->FaceList[CurrentAdjFace.adjFaceIndex[0]].BlackWhite == -1 ? true : false;
+		Face& Adj = Src->FaceList[CurrentAdjFace.adjFaceIndex[0]];
+		IsAdjWhite1 = (Adj.BlackWhite == -1) ? true : false;
+		if (Adj.IsAddToAdjFaceList)
+		{
+			CurrentAdjFace.hasAdjFace[0] = false;
+		}
 	}
 	if (CurrentAdjFace.hasAdjFace[1]) {
-		IsAdjWhite2 = Src->FaceList[CurrentAdjFace.adjFaceIndex[1]].BlackWhite == -1 ? true : false;
+		Face& Adj = Src->FaceList[CurrentAdjFace.adjFaceIndex[1]];
+		IsAdjWhite2 = (Adj.BlackWhite == -1) ? true : false;
+		if (Adj.IsAddToAdjFaceList)
+		{
+			CurrentAdjFace.hasAdjFace[1] = false;
+		}
 	}
 	if (CurrentAdjFace.hasAdjFace[2]) {
-		IsAdjWhite3 = Src->FaceList[CurrentAdjFace.adjFaceIndex[2]].BlackWhite == -1 ? true : false;
+		Face& Adj = Src->FaceList[CurrentAdjFace.adjFaceIndex[2]];
+		IsAdjWhite3 = (Adj.BlackWhite == -1) ? true : false;
+		if (Adj.IsAddToAdjFaceList)
+		{
+			CurrentAdjFace.hasAdjFace[2] = false;
+		}
 	}
 	
 	if (IsAdjWhite1 || IsAdjWhite2 || IsAdjWhite3)
 	{
 		Src->AdjacencyFaceListShrink.push_back(CurrentAdjFace);
+		Src->FaceList[CurrentAdjFace.faceIndex].IsAddToAdjFaceList = true;
 	}
 	else
 	{
@@ -813,58 +847,297 @@ void* AdjacencyProcesser::RunFunc3(void* SourceData, double* OutProgressPerRun)
 }
 
 
-void AdjacencyProcesser::ExportAdjacencyList(std::filesystem::path& FilePath)
+bool AdjacencyProcesser::GetReady4()
+{
+	if (AsyncProcesser == nullptr || TriangleContextList.size() == 0 || IsWorking())
+	{
+		ErrorString += "GetReady3 has not run yet or is still working.\n";
+		return false;
+	}
+	AsyncProcesser->Clear();
+
+	ErrorString = "";
+	MessageString = "";
+
+	for (uint i = 0; i < TriangleContextList.size(); i++)
+	{
+		TriangleContextList[i]->CurrentFacePos = 0;
+		AsyncProcesser->AddData((void*)TriangleContextList[i]);
+	}
+
+	std::function<void* (void*, double*)> Runnable = std::bind(&AdjacencyProcesser::RunFunc4, this, std::placeholders::_1, std::placeholders::_2);
+	AsyncProcesser->SetRunFunc(Runnable);
+
+	AsyncProcesser->SetIntervalTime(0.0);
+
+	if (!AsyncProcesser->Kick())
+	{
+		ErrorString += "Start async request failed.\n";
+		return false;
+	}
+
+	return true;
+}
+
+
+void* AdjacencyProcesser::RunFunc4(void* SourceData, double* OutProgressPerRun)
+{
+	SourceContext* Src = (SourceContext*)SourceData;
+
+	AdjFace& CurrentAdjFace = Src->AdjacencyFaceListShrink[Src->CurrentFacePos];
+
+	Index x = CurrentAdjFace.x;
+	Index y = CurrentAdjFace.y;
+	Index z = CurrentAdjFace.z;
+
+	std::unordered_map<uint, std::set<uint>>::iterator it = Src->AdjacencyVertexMap.find(x.value);
+	if (it != Src->AdjacencyVertexMap.end())
+	{
+		std::set<uint>::iterator yit = it->second.find(y.value);
+		if (yit == it->second.end()) it->second.insert(y.value);
+		std::set<uint>::iterator zit = it->second.find(z.value);
+		if (zit == it->second.end()) it->second.insert(z.value);
+	}
+	else
+	{
+		Src->AdjacencyVertexMap.insert(std::unordered_map<uint, std::set<uint>>::value_type(x.value, std::set<uint>()));
+		Src->AdjacencyVertexMap[x.value].insert(y.value);
+		Src->AdjacencyVertexMap[x.value].insert(z.value);
+	}
+
+	it = Src->AdjacencyVertexMap.find(y.value);
+	if (it != Src->AdjacencyVertexMap.end())
+	{
+		std::set<uint>::iterator xit = it->second.find(x.value);
+		if (xit == it->second.end()) it->second.insert(x.value);
+		std::set<uint>::iterator zit = it->second.find(z.value);
+		if (zit == it->second.end()) it->second.insert(z.value);
+	}
+	else
+	{
+		Src->AdjacencyVertexMap.insert(std::unordered_map<uint, std::set<uint>>::value_type(y.value, std::set<uint>()));
+		Src->AdjacencyVertexMap[y.value].insert(x.value);
+		Src->AdjacencyVertexMap[y.value].insert(z.value);
+	}
+
+	it = Src->AdjacencyVertexMap.find(z.value);
+	if (it != Src->AdjacencyVertexMap.end())
+	{
+		std::set<uint>::iterator xit = it->second.find(x.value);
+		if (xit == it->second.end()) it->second.insert(x.value);
+		std::set<uint>::iterator yit = it->second.find(y.value);
+		if (yit == it->second.end()) it->second.insert(y.value);
+	}
+	else
+	{
+		Src->AdjacencyVertexMap.insert(std::unordered_map<uint, std::set<uint>>::value_type(z.value, std::set<uint>()));
+		Src->AdjacencyVertexMap[z.value].insert(x.value);
+		Src->AdjacencyVertexMap[z.value].insert(y.value);
+	}
+
+	Src->CurrentFacePos++;
+
+	double Step = 1.0 / Src->AdjacencyFaceListShrink.size();
+	*OutProgressPerRun = Step;
+
+	if (Src->CurrentFacePos >= Src->AdjacencyFaceListShrink.size())
+		return (void*)Src;
+	else
+		return nullptr;
+}
+
+
+bool AdjacencyProcesser::GetReady5()
+{
+	if (AsyncProcesser == nullptr || TriangleContextList.size() == 0 || IsWorking())
+	{
+		ErrorString += "GetReady4 has not run yet or is still working.\n";
+		return false;
+	}
+	AsyncProcesser->Clear();
+
+	ErrorString = "";
+	MessageString = "";
+
+	for (uint i = 0; i < TriangleContextList.size(); i++)
+	{
+		TriangleContextList[i]->CurrentFacePos = 0;
+		TriangleContextList[i]->CurrentIndexPos = 0;
+		TriangleContextList[i]->TotalAdjacencyVertexNum = 0;
+		AsyncProcesser->AddData((void*)TriangleContextList[i]);
+
+		WRITE_MESSAGE_DIGIT("AdjVertexMap Num: ", TriangleContextList[i]->AdjacencyVertexMap.size());
+	}
+
+	std::function<void* (void*, double*)> Runnable = std::bind(&AdjacencyProcesser::RunFunc5, this, std::placeholders::_1, std::placeholders::_2);
+	AsyncProcesser->SetRunFunc(Runnable);
+
+	AsyncProcesser->SetIntervalTime(0.0);
+
+	if (!AsyncProcesser->Kick())
+	{
+		ErrorString += "Start async request failed.\n";
+		return false;
+	}
+
+	return true;
+}
+
+
+void* AdjacencyProcesser::RunFunc5(void* SourceData, double* OutProgressPerRun)
+{
+	SourceContext* Src = (SourceContext*)SourceData;
+	VertexContext* VertexData = Src->VertexData;
+
+	AdjVertex& CurrentAdjVertex = VertexData->VertexList[Src->CurrentIndexPos];
+
+	std::unordered_map<uint, std::set<uint>>::iterator it = Src->AdjacencyVertexMap.find(Src->CurrentIndexPos);
+	if(it != Src->AdjacencyVertexMap.end())
+	{
+		uint adjId = (uint)(Src->AdjacencyVertexList.size());
+		CurrentAdjVertex.adjId = adjId;
+		CurrentAdjVertex.adjSerializedId = Src->TotalAdjacencyVertexNum;
+		CurrentAdjVertex.adjNum = (uint)(it->second.size());
+
+		std::vector<uint> AdjList;
+		for (std::set<uint>::iterator i = it->second.begin(); i != it->second.end(); i++) {
+			AdjList.push_back(*i);
+			Src->TotalAdjacencyVertexNum++;
+		}
+		Src->AdjacencyVertexList.push_back(AdjList);
+	}
+	else
+	{
+		ErrorString += "Cannot find vertex in AdjacencyVertexMap. Current Vertex Pos: " + std::to_string(Src->CurrentIndexPos) + "\n";
+	}
+
+
+	Src->CurrentIndexPos++;
+
+	double Step = 1.0 / VertexData->VertexList.size();
+	*OutProgressPerRun = Step;
+
+	if (Src->CurrentIndexPos >= VertexData->VertexList.size())
+		return (void*)Src;
+	else
+		return nullptr;
+}
+
+void AdjacencyProcesser::Export(std::filesystem::path& FilePath)
 {
 	std::ofstream OutFile(FilePath.c_str(), std::ios::out | std::ios::binary);
 
 	int MeshNum = TriangleContextList.size();
 
-	int OffsetPerData = ELEMENT_LENGTH;
+	uint UintBytesSize = sizeof(uint);
 
-	int TotalBytesLength = 8;
+	// layout
+	uint TotalBytesLength = UintBytesSize;// mesh num 
+	TotalBytesLength += UintBytesSize;// size of float
+	TotalBytesLength += UintBytesSize;// size of uint
 	for (int i = 0; i < MeshNum; i++)
 	{
-		TotalBytesLength += (4 + TriangleContextList[i]->Name.length());
+		TotalBytesLength += UintBytesSize;// name length
+		TotalBytesLength += TriangleContextList[i]->Name.length(); // name
 
-		TotalBytesLength += 4;
-		TotalBytesLength += TriangleContextList[i]->AdjacencyFaceList.size() * 6 * ELEMENT_LENGTH;
+		// vertex data begin
+		TotalBytesLength += UintBytesSize;// vertex num
+		TotalBytesLength += UintBytesSize;// per struct size
+		TotalBytesLength += TriangleContextList[i]->GetVertexDataByteSize();
+
+		// adjacency vertex begin
+		TotalBytesLength += UintBytesSize;// total adjacency vertex num
+		TotalBytesLength += TriangleContextList[i]->GetAdjacencyVertexListByteSize();
+
+		// adjacency face begin
+		TotalBytesLength += UintBytesSize;// face num
+		TotalBytesLength += UintBytesSize;// per struct size
+		TotalBytesLength += TriangleContextList[i]->GetAdjacencyFaceListByteSize();
 	}
 
+	uint BytesOffset = 0;
 	Byte* Buffer = new Byte[TotalBytesLength];
 	memset(Buffer, 0, TotalBytesLength);
 
-	WriteUnsignedIntegerToBytesLittleEndian(Buffer, 0, MeshNum);
-	WriteUnsignedIntegerToBytesLittleEndian(Buffer, 4, OffsetPerData);
+	WriteUnsignedIntegerToBytesLittleEndian(Buffer, &BytesOffset, MeshNum); 
+	WriteUnsignedIntegerToBytesLittleEndian(Buffer, &BytesOffset, sizeof(float)); 
+	WriteUnsignedIntegerToBytesLittleEndian(Buffer, &BytesOffset, UintBytesSize);
 
-	int Offset = 8;
+	
 	for (int i = 0; i < MeshNum; i++)
 	{
-		int NameLength = TriangleContextList[i]->Name.length();
-		WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, NameLength);
-		Offset += 4;
+		uint NameLength = TriangleContextList[i]->Name.length();
+		WriteUnsignedIntegerToBytesLittleEndian(Buffer, &BytesOffset, NameLength);
+		WriteASCIIStringToBytes(Buffer, &BytesOffset, TriangleContextList[i]->Name);
 
-		WriteASCIIStringToBytes(Buffer, Offset, TriangleContextList[i]->Name);
-		Offset += NameLength;
-
-		WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, TriangleContextList[i]->AdjacencyFaceListShrink.size());
-
-		WRITE_MESSAGE_DIGIT("Adj Face Num : ", TriangleContextList[i]->AdjacencyFaceListShrink.size());
-
-		Offset += 4;
-		for (int j = 0; j < TriangleContextList[i]->AdjacencyFaceListShrink.size(); j++)
-		{
-			AdjFace& Curr = TriangleContextList[i]->AdjacencyFaceListShrink[j];
-			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.x.actual_value); Offset += ELEMENT_LENGTH;
-			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.y.actual_value); Offset += ELEMENT_LENGTH;
-			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.z.actual_value); Offset += ELEMENT_LENGTH;
-			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.hasAdjFace[0] ? (Curr.adjPoint[0].actual_value + 1) : 0); Offset += ELEMENT_LENGTH;
-			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.hasAdjFace[1] ? (Curr.adjPoint[1].actual_value + 1) : 0); Offset += ELEMENT_LENGTH;
-			WriteUnsignedIntegerToBytesLittleEndian(Buffer, Offset, Curr.hasAdjFace[2] ? (Curr.adjPoint[2].actual_value + 1) : 0); Offset += ELEMENT_LENGTH;
-		}
+		ExportVertexData(Buffer, &BytesOffset, TriangleContextList[i]);
+		ExportAdjacencyVertexList(Buffer, &BytesOffset, TriangleContextList[i]);
+		ExportAdjacencyFaceList(Buffer, &BytesOffset, TriangleContextList[i]);
 	}
 
 	OutFile.write((char*)Buffer, TotalBytesLength);
 	OutFile.close();
-	 
+
 	delete[] Buffer;
 }
+
+void AdjacencyProcesser::ExportVertexData(Byte* Buffer, uint* BytesOffset, const SourceContext* Context)
+{
+	const VertexContext* VContext = Context->VertexData;
+
+	WRITE_MESSAGE_DIGIT("Vertex Num : ", VContext->VertexList.size());
+	WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, VContext->VertexList.size());
+	WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, AdjVertex::ByteSize());
+
+	for (int j = 0; j < VContext->VertexList.size(); j++)
+	{
+		const AdjVertex& Curr = VContext->VertexList[j];
+		WriteFloatToBytesLittleEndian(Buffer, BytesOffset, Curr.x);
+		WriteFloatToBytesLittleEndian(Buffer, BytesOffset, Curr.y);
+		WriteFloatToBytesLittleEndian(Buffer, BytesOffset, Curr.z);
+		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.adjSerializedId);
+		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.adjNum);
+	}
+}
+
+void AdjacencyProcesser::ExportAdjacencyVertexList(Byte* Buffer, uint* BytesOffset, const SourceContext* Context)
+{
+	WRITE_MESSAGE_DIGIT("AdjVertex Num : ", Context->TotalAdjacencyVertexNum);
+	WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Context->TotalAdjacencyVertexNum);
+
+	uint CheckNum = 0;
+	for (int j = 0; j < Context->AdjacencyVertexList.size(); j++)
+	{
+		const std::vector<uint>& Curr = Context->AdjacencyVertexList[j];
+		for (int i = 0; i < Curr.size(); i++)
+		{
+			WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr[i]);
+			CheckNum++;
+		}
+	}
+
+	if(CheckNum != Context->TotalAdjacencyVertexNum)
+		WRITE_MESSAGE("Error : TotalAdjacencyVertexNum != CheckNum", "");
+}
+
+
+void AdjacencyProcesser::ExportAdjacencyFaceList(Byte* Buffer, uint* BytesOffset, const SourceContext* Context)
+{
+	WRITE_MESSAGE_DIGIT("AdjFace Num : ", Context->AdjacencyFaceListShrink.size());
+	WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Context->AdjacencyFaceListShrink.size());
+	WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, AdjFace::ByteSize());
+
+	for (int j = 0; j < Context->AdjacencyFaceListShrink.size(); j++)
+	{
+		const AdjFace& Curr = Context->AdjacencyFaceListShrink[j];
+		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.x.value);
+		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.y.value);
+		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.z.value);
+		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.hasAdjFace[0] ? (Curr.adjPoint[0].value + 1) : 0);
+		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.hasAdjFace[1] ? (Curr.adjPoint[1].value + 1) : 0);
+		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.hasAdjFace[2] ? (Curr.adjPoint[2].value + 1) : 0);
+	}
+
+}
+
+
