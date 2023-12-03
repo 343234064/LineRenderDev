@@ -85,9 +85,9 @@ inline float GetUnifyNDCZ(float NDCZ)
 inline bool ZTest(float PositionDepth, float SceneDepth)
 {
 #if REVERSED_Z
-    return (PositionDepth >= SceneDepth) ? true : false;
+    return (PositionDepth > SceneDepth) ? true : false;
 #else
-    return (PositionDepth <= SceneDepth) ? true : false;
+    return (PositionDepth < SceneDepth) ? true : false;
 #endif
 }
 

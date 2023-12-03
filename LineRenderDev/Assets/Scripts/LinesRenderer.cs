@@ -17,7 +17,6 @@ public class LinesRenderer : MonoBehaviour
         //[FoldoutGroup("$Name", false)]
         public int SubMeshIndex;
         //[FoldoutGroup("$Name", false)]
-        public int AdjFaceCount;
         public bool Available;
     }
 
@@ -26,7 +25,7 @@ public class LinesRenderer : MonoBehaviour
         public string Name;
         public int SubMeshIndex;
         public bool Available;
-        public LineContext Context;
+        public LineRuntimeContext Context;
     }
 
     /// ///////////////////////////////////////////////////////
@@ -86,7 +85,7 @@ public class LinesRenderer : MonoBehaviour
             LineMaterial MatSetting = LineObject.GetComponent<LineMaterial>();
             MatSetting.LineRenderMaterial.renderQueue = (int)RenderQueue.Geometry + 1;
 
-            LineContext Context = new LineContext(SubMesh.sharedMesh, LineObject.transform, MatSetting);
+            LineRuntimeContext Context = new LineRuntimeContext(LineObject.transform, MatSetting);
 
             MeshInfo ToAdd = new MeshInfo();
             ToAdd.Context = Context;
@@ -143,24 +142,22 @@ public class LinesRenderer : MonoBehaviour
                 continue;
             }
 
-            string AdjacencyPath = MeshInfoListForRender[i].Context.LineMaterialSetting.AdjacencyData;
-            AdjFace[] AdjacencyTriangles = null;
+            string LineMetaDataPath = MeshInfoListForRender[i].Context.LineMaterialSetting.LineMetaData;
+            PackedLineData MetaData = null;
             if (Current.Context.LineMaterialSetting.SubMeshIndex != -1)
             {
-                AdjacencyTriangles = AdjacencyDataPool.Instance.TryLoad(AdjacencyPath, Current.Context.LineMaterialSetting.SubMeshIndex);
+                MetaData = AdjacencyDataPool.Instance.TryLoad(LineMetaDataPath, Current.Context.LineMaterialSetting.SubMeshIndex);
             }
             else
             {
                 int SubMeshIndex = -1;
-                AdjacencyTriangles = AdjacencyDataPool.Instance.TryLoadAndGetSubMeshIndex(AdjacencyPath, Current.Name, out SubMeshIndex);
+                MetaData = AdjacencyDataPool.Instance.TryLoadAndGetSubMeshIndex(LineMetaDataPath, Current.Name, out SubMeshIndex);
                 Current.SubMeshIndex = SubMeshIndex;
             }
 
-            int AdjFaceCount = 0;
-            if (AdjacencyTriangles != null)
+            if (MetaData != null)
             {
                 Current.Available = true;
-                AdjFaceCount = AdjacencyTriangles.Length;
                 Debug.Log("Load Successed :" + Current.Name);
             }
             else
@@ -170,13 +167,12 @@ public class LinesRenderer : MonoBehaviour
 
             MeshInfoForDisplay Info = new MeshInfoForDisplay();
             Info.SubMeshIndex = Current.SubMeshIndex;
-            Info.AdjFaceCount = AdjFaceCount;
             Info.Name = Current.Name;
             Info.Available = Current.Available;
             MeshInfoListForOnlyDisplay.Add(Info);
 
             if(Current.Available)
-                Current.Context.Init(AdjacencyTriangles);
+                Current.Context.Init(MetaData);
         }
 
 

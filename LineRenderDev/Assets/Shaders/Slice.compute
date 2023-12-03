@@ -29,15 +29,16 @@ RWStructuredBuffer<uint> OutputArray;
 
 #define ELEMENT_TYPE uint
 
-StructuredBuffer<uint> ArgBuffer;
+StructuredBuffer<uint> SegmentArgBuffer;
 RWStructuredBuffer<LineSegment> InputArray;
 #define GET_INPUT_ELEMENT_PASS1(idx) InputArray[idx].PixelLengthShrink
 #define GET_INPUT_ELEMENT_PASS2(idx) InputArray[idx].PixelLengthShrinkTotal  
 #define GET_OUTPUT_ELEMENT(idx) InputArray[idx].PixelLengthShrinkTotal  
-#define INPUT_SIZE ArgBuffer[0]
-#define OUTPUT_SIZE ArgBuffer[0]
+#define INPUT_SIZE SegmentArgBuffer[0]
+#define OUTPUT_SIZE SegmentArgBuffer[0]
 
-AppendStructuredBuffer<Slice> Slices;
+RWStructuredBuffer<uint> SliceArgBuffer;
+RWStructuredBuffer<Slice> Slices;
 
 #endif
 
@@ -46,6 +47,16 @@ RWStructuredBuffer<ELEMENT_TYPE> BucketArray;
 
 groupshared ELEMENT_TYPE##2 Bucket[SLICE_PASS_PER_THREAD_ELEMENT_NUM];
 
+
+inline void AppendToBuffer(uint Id, in Slice ToAdd)
+{
+	Slices[Id].Id = Id;
+	Slices[Id].BeginSegmentIndex = ToAdd.BeginSegmentIndex;
+	Slices[Id].BeginPixel = ToAdd.BeginPixel;
+
+	int Original = 0;
+	InterlockedAdd(SliceArgBuffer[0], 1, Original);
+}
 
 
 ELEMENT_TYPE SumElements(uint GroupIndex, ELEMENT_TYPE Element)
@@ -172,6 +183,7 @@ void SumTotalAndSlice(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID)
 		ELEMENT_TYPE Delta = CurrentSum % SLICE_PIXEL_SIZE;
 		float RankCurrent = ((float)CurrentSum) / ((float)SLICE_PIXEL_SIZE);
 		float RankPrev = ((float)CurrentSumPrev) / ((float)SLICE_PIXEL_SIZE);
+		int SliceId = (int)(floor(RankCurrent));
 		int Rank = (int)(floor(RankCurrent) - floor(RankPrev));
 
 		if (id.x == 0)
@@ -179,8 +191,7 @@ void SumTotalAndSlice(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID)
 			Slice FirstSlice;
 			FirstSlice.BeginSegmentIndex = 0;
 			FirstSlice.BeginPixel = 1;
-			FirstSlice.debug = CurrentSum;
-			Slices.Append(FirstSlice);
+			AppendToBuffer(0, FirstSlice);
 		}
 		if (Rank > 0)
 		{
@@ -189,7 +200,6 @@ void SumTotalAndSlice(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID)
 			for (int i = 0; i < Rank; i++) {
 				BeginSegmentIndex = id.x;
 				Output.BeginPixel = BaseOffset - SLICE_PIXEL_SIZE * i;//BeginPixelShrink start from 1
-				Output.debug = CurrentSum;
 				
 				if (Output.BeginPixel > Current)
 				{
@@ -198,7 +208,8 @@ void SumTotalAndSlice(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID)
 				}
 				Output.BeginSegmentIndex = BeginSegmentIndex;
 				if(BeginSegmentIndex < INPUT_SIZE)
-					Slices.Append(Output);
+					AppendToBuffer(SliceId, Output);
+				SliceId -= 1;
 			}
 		}
 

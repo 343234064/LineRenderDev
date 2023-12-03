@@ -23,7 +23,7 @@ Shader "LineRender/LineShader"{
 			fixed4 TintColor;
 			float4 WorldPositionOffset;
 
-			UNITY_DECLARE_DEPTH_TEXTURE(_CameraDepthTexture);
+			//UNITY_DECLARE_DEPTH_TEXTURE(_CameraDepthTexture);
 
 			#include "Common.cginc"
 
@@ -37,11 +37,6 @@ Shader "LineRender/LineShader"{
 				float4 color : TEXCOORD1;
 			};
 
-			float Hash(float2 p)
-			{
-				p = 50.0 * frac(p * 0.3183099 + float2(0.71, 0.113));
-				return -1.0 + 2.0 * frac(p.x * p.y * (p.x + p.y));
-			}
 
 			Output vert(uint vertex_id: SV_VertexID, uint instance_id : SV_InstanceID)
 			{
@@ -61,21 +56,10 @@ Shader "LineRender/LineShader"{
 
 				
 				output.color = float4(1.0, 1.0, 1.0, 1.0);
-				//if (Line.BackFacing < 1)
-				//	output.color *= float4(1.0, 1.0, 1.0, 1.0);
-				//else
-				//	output.color *= float4(1.0, 0.0, 1.0, 1.0);
-				float r = saturate(Hash(float2(Line.SliceIndex, 2.0 / float(Line.SliceIndex))));
-				float g = saturate(Hash(float2(2.0 / float(Line.SliceIndex), Line.SliceIndex)));
-				float b = saturate(Hash(float2(5.0 / float(Line.SliceIndex), Line.SliceIndex)));
-				//if(Line.SliceIndex == 9)
-				//	output.color = float4(1., 0., 0., 1.0f);
-				//if (Line.debug == 14)
-				//	output.color = float4(0., 1., 0., 1.0f);
-				//if (Line.SliceIndex == 63)
-				//	output.color = float4(0., 1., 1., 1.0f);
-				//output.color = float4(r,g,b, 1.0f);
-				//output.color = Line.SliceIndex == 1 ? float4(1.0, 0.0, 0.0, 1.0) : float4(0.0, 1.0, 0.0, 1.0);
+				//if (Line.BackFacing == 1)
+				//	output.color = float4(1.0, 1.0, 0.0, 1.0);
+				if (Line.Visible == 0)
+					output.color *= float4(0.5, 0.5, 0.0, 1.0);
 				return output;
 			}
 

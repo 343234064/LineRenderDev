@@ -49,6 +49,20 @@ int FirstBitZeroLow(uint Src, uint StartIndexFromLow)
     return PosFromStartIndex < Length ? (PosFromStartIndex + StartIndexFromLow) : -1;
 }
 
+int FirstBitOneLow(uint Src, uint StartIndexFromLow)
+{
+    uint Length = 32 - StartIndexFromLow;//firstbithigh(Src) + 1 - StartIndexFromLow;
+    uint SrcWithOffset = Src >> StartIndexFromLow;
+
+    //if (SrcWithOffset == uint(0)) return StartIndexFromLow;
+    //if (SrcWithOffset == uint(4294967295)) return -1;
+
+    uint PosFromStartIndex = firstbitlow(SrcWithOffset); // return #ffffffff(4294967295) if failed
+
+    //PosFromStartIndex = min(PosFromStartIndex, MaxSearchLength);
+    return PosFromStartIndex < Length ? (PosFromStartIndex + StartIndexFromLow) : -1;
+}
+
 
 int2 ExtractTailIndex(uint HeadIndex, uint MaxSearchLength)
 {
@@ -58,13 +72,13 @@ int2 ExtractTailIndex(uint HeadIndex, uint MaxSearchLength)
 
     //change this if VISIBILITY_CACHE_NUM change
     //only 2 step(64 size) to avoid writing loop 
-    int Pos = FirstBitZeroLow(Cache, HeadOffset);
+    int Pos = FirstBitOneLow(Cache, HeadOffset);
     if (Pos < 0 && CacheIndex < 1)
     {
         CacheIndex += 1;
         HeadOffset = 0;
         Cache = VisibilityCache[CacheIndex];
-        Pos = FirstBitZeroLow(Cache, HeadOffset);
+        Pos = FirstBitOneLow(Cache, HeadOffset);
     }
     /*
     [unroll]
@@ -93,7 +107,7 @@ void CSMain (uint3 gid : SV_GroupID, uint gi : SV_GroupIndex, uint3 id : SV_Disp
 
     uint CurrentGroupPixelPosition = gi;
     
-    bool IsVisible = (CurrentGroupPixelPosition % 7 == 0) ? false : true;
+    bool IsVisible = (CurrentGroupPixelPosition % 7 == 0) ? true : false;
     SaveVisibility(IsVisible, CurrentGroupPixelPosition, false);
 
     GroupMemoryBarrierWithGroupSync();
@@ -103,7 +117,7 @@ void CSMain (uint3 gid : SV_GroupID, uint gi : SV_GroupIndex, uint3 id : SV_Disp
     uint test1 = firstbitlow(1);
     uint test2 = firstbithigh(0);
 
-    int test3 = FirstBitZeroLow(4294967295, 0);
+    int test3 = FirstBitOneLow(4294967295, 0);
     uint test4 = test3 >= 0 ? test3 : 4294967295;
     
     bool v = LoadVisibility(27);
