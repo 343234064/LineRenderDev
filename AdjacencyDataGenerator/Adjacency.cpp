@@ -16,6 +16,52 @@
 #define VER_ELEMENT_LENGTH 4
 
 
+
+Float3 operator-(const Float3& a, const Float3& b)
+{
+	return Float3(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+Float3 operator+(const Float3& a, const Float3& b)
+{
+	return Float3(a.x + b.x, a.y + b.y, a.z + b.z);
+}
+
+Float3 operator*(const Float3& a, const double b)
+{
+	return Float3(a.x * b, a.y * b, a.z * b);
+}
+
+Float3 operator*(const Float3& a, const Float3& b)
+{
+	return Float3(a.x * b.x, a.y * b.y, a.z * b.z);
+}
+
+Float3 Normalize(const Float3& a)
+{
+	float MagInv = 1.0f / Length(a);
+	return a * MagInv;
+}
+
+float Length(const Float3& a)
+{
+	return MAX(0.000001f, sqrt(a.x * a.x + a.y * a.y + a.z * a.z));
+}
+
+Float3 Cross(const Float3& a, const Float3& b)
+{
+	return Float3(
+		a.y * b.z - a.z * b.y,
+		a.z * b.x - a.x * b.z,
+		a.x * b.y - a.y * b.x
+	);
+}
+
+float Dot(const Float3& a, const Float3& b)
+{
+	return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
 inline int BytesToUnsignedIntegerLittleEndian(Byte* Src, uint Offset)
 {
 	return static_cast<int>(static_cast<Byte>(Src[Offset]) |
@@ -99,7 +145,8 @@ bool AdjacencyProcesser::GetReady0(std::filesystem::path& VertexFilePath)
 	size_t VertexTotalBytesNum = FileSize;
 	WRITE_MESSAGE_DIGIT("Total Bytes Length: ", VertexTotalBytesNum)
 
-	Byte* VertexBytesData = new Byte[VertexTotalBytesNum];
+	if (VertexBytesData) delete[] VertexBytesData;
+	VertexBytesData = new Byte[VertexTotalBytesNum];
 	if (VertexBytesData == nullptr)
 	{
 		ErrorString += "Create byte data failed.\n";
@@ -238,7 +285,8 @@ bool AdjacencyProcesser::GetReady1(std::filesystem::path& FilePath)
 
 	TotalTriangleBytesNum = FileSize;
 	WRITE_MESSAGE_DIGIT("Total Bytes Length: ", TotalTriangleBytesNum)
-	
+
+	if (TriangleBytesData) delete[] TriangleBytesData;
 	TriangleBytesData = new Byte[FileSize];
 	if (TriangleBytesData == nullptr)
 	{
@@ -1023,6 +1071,116 @@ void* AdjacencyProcesser::RunFunc5(void* SourceData, double* OutProgressPerRun)
 		return nullptr;
 }
 
+
+
+bool AdjacencyProcesser::GetReadyGenerateRenderData()
+{
+	if (AsyncProcesser == nullptr || TriangleContextList.size() == 0 || IsWorking())
+	{
+		ErrorString += "GetReady5 has not run yet or is still working.\n";
+		return false;
+	}
+	AsyncProcesser->Clear();
+
+	ErrorString = "";
+	MessageString = "";
+
+	for (uint i = 0; i < TriangleContextList.size(); i++)
+	{
+		TriangleContextList[i]->CurrentFacePos = 0;
+		TriangleContextList[i]->CurrentIndexPos = 0;
+		
+		if (TriangleContextList[i]->VertexData->DrawVertexList != nullptr) delete[] TriangleContextList[i]->VertexData->DrawVertexList;
+		TriangleContextList[i]->VertexData->DrawVertexList = new DrawRawVertex[TriangleContextList[i]->FaceList.size() * 3];
+		memset(TriangleContextList[i]->VertexData->DrawVertexList, 0, TriangleContextList[i]->FaceList.size() * 3);
+
+		if (TriangleContextList[i]->DrawIndexList != nullptr) delete[] TriangleContextList[i]->DrawIndexList;
+		TriangleContextList[i]->DrawIndexList = new DrawRawIndex[TriangleContextList[i]->FaceList.size() * 3];
+		memset(TriangleContextList[i]->DrawIndexList, 0, TriangleContextList[i]->FaceList.size() * 3);
+
+		if (TriangleContextList[i]->DrawIndexLineList != nullptr) delete[] TriangleContextList[i]->DrawIndexLineList;
+		TriangleContextList[i]->DrawIndexLineList = new DrawRawIndex[TriangleContextList[i]->FaceList.size() * 6];
+		memset(TriangleContextList[i]->DrawIndexLineList, 0, TriangleContextList[i]->FaceList.size() * 6);
+
+		TriangleContextList[i]->VertexData->Bounding.Clear();
+
+		AsyncProcesser->AddData((void*)TriangleContextList[i]);
+	}
+
+	std::function<void* (void*, double*)> Runnable = std::bind(&AdjacencyProcesser::RunFuncGenerateRenderData, this, std::placeholders::_1, std::placeholders::_2);
+	AsyncProcesser->SetRunFunc(Runnable);
+
+	AsyncProcesser->SetIntervalTime(0.0);
+
+	if (!AsyncProcesser->Kick())
+	{
+		ErrorString += "Start async request failed.\n";
+		return false;
+	}
+
+	return true;
+}
+
+
+void* AdjacencyProcesser::RunFuncGenerateRenderData(void* SourceData, double* OutProgressPerRun)
+{
+	SourceContext* Src = (SourceContext*)SourceData;
+	VertexContext* VertexData = Src->VertexData;
+
+	Face& CurrentFace= Src->FaceList[Src->CurrentFacePos];
+
+	AdjVertex V1 = VertexData->VertexList[CurrentFace.x.value];
+	AdjVertex V2 = VertexData->VertexList[CurrentFace.y.value];
+	AdjVertex V3 = VertexData->VertexList[CurrentFace.z.value];
+
+	Float3 color = CurrentFace.IsAddToAdjFaceList ? Float3(1.0, 0.0, 0.0) : Float3(1.0, 1.0, 1.0);
+	Float3 normal = Float3((V1.x + V2.x + V3.x) / 3.0f, (V1.y + V2.y + V3.y) / 3.0f, (V1.z + V2.z + V3.z) / 3.0f);
+
+	DrawRawVertex NewVertex1(Float3(V1.x, V1.y, V1.z), normal, color);
+	DrawRawVertex NewVertex2(Float3(V2.x, V2.y, V2.z), normal, color);
+	DrawRawVertex NewVertex3(Float3(V3.x, V3.y, V3.z), normal, color);
+
+	uint LineIndex[3];
+	VertexData->DrawVertexList[Src->CurrentIndexPos] = NewVertex1;
+	Src->DrawIndexList[Src->CurrentIndexPos] = Src->CurrentIndexPos;
+	LineIndex[0] = Src->CurrentIndexPos;
+	Src->CurrentIndexPos++;
+
+	VertexData->DrawVertexList[Src->CurrentIndexPos] = NewVertex2;
+	Src->DrawIndexList[Src->CurrentIndexPos] = Src->CurrentIndexPos;
+	LineIndex[1] = Src->CurrentIndexPos;
+	Src->CurrentIndexPos++;
+
+	VertexData->DrawVertexList[Src->CurrentIndexPos] = NewVertex3;
+	Src->DrawIndexList[Src->CurrentIndexPos] = Src->CurrentIndexPos;
+	LineIndex[2] = Src->CurrentIndexPos;
+	Src->CurrentIndexPos++;
+
+	uint LineIndexOffset = (Src->CurrentIndexPos - 3)*2;
+	Src->DrawIndexLineList[LineIndexOffset++] = LineIndex[0];
+	Src->DrawIndexLineList[LineIndexOffset++] = LineIndex[1];
+	Src->DrawIndexLineList[LineIndexOffset++] = LineIndex[1];
+	Src->DrawIndexLineList[LineIndexOffset++] = LineIndex[2];
+	Src->DrawIndexLineList[LineIndexOffset++] = LineIndex[2];
+	Src->DrawIndexLineList[LineIndexOffset++] = LineIndex[0];
+
+	VertexData->Bounding.Resize(NewVertex1.pos);
+	VertexData->Bounding.Resize(NewVertex2.pos);
+	VertexData->Bounding.Resize(NewVertex3.pos);
+
+	Src->CurrentFacePos++;
+
+	double Step = 1.0 / Src->FaceList.size();
+	*OutProgressPerRun = Step;
+
+	if (Src->CurrentFacePos >= Src->FaceList.size())
+		return (void*)Src;
+	else
+		return nullptr;
+}
+
+
+
 void AdjacencyProcesser::Export(std::filesystem::path& FilePath)
 {
 	std::ofstream OutFile(FilePath.c_str(), std::ios::out | std::ios::binary);
@@ -1138,6 +1296,357 @@ void AdjacencyProcesser::ExportAdjacencyFaceList(Byte* Buffer, uint* BytesOffset
 		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.hasAdjFace[2] ? (Curr.adjPoint[2].value + 1) : 0);
 	}
 
+}
+
+
+bool PassGenerateVertexMap(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
+{
+	bool Success = false;
+
+	std::filesystem::path VertexFilePath = FilePath;
+	VertexFilePath.replace_extension(std::filesystem::path("vertices"));
+	Success = Processer->GetReady0(VertexFilePath);
+
+
+	std::cout << LINE_STRING << std::endl;
+	std::cout << Processer->GetMessageString() << std::endl;
+	std::cout << LINE_STRING << std::endl;
+
+	if (Success)
+		State = "Generate Vertex Map....... ";
+
+	return Success;
+	//if (Success) {
+	//	double Progress = 0.0;
+	//	while (true) {
+	//		std::cout << "Generate Vertex Map....... " << Progress * 100.0 << " %                                                             \r";
+	//		std::cout.flush();
+
+	//		if (Progress >= 1.0) break;
+
+	//		Progress = Processer->GetProgress();
+	//	}
+	//	std::cout << std::endl;
+
+	//	while (true)
+	//	{
+	//		if (Processer->IsWorking())
+	//			Processer->GetProgress();
+	//		else
+	//			break;
+	//	}
+	//}
+
+	//std::string& ErrorString = Processer->GetErrorString();
+	//if (ErrorString.size() > 0) {
+	//	std::cout << LINE_STRING << std::endl;
+	//	std::cout << "Something get error, please see error0.log." << std::endl;
+	//	std::cout << LINE_STRING << std::endl;
+
+	//	Processer->DumpErrorString(0);
+	//}
+	//std::cout << "Generate Vertex Map Completed." << std::endl;
+
+	/*
+	std::vector<VertexContext*> ContextList = Processer.GetVertexContextList();
+	VertexContext* Context = ContextList[0];
+
+	ContextList[0]->DumpIndexMap();
+	ContextList[0]->DumpVertexList();
+	ContextList[0]->DumpRawVertexList();
+	*/
+
+
+}
+
+
+bool PassGenerateFaceAndEdgeData(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
+{
+	bool Success = false;
+
+	std::filesystem::path TriangleFilePath = FilePath;
+	Success = Processer->GetReady1(TriangleFilePath);
+	std::cout << LINE_STRING << std::endl;
+	std::cout << Processer->GetMessageString() << std::endl;
+	std::cout << LINE_STRING << std::endl;
+
+	if (Success)
+		State = "Generate Face And Edge Data....... ";
+
+	return Success;
+	//if (Success) {
+	//	double Progress = 0.0;
+	//	while (true) {
+	//		std::cout << "Generate Face And Edge Data....... " << Progress * 100.0 << " %                                                             \r";
+	//		std::cout.flush();
+
+	//		if (Progress >= 1.0) break;
+
+	//		Progress = Processer->GetProgress();
+	//	}
+	//	std::cout << std::endl;
+
+	//	while (true)
+	//	{
+	//		if (Processer->IsWorking())
+	//			Processer->GetProgress();
+	//		else
+	//			break;
+	//	}
+	//}
+
+	//std::string& ErrorString = Processer->GetErrorString();
+	//if (ErrorString.size() > 0) {
+	//	std::cout << LINE_STRING << std::endl;
+	//	std::cout << "Something get error, please see error1.log." << std::endl;
+	//	std::cout << LINE_STRING << std::endl;
+
+	//	Processer->DumpErrorString(1);
+	//}
+	//std::cout << "Generate Face And Edge Data Completed." << std::endl;
+
+}
+
+bool PassGenerateAdjacencyData(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
+{
+	bool Success = false;
+
+	std::cout << LINE_STRING << std::endl;
+	std::cout << "Begin Generate Adjacency Data..." << std::endl;
+	Success = Processer->GetReady2();
+
+	std::cout << LINE_STRING << std::endl;
+	std::cout << Processer->GetMessageString() << std::endl;
+	std::cout << LINE_STRING << std::endl;
+
+	if (Success)
+		State = "Generate Adjacency Data....... ";
+
+	return Success;
+	//if (Success) {
+	//	double Progress = 0.0;
+	//	while (true) {
+	//		std::cout << "Generate Adjacency Data....... " << Progress * 100.0 << " %                                                             \r";
+	//		std::cout.flush();
+
+	//		if (Progress >= 1.0) break;
+
+	//		Progress = Processer->GetProgress();
+	//	}
+	//	std::cout << std::endl;
+
+	//	while (true)
+	//	{
+	//		if (Processer->IsWorking())
+	//			Processer->GetProgress();
+	//		else
+	//			break;
+	//	}
+	//}
+
+	//std::string& ErrorString = Processer->GetErrorString();
+	//if (ErrorString.size() > 0) {
+	//	std::cout << LINE_STRING << std::endl;
+	//	std::cout << "Something get error, please see error2.log." << std::endl;
+	//	std::cout << LINE_STRING << std::endl;
+
+	//	Processer->DumpErrorString(2);
+	//}
+
+	//std::cout << "Generate Adjacency Data Completed." << std::endl;
+
+	//return Success;
+}
+
+
+bool PassShrinkAdjacencyData(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
+{
+	bool Success = false;
+
+	std::cout << LINE_STRING << std::endl;
+	std::cout << "Begin Shrinking Adjacency Data..." << std::endl;
+	Success = Processer->GetReady3();
+
+	std::cout << LINE_STRING << std::endl;
+	std::cout << Processer->GetMessageString() << std::endl;
+	std::cout << LINE_STRING << std::endl;
+
+	if (Success)
+		State = "Shrinking Adjacency Data....... ";
+
+	return Success;
+
+	//if (Success) {
+	//	double Progress = 0.0;
+	//	while (true) {
+	//		std::cout << "Shrinking Adjacency Data....... " << Progress * 100.0 << " %                                                             \r";
+	//		std::cout.flush();
+
+	//		if (Progress >= 1.0) break;
+
+	//		Progress = Processer->GetProgress();
+	//	}
+	//	std::cout << std::endl;
+
+	//	while (true)
+	//	{
+	//		if (Processer->IsWorking())
+	//			Processer->GetProgress();
+	//		else
+	//			break;
+	//	}
+	//}
+
+	//std::string& ErrorString = Processer->GetErrorString();
+	//if (ErrorString.size() > 0) {
+	//	std::cout << LINE_STRING << std::endl;
+	//	std::cout << "Something get error, please see error3.log." << std::endl;
+	//	std::cout << LINE_STRING << std::endl;
+
+	//	Processer->DumpErrorString(3);
+	//}
+	//std::cout << "Shrink Adjacency Data Completed." << std::endl;
+
+	//return Success;
+}
+
+bool PassGenerateAdjacencyVertexMap(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
+{
+	bool Success = false;
+
+	std::cout << LINE_STRING << std::endl;
+	std::cout << "Begin Generate Adjacency Vertex Map..." << std::endl;
+	Success = Processer->GetReady4();
+
+	std::cout << LINE_STRING << std::endl;
+	std::cout << Processer->GetMessageString() << std::endl;
+	std::cout << LINE_STRING << std::endl;
+
+	if (Success)
+		State = "Generate Adjacency Vertex Map....... ";
+
+	return Success;
+	//if (Success) {
+	//	double Progress = 0.0;
+	//	while (true) {
+	//		std::cout << "Generate Adjacency Vertex Map....... " << Progress * 100.0 << " %                                                             \r";
+	//		std::cout.flush();
+
+	//		if (Progress >= 1.0) break;
+
+	//		Progress = Processer->GetProgress();
+	//	}
+	//	std::cout << std::endl;
+
+	//	while (true)
+	//	{
+	//		if (Processer->IsWorking())
+	//			Processer->GetProgress();
+	//		else
+	//			break;
+	//	}
+	//}
+
+	//std::string& ErrorString = Processer->GetErrorString();
+	//if (ErrorString.size() > 0) {
+	//	std::cout << LINE_STRING << std::endl;
+	//	std::cout << "Something get error, please see error4.log." << std::endl;
+	//	std::cout << LINE_STRING << std::endl;
+
+	//	Processer->DumpErrorString(4);
+	//}
+	//std::cout << "Generate Adjacency Vertex Map Completed." << std::endl;
+
+	//return Success;
+}
+
+
+bool PassSerializeAdjacencyVertexMap(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
+{
+	bool Success = false;
+
+	std::cout << LINE_STRING << std::endl;
+	std::cout << "Begin Serialize Adjacency Vertex Map..." << std::endl;
+	Success = Processer->GetReady5();
+
+	std::cout << LINE_STRING << std::endl;
+	std::cout << Processer->GetMessageString() << std::endl;
+	std::cout << LINE_STRING << std::endl;
+
+	if (Success)
+		State = "Serialize Adjacency Vertex Map....... ";
+
+	return Success;
+
+	//if (Success) {
+	//	double Progress = 0.0;
+	//	while (true) {
+	//		std::cout << "Serialize Adjacency Vertex Map....... " << Progress * 100.0 << " %                                                             \r";
+	//		std::cout.flush();
+
+	//		if (Progress >= 1.0) break;
+
+	//		Progress = Processer->GetProgress();
+	//	}
+	//	std::cout << std::endl;
+
+	//	while (true)
+	//	{
+	//		if (Processer->IsWorking())
+	//			Processer->GetProgress();
+	//		else
+	//			break;
+	//	}
+	//}
+
+	//std::string& ErrorString = Processer->GetErrorString();
+	//if (ErrorString.size() > 0) {
+	//	std::cout << LINE_STRING << std::endl;
+	//	std::cout << "Something get error, please see error5.log." << std::endl;
+	//	std::cout << LINE_STRING << std::endl;
+
+	//	Processer->DumpErrorString(5);
+	//}
+	//std::cout << "Serialize Adjacency Vertex Map Completed." << std::endl;
+
+	//return Success;
+}
+
+bool PassGenerateRenderData(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
+{
+	bool Success = false;
+
+	std::cout << LINE_STRING << std::endl;
+	std::cout << "Begin Generating Render Data..." << std::endl;
+	Success = Processer->GetReadyGenerateRenderData();
+
+	std::cout << LINE_STRING << std::endl;
+	std::cout << Processer->GetMessageString() << std::endl;
+	std::cout << LINE_STRING << std::endl;
+
+	if (Success)
+		State = "Generating Render Data....... ";
+
+	return Success;
+
+}
+
+
+void Export(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
+{
+	std::cout << LINE_STRING << std::endl;
+	std::cout << "Exporting......" << std::endl;
+
+	Processer->ClearMessageString();
+	std::filesystem::path ExportFilePath = FilePath;
+	ExportFilePath.replace_extension(std::filesystem::path("linemeta"));
+
+	Processer->Export(ExportFilePath);
+
+	std::cout << Processer->GetMessageString() << std::endl;
+	std::cout << LINE_STRING << std::endl;
+
+	State = "Export Completed.";
 }
 
 

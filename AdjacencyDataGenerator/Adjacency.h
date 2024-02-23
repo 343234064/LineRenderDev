@@ -12,6 +12,21 @@ typedef unsigned int uint;
 
 using namespace std;
 
+#define MAX(a,b)            (((a) > (b)) ? (a) : (b))
+#define MIN(a,b)            (((a) < (b)) ? (a) : (b))
+
+#define LINE_STRING "================================"
+class AdjacencyProcesser;
+bool PassGenerateVertexMap(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
+bool PassGenerateFaceAndEdgeData(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
+bool PassGenerateAdjacencyData(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
+bool PassShrinkAdjacencyData(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
+bool PassGenerateAdjacencyVertexMap(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
+bool PassSerializeAdjacencyVertexMap(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
+bool PassGenerateRenderData(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
+void Export(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
+
+
 //Not commutative
 inline unsigned int HashCombine(unsigned int A, unsigned int C)
 {
@@ -37,6 +52,100 @@ inline size_t HashCombine2(size_t A, size_t C)
 	value ^= C + 0x9e3779b9 + (A << 6) + (A >> 2);
 	return value;
 }
+
+
+struct Float3
+{
+	Float3() :
+		x(0.0), y(0.0), z(0.0) {}
+	Float3(float a) :
+		x(a), y(a), z(a) {}
+	Float3(float _x, float _y, float _z):
+		x(_x), y(_y), z(_z) {}
+
+	float x;
+	float y;
+	float z;
+
+	friend Float3 operator-(const Float3& a, const Float3& b);
+	friend Float3 operator+(const Float3& a, const Float3& b);
+	friend Float3 operator*(const Float3& a, const double b);
+	friend Float3 operator*(const Float3& a, const Float3& b);
+	friend Float3 Normalize(const Float3& a);
+	friend float Length(const Float3& a);
+	friend Float3 Cross(const Float3& a, const Float3& b);
+	friend float Dot(const Float3& a, const Float3& b);
+};
+
+
+
+struct BoundingBox
+{
+	BoundingBox() :
+		Center(0.0),
+		HalfLength(1.0),
+		Min(-1.0),
+		Max(1.0)
+	{}
+
+	void Resize(Float3& Point)
+	{
+		Min.x = MIN(Point.x, Min.x);
+		Min.y = MIN(Point.y, Min.y);
+		Min.z = MIN(Point.z, Min.z);
+
+		Max.x = MAX(Point.x, Max.x);
+		Max.y = MAX(Point.y, Max.y);
+		Max.z = MAX(Point.z, Max.z);
+
+		HalfLength = (Max - Min) * 0.5;
+		Center = Min + HalfLength;
+	}
+
+	void Resize(BoundingBox& Box)
+	{
+		Min.x = MIN(Box.Min.x, Min.x);
+		Min.y = MIN(Box.Min.y, Min.y);
+		Min.z = MIN(Box.Min.z, Min.z);
+
+		Max.x = MAX(Box.Max.x, Max.x);
+		Max.y = MAX(Box.Max.y, Max.y);
+		Max.z = MAX(Box.Max.z, Max.z);
+
+		HalfLength = (Max - Min) * 0.5;
+		Center = Min + HalfLength;
+	}
+
+	void Clear()
+	{
+		Center = Float3(0.0);
+		HalfLength = Float3(1.0);
+		Min = Float3(-1.0);
+		Max = Float3(1.0);
+	}
+
+	Float3 Center;
+	Float3 HalfLength;
+	Float3 Min;
+	Float3 Max;
+};
+
+
+
+struct DrawRawVertex
+{
+	DrawRawVertex():
+		pos(), color()
+	{}
+	DrawRawVertex(Float3 _pos, Float3 _nor, Float3 _col):
+		pos(_pos), normal(_nor), color(_col)
+	{}
+	Float3 pos;
+	Float3 normal;
+	Float3 color;
+};
+typedef unsigned int DrawRawIndex;
+
 
 #define EPS 0.000001f
 struct Vertex3
@@ -175,12 +284,12 @@ public:
 	Edge(uint _v1, uint _v2, uint _actual_v1, uint _actual_v2) :
 		v1(_v1, _actual_v1), v2(_v2, _actual_v2), id(0)
 	{
-		hash = HashCombine(std::min(v1.value, v2.value), std::max(v1.value, v2.value));
+		hash = HashCombine(MIN(v1.value, v2.value), MAX(v1.value, v2.value));
 	}
 	Edge(Index _v1, Index _v2) :
 		v1(_v1), v2(_v2), id(0)
 	{
-		hash = HashCombine(std::min(v1.value, v2.value), std::max(v1.value, v2.value));
+		hash = HashCombine(MIN(v1.value, v2.value), MAX(v1.value, v2.value));
 	}
 	Edge(const Edge& e):
 		v1(e.v1), v2(e.v2), hash(e.hash), id(e.id)
@@ -296,11 +405,19 @@ public:
 	VertexContext() :
 		Name("None"),
 		BytesData(nullptr),
+		DrawVertexList(nullptr),
 		TotalLength(0),
 		VertexLength(0),
 		CurrentVertexPos(0),
 		CurrentVertexId(0) {}
+	~VertexContext()
+	{
+		if (DrawVertexList != nullptr)
+			delete[] DrawVertexList;
+		DrawVertexList = nullptr;
+	}
 
+public:
 	std::string Name;
 	Byte* BytesData;
 	std::vector<Vertex3> RawVertex;
@@ -310,6 +427,10 @@ public:
 	std::unordered_map<Vertex3, uint> VertexMap;
 	// actual vertex index in BytesData -> merged vertex  index 
 	std::unordered_map<uint, uint> IndexMap;
+
+	// for debug rendering
+	DrawRawVertex* DrawVertexList;
+	BoundingBox Bounding;
 
 	uint TotalLength;
 	uint VertexLength;
@@ -368,6 +489,8 @@ public:
 	SourceContext():
 		Name("None"),
 		BytesData(nullptr), 
+		DrawIndexList(nullptr),
+		DrawIndexLineList(nullptr),
 		TotalLength(0), 
 		IndicesLength(0),
 		TriangleNum(0),
@@ -376,7 +499,17 @@ public:
 		CurrentIndexPos(0),
 		VertexData(nullptr)
 	{}
+	~SourceContext()
+	{
+		if (DrawIndexList != nullptr)
+			delete[] DrawIndexList;
+		DrawIndexList = nullptr;
+		if (DrawIndexLineList != nullptr)
+			delete[] DrawIndexLineList;
+		DrawIndexLineList = nullptr;
+	}
 
+public:
 	std::string Name;
 	Byte* BytesData;
 	//Pass0
@@ -395,7 +528,10 @@ public:
 	std::unordered_map<uint, std::set<uint>> AdjacencyVertexMap; // vertex -> adjacency vertex
 	//Pass5
 	std::vector<std::vector<uint>> AdjacencyVertexList;
-
+	
+	// for debug rendering
+	DrawRawIndex* DrawIndexList;
+	DrawRawIndex* DrawIndexLineList;
 
 	uint TotalLength;
 	uint IndicesLength;
@@ -560,11 +696,14 @@ public:
 	bool GetReady5();
 	void* RunFunc5(void* SourceData, double* OutProgressPerRun);
 
+	//Pass Generate Render Data
+	bool GetReadyGenerateRenderData();
+	void* RunFuncGenerateRenderData(void* SourceData, double* OutProgressPerRun);
 
 	double GetProgress()
 	{
 		if (AsyncProcesser == nullptr)
-			return 1.0;
+			return 0.0;
 
 		double Progress = 0.0;
 		SourceContext* Result = (SourceContext*)AsyncProcesser->GetResult(&Progress);
