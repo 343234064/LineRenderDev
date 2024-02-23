@@ -53,10 +53,10 @@
      
                 fixed4 col = _BaseColor;
                 half ndl = dot(_WorldSpaceLightPos0.xyz, normalize(i.normal));
-                col = _BaseColor* ndl + _BackColor * (1.0h - ndl);
+                col = _BaseColor * ndl + _BackColor * (1.0h-ndl);
                 
                 // apply fog
-                //UNITY_APPLY_FOG(i.fogCoord, col);
+                UNITY_APPLY_FOG(i.fogCoord, col);
                 return col;
             }
             ENDCG

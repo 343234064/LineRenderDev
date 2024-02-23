@@ -58,7 +58,7 @@ Shader "LineRender/LineShader"{
 				output.color = float4(1.0, 1.0, 1.0, 1.0);
 				//if (Line.BackFacing == 1)
 				//	output.color = float4(1.0, 1.0, 0.0, 1.0);
-				if (Line.Visible == 0)
+				if (Line.Visibility == 0)
 					output.color *= float4(0.5, 0.5, 0.0, 1.0);
 				return output;
 			}

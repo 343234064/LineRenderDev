@@ -98,18 +98,19 @@ public struct PlainLine
     Vector2 NDCPosition1;
     Vector2 NDCPosition2;
 
+    uint Id;
     int VertexIndex1;
     int VertexIndex2;
     int LinkState1;
     int LinkState2;
-    uint BackFacing;
+    uint Visibility;
 
 
     public override string ToString() => $"PlainLine()";
 
     public static int Size()
     {
-        return sizeof(float) * 4 + sizeof(int) * 4 + sizeof(uint);
+        return sizeof(float) * 4 + sizeof(uint) + sizeof(int) * 4 + sizeof(uint);
     }
 }
 
@@ -276,8 +277,7 @@ public class LineRuntimeContext
 
         if (VisibleLineBuffer != null)
             VisibleLineBuffer.Release();
-        VisibleLineBuffer = new ComputeBuffer(SliceNumPredict * 64, PlainLine.Size(), ComputeBufferType.Append);
-        VisibleLineBuffer.SetCounterValue(0);
+        VisibleLineBuffer = new ComputeBuffer(SliceNumPredict * 64, PlainLine.Size());
         if (VisibleLineArgBuffer != null)
             VisibleLineArgBuffer.Release();
         VisibleLineArgBuffer = new ComputeBuffer(4, sizeof(uint), ComputeBufferType.IndirectArguments);
@@ -411,6 +411,7 @@ public class RenderLayer
         RenderCommands.SetBufferCounterValue(EmptyBuffer, 0);
         RenderCommands.CopyCounterValue(EmptyBuffer, Current.SegmentArgBuffer, Current.SegmentArgBufferCounterOffset);
         RenderCommands.CopyCounterValue(EmptyBuffer, Current.SliceArgBuffer, Current.SliceArgBufferDispatchOffset);
+        RenderCommands.CopyCounterValue(EmptyBuffer, Current.VisibleLineArgBuffer, Current.VisibleLineArgBufferDispatchOffset);
         RenderCommands.SetBufferCounterValue(EmptyBuffer, 1);
         RenderCommands.CopyCounterValue(EmptyBuffer, Current.SegmentArgBuffer, Current.SegmentArgBufferDispatchOffset);
 
@@ -473,10 +474,11 @@ public class RenderLayer
         RenderCommands.SetComputeBufferParam(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, "Slices", Current.SliceBuffer);
         RenderCommands.SetComputeBufferParam(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, "SegmentArgBuffer", Current.SegmentArgBuffer);
         RenderCommands.SetComputeBufferParam(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, "SliceArgBuffer", Current.SliceArgBuffer);
+        RenderCommands.SetComputeBufferParam(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, "VisibleLineArgBuffer", Current.VisibleLineArgBuffer);
         RenderCommands.SetComputeBufferParam(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, "VisibleLines", Current.VisibleLineBuffer);
-        RenderCommands.SetBufferCounterValue(Current.VisibleLineBuffer, 0);
+        //RenderCommands.SetBufferCounterValue(Current.VisibleLineBuffer, 0);
         RenderCommands.DispatchCompute(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, Current.SliceArgBuffer, Current.SliceArgBufferDispatchOffset);
-        RenderCommands.CopyCounterValue(Current.VisibleLineBuffer, Current.VisibleLineArgBuffer, Current.VisibleLineArgBufferDispatchOffset);
+        //RenderCommands.CopyCounterValue(Current.VisibleLineBuffer, Current.VisibleLineArgBuffer, Current.VisibleLineArgBufferDispatchOffset);
 
 
         /*

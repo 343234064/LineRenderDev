@@ -6,11 +6,14 @@
 
 #define SEGMENT_SIZE SegmentArgBuffer[0]
 #define SLICE_SIZE SliceArgBuffer[0]
+
 StructuredBuffer<LineSegment> Segments;
 StructuredBuffer<Slice> Slices;
 StructuredBuffer<uint> SegmentArgBuffer;
 StructuredBuffer<uint> SliceArgBuffer;
-AppendStructuredBuffer<PlainLine> VisibleLines;
+
+RWStructuredBuffer<uint> VisibleLineArgBuffer;
+RWStructuredBuffer<PlainLine> VisibleLines;
 
 Texture2D<float> SceneDepthTexture;
 SamplerState LinearClampSampler;
@@ -25,8 +28,6 @@ uniform float4  ScreenScaledResolution;
 groupshared float4 PointCache[VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM];
 groupshared uint4 ExtraCache[VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM];
 groupshared uint VisibilityCache[VISIBILITY_CACHE_NUM];
-
-
 
 
 
@@ -356,19 +357,23 @@ void Visibility(uint3 gid : SV_GroupID, uint gi : SV_GroupIndex)
         uint TailGroupIndex = ExtraData.y;
 
         if (Tail.x >= -1.0f) {
+            uint Original = 0;
+            InterlockedAdd(VisibleLineArgBuffer[1], 1, Original);
+
             PlainLine NewLine;
             NewLine.NDCPosition[0] = Head.xy;
             NewLine.NDCPosition[1] = Tail.zw;
-
+            NewLine.Id = Original;
             NewLine.VertexIndex[0] = (VertexIndex != 0) ? VertexIndex - 1 : -1;
             NewLine.VertexIndex[1] = (TailVertexIndex != 0) ? TailVertexIndex - 1 : -1;
             NewLine.LinkState[0] = (NewLine.VertexIndex[0] != -1) ? 0 : ((CurrentGroupPixelPosition == 0 || CurrentGroupPixelPosition == (VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM - 1)) ? 1 : -1);
             NewLine.LinkState[1] = (NewLine.VertexIndex[1] != -1) ? 0 : ((TailGroupIndex == 0 || TailGroupIndex == (VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM - 1)) ? 1 : -1);
             NewLine.VertexIndex[0] = (NewLine.LinkState[0] == 1) ? CurrentSliceIndex : NewLine.VertexIndex[0];
             NewLine.VertexIndex[1] = (NewLine.LinkState[1] == 1) ? CurrentSliceIndex : NewLine.VertexIndex[1];
+            NewLine.Visibility = ShowVisible;
 
-            NewLine.Visible = ShowVisible;
-            VisibleLines.Append(NewLine);
+            VisibleLines[Original] = NewLine;
+
         }
 
     }
