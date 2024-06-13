@@ -15,9 +15,13 @@ public struct AdjVertex
     public uint adjSerializedId;
     public uint adjNum;
 
+    //meshlet
+    public uint IsInMeshletBorder1;
+    public uint IsInMeshletBorder2;
+
     public static int Size()
     {
-        return sizeof(float) * 3 + sizeof(uint) * 2;
+        return sizeof(float) * 3 + sizeof(uint) * 2 + sizeof(uint) * 2;
     }
 }
 
@@ -30,9 +34,17 @@ public struct AdjFace
     public uint yz;
     public uint zx;
 
+    //meshlet
+    public uint xyLayer1;
+    public uint xyLayer2;
+    public uint yzLayer1;
+    public uint yzLayer2;
+    public uint zxLayer1;
+    public uint zxLayer2;
+
     public static int Size()
     {
-        return sizeof(uint) * 6;
+        return sizeof(uint) * 6 + sizeof(uint) * 6;
     }
 }
 
@@ -178,6 +190,10 @@ public class AdjacencyDataPool
             Vertex.z = Reader.ReadSingle();
             Vertex.adjSerializedId = Reader.ReadUInt32();
             Vertex.adjNum = Reader.ReadUInt32();
+
+            Vertex.IsInMeshletBorder1 = Reader.ReadUInt32();
+            Vertex.IsInMeshletBorder2 = Reader.ReadUInt32();
+
             Vertices[j] = Vertex;
         }
 
@@ -214,6 +230,15 @@ public class AdjacencyDataPool
             Face.xy = Reader.ReadUInt32();
             Face.yz = Reader.ReadUInt32();
             Face.zx = Reader.ReadUInt32();
+
+            Face.xyLayer1 = Reader.ReadUInt32();
+            Face.xyLayer2 = Reader.ReadUInt32();
+            Face.yzLayer1 = Reader.ReadUInt32();
+            Face.yzLayer2 = Reader.ReadUInt32();
+            Face.zxLayer1 = Reader.ReadUInt32();
+            Face.zxLayer2 = Reader.ReadUInt32();
+
+
             AdjacencyFaces[j] = Face;
         }
 

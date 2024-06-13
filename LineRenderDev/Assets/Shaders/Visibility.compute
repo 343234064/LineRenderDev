@@ -8,12 +8,14 @@
 #define SLICE_SIZE SliceArgBuffer[0]
 
 StructuredBuffer<LineSegment> Segments;
+StructuredBuffer<VisibleLineSegment> VisibleSegments;
 StructuredBuffer<Slice> Slices;
 StructuredBuffer<uint> SegmentArgBuffer;
 StructuredBuffer<uint> SliceArgBuffer;
 
 RWStructuredBuffer<uint> VisibleLineArgBuffer;
 RWStructuredBuffer<PlainLine> VisibleLines;
+
 
 Texture2D<float> SceneDepthTexture;
 SamplerState LinearClampSampler;
@@ -209,6 +211,20 @@ uint2 CalculatePixelPosition(uint PixelLength, uint CurrentSegmentLengthShrinkTo
 }
 
 
+uint ArgBufferCounting()
+{
+    uint Original = 0;
+    InterlockedAdd(VisibleLineArgBuffer[0], 1, Original);
+    uint Id = Original;
+
+    if ((Original + 1) % GENERATE_PASS_PER_THREAD_ELEMENT_NUM == 0)
+        InterlockedAdd(VisibleLineArgBuffer[1], 1, Original);
+
+    return Id;
+}
+
+
+
 /*
 * 改成相隔2个像素点检测深度
 *
@@ -231,19 +247,7 @@ uint2 CalculatePixelPosition(uint PixelLength, uint CurrentSegmentLengthShrinkTo
 * 17.用exp2、log2或firstbithigh获取离当前最近的可见点，此为该段结尾，并计算结尾屏幕坐标
 * 18.输出该可见线段
 */
-/*
-* 问题点：
-* 1.需考虑单像素，摄像机越远，线段越小基本变成单像素大小
-* 2.CurrentGroupPixelPosition处于边界时：
-* a.线段边界
-* b.slice边界
-* c.线程边界
-* 3.ExtractTailIndex需要考虑合理的边界位置:
-* a.线段边界
-* b.slice边界
-* 4.TargetPixelPosition范围[0  ~ PixelLength], 至少01两个点
-* 
-*/
+
 [numthreads(VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM, 1, 1)]
 void Visibility(uint3 gid : SV_GroupID, uint gi : SV_GroupIndex)
 {
@@ -257,7 +261,7 @@ void Visibility(uint3 gid : SV_GroupID, uint gi : SV_GroupIndex)
     if (CurrentSliceIndex >= SLICE_SIZE) return;
 
     Slice CurrentSlice = Slices[CurrentSliceIndex];
-    LineSegment BeginSegment = Segments[CurrentSlice.BeginSegmentIndex];
+    VisibleLineSegment BeginSegment = VisibleSegments[CurrentSlice.BeginSegmentIndex];
     uint BeginPixelShrink = CurrentSlice.BeginPixel;
     uint BeginSegmentID = CurrentSlice.BeginSegmentIndex;
     uint SegmentBufferSize = SEGMENT_SIZE;
@@ -280,27 +284,30 @@ void Visibility(uint3 gid : SV_GroupID, uint gi : SV_GroupIndex)
             BeginSegmentID -= 1;
             break;
         }         
-        RemainingSegmentLength = Segments[BeginSegmentID].PixelLengthShrink;
+        RemainingSegmentLength = VisibleSegments[BeginSegmentID].PixelLengthShrink;
         BeginPixelShrink = 1;//BeginPixelShrink start from 1
     }
 
-    LineSegment TargetSegment = Segments[BeginSegmentID];
+    VisibleLineSegment TargetSegment = VisibleSegments[BeginSegmentID];
+    LineSegment SegmentData = Segments[TargetSegment.Id];
+
     uint2 PixelPosition = CalculatePixelPosition(TargetSegment.PixelLength, LengthFromBegin, RemainingSegmentLength, BeginPixelShrink, CurrentGroupPixelPosition);
     uint TargetPixelPosition = PixelPosition.x; //Range : [1 ~ PixelLength]
     uint TargetPixelPositionShrink = PixelPosition.y;
 
-    float4 ClipPosition1 = TargetSegment.ClipPosition[0];
-    float4 ClipPosition2 = TargetSegment.ClipPosition[1];
-    float2 NDCPosition1 = TargetSegment.NDCPosition[0].xy;
-    float2 NDCPosition2 = TargetSegment.NDCPosition[1].xy;
+    float4 ClipPosition1 = SegmentData.NDCPosition[0];// zw = ClipPosition.zw
+    float4 ClipPosition2 = SegmentData.NDCPosition[1];// zw = ClipPosition.zw
+    float2 NDCPosition1 = SegmentData.NDCPosition[0].xy;
+    float2 NDCPosition2 = SegmentData.NDCPosition[1].xy;
 
     float InvPixelLength = 1.0f / (float)TargetSegment.PixelLength;
     float TProjectedCenter = saturate(((float)TargetPixelPosition - 0.5f) * InvPixelLength);
     float TProjectedStart = saturate(((float)TargetPixelPosition - 1.0f) * InvPixelLength);
     float TProjectedEndOffset = ((CurrentGroupPixelPosition == (SLICE_PIXEL_SIZE - 1)) ? 1.0f : 0.0f); //1-pixel gap left between slices
-    float TProjectedEnd= saturate(((float)TargetPixelPosition + TProjectedEndOffset) * InvPixelLength);
+    float TProjectedEnd= saturate(((float)TargetPixelPosition + TProjectedEndOffset) * InvPixelLength); 
 
-    float TUnProject = (TProjectedCenter * TargetSegment.ClipPosition[0].w) / ((1.0f - TProjectedCenter) * TargetSegment.ClipPosition[1].w + TProjectedCenter * TargetSegment.ClipPosition[1].w);
+    float TUnProject = (TProjectedCenter * ClipPosition1.w) / (ClipPosition2.w);
+        //((1.0f - TProjectedCenter) * TargetSegment.ClipPosition[1].w + TProjectedCenter * TargetSegment.ClipPosition[1].w);
     
     float2 SamplePositionProjected = NDCPosition1 + (NDCPosition2 - NDCPosition1) * TProjectedCenter;
     float4 SamplePositionUnProject = ClipPosition1 + (ClipPosition2 - ClipPosition1) * TUnProject; //Clip space before perspective division
@@ -311,23 +318,22 @@ void Visibility(uint3 gid : SV_GroupID, uint gi : SV_GroupIndex)
     bool NeedShowVisible = HideVisibleEdge == 0;
     bool NeedHideOccludedEdge = HideOccludedEdge > 0;
     bool NeedHideBackFace = HideBackFaceEdge > 0;
-    bool IsBackFacing = TargetSegment.BackFacing > 0;
+    bool IsBackFacing = SegmentData.BackFacing > 0;
     bool NotOccluded = ZTest(SamplePositionProjectedZ, SceneDepth);
 
     bool NeedShowUnvisible = (NeedHideOccludedEdge ^ NeedHideBackFace) ?
        ((NeedHideOccludedEdge && !NeedHideBackFace) ? (IsBackFacing ? true : false) : (IsBackFacing ? false : true))
         :
        (NeedHideOccludedEdge ? false : true);
-    bool IsVisible = !IsBackFacing && NotOccluded;
+    bool IsVisible = true;// !IsBackFacing && NotOccluded;
 
     float2 SamplePositionProjectedStart = NDCPosition1 + (NDCPosition2 - NDCPosition1) * TProjectedStart;
     float2 SamplePositionProjectedEnd = NDCPosition1 + (NDCPosition2 - NDCPosition1) * TProjectedEnd;
     float4 CurrentPoint = float4(SamplePositionProjectedStart, SamplePositionProjectedEnd);
 
-    uint VertexIndex = (TargetPixelPosition == 1) ? (TargetSegment.VertexIndex[0] + 1) : ((TargetPixelPosition == TargetSegment.PixelLength) ? (TargetSegment.VertexIndex[1] + 1) : 0);
 
     SavePoint(CurrentPoint, CurrentGroupPixelPosition, ValidPoint);
-    SaveExtra(uint4(VertexIndex, CurrentGroupPixelPosition, 0, 0), CurrentGroupPixelPosition, ValidPoint);
+    SaveExtra(uint4(TargetPixelPosition, CurrentGroupPixelPosition, 0, 0), CurrentGroupPixelPosition, ValidPoint);
     SaveVisibility(IsVisible, CurrentGroupPixelPosition, ValidPoint);
     GroupMemoryBarrierWithGroupSync();
 
@@ -346,33 +352,48 @@ void Visibility(uint3 gid : SV_GroupID, uint gi : SV_GroupIndex)
     bool Show = ShowVisible || ShowUnvisible;
     if (Show && ValidPoint)
     {
-        uint MaxSearchLength = max(0, TargetSegment.PixelLengthShrink - TargetPixelPositionShrink);//计算shrink后的剩余像素
+        uint MaxSearchLength = max(0, TargetSegment.PixelLengthShrink - TargetPixelPositionShrink);//计算shrink后的剩余像素，保证最近的可见点在TargetSegment范围内
         int2 BitIndex = IsVisible ? ExtractLatestZeroBit(CurrentGroupPixelPosition, MaxSearchLength) : ExtractLatestOneBit(CurrentGroupPixelPosition, MaxSearchLength);
         int TailIndex = BitIndex.x - BitIndex.y;
 
         float4 Head = CurrentPoint;
         float4 Tail = LoadPoint(TailIndex);
         uint4 ExtraData = LoadExtra(TailIndex);
-        uint TailVertexIndex = ExtraData.x;
-        uint TailGroupIndex = ExtraData.y;
+        uint TailTargetPixelPosition = ExtraData.x;
+        uint TailGroupPixelPosition = ExtraData.y;
+
+        bool HeadIsSliceHead = (CurrentGroupPixelPosition == 0 || CurrentGroupPixelPosition == (VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM - 1));
+        bool TailIsSliceTail = (TailGroupPixelPosition == 0 || TailGroupPixelPosition == (VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM - 1));
+
+        bool HeadIsLinkToVertex = (TargetPixelPosition == 1);
+        bool TailIsLinkToVertex = (TailTargetPixelPosition == TargetSegment.PixelLength);
 
         if (Tail.x >= -1.0f) {
-            uint Original = 0;
-            InterlockedAdd(VisibleLineArgBuffer[1], 1, Original);
+            uint PlainLineId = ArgBufferCounting();
 
             PlainLine NewLine;
             NewLine.NDCPosition[0] = Head.xy;
             NewLine.NDCPosition[1] = Tail.zw;
-            NewLine.Id = Original;
-            NewLine.VertexIndex[0] = (VertexIndex != 0) ? VertexIndex - 1 : -1;
-            NewLine.VertexIndex[1] = (TailVertexIndex != 0) ? TailVertexIndex - 1 : -1;
-            NewLine.LinkState[0] = (NewLine.VertexIndex[0] != -1) ? 0 : ((CurrentGroupPixelPosition == 0 || CurrentGroupPixelPosition == (VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM - 1)) ? 1 : -1);
-            NewLine.LinkState[1] = (NewLine.VertexIndex[1] != -1) ? 0 : ((TailGroupIndex == 0 || TailGroupIndex == (VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM - 1)) ? 1 : -1);
-            NewLine.VertexIndex[0] = (NewLine.LinkState[0] == 1) ? CurrentSliceIndex : NewLine.VertexIndex[0];
-            NewLine.VertexIndex[1] = (NewLine.LinkState[1] == 1) ? CurrentSliceIndex : NewLine.VertexIndex[1];
-            NewLine.Visibility = ShowVisible;
+            
+            NewLine.PixelPosition[0] = float(TargetPixelPosition + TargetSegment.ClippedPositionOffset - 1) * TargetSegment.InvPixelLengthBeforeClippedMinusOne;
+            NewLine.PixelPosition[1] = float(TailTargetPixelPosition + TargetSegment.ClippedPositionOffset - 1) * TargetSegment.InvPixelLengthBeforeClippedMinusOne;
 
-            VisibleLines[Original] = NewLine;
+            NewLine.Id = PlainLineId;
+            NewLine.LineSegmentId = TargetSegment.Id;
+
+            NewLine.RunTimeVertexIndex[0] = SegmentData.RunTimeVertexIndex[0];
+            NewLine.RunTimeVertexIndex[1] = SegmentData.RunTimeVertexIndex[1];
+
+            NewLine.LinkState[0] = HeadIsLinkToVertex ? 0 : (HeadIsSliceHead ? CurrentSliceIndex + 1 :  -1);
+            NewLine.LinkState[1] = TailIsLinkToVertex ? 0 : (TailIsSliceTail ? CurrentSliceIndex + 1 :  -1);
+        
+            NewLine.Visibility = ShowVisible;
+            
+            NewLine.MeshletIndex[0] = SegmentData.MeshletIndex[0];
+            NewLine.MeshletIndex[1] = SegmentData.MeshletIndex[1];
+
+            VisibleLines[PlainLineId] = NewLine;
+
 
         }
 

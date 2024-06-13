@@ -7,8 +7,11 @@
 
 StructuredBuffer<AdjVertex> Vertices;
 StructuredBuffer<AdjFace> AdjacencyTriangles;
+
 RWStructuredBuffer<uint> SegmentArgBuffer;
-AppendStructuredBuffer<LineSegment> Segments;
+RWStructuredBuffer<LineSegment> Segments;
+AppendStructuredBuffer<VisibleLineSegment> VisibleSegments;
+RWStructuredBuffer<RunTimeVertexState> RunTimeVertexBuffer;
 
 uniform float3 LocalSpaceViewPosition;
 uniform float CreaseAngleThreshold;
@@ -215,42 +218,56 @@ uint2 CalculatePixelLength(float2 UnifyNDCPosition1, float2 UnifyNDCPosition2)
 }
 
 
-void ArgBufferCounting()
+int ArgBufferCounting(bool Visible)
 {
     int Original = 0;
-    InterlockedAdd(SegmentArgBuffer[0], 1, Original);
+    InterlockedAdd(SegmentArgBuffer[0], Visible ? 1 : 0, Original);
+
     if((uint)(Original + 1) % SLICE_PASS_PER_THREAD_ELEMENT_NUM == 0)
-        InterlockedAdd(SegmentArgBuffer[1], 1, Original);
+        InterlockedAdd(SegmentArgBuffer[1], Visible ? 1 : 0, Original);
+
+    InterlockedAdd(SegmentArgBuffer[4], 1, Original);
+    int Id = Original;
+    return Id;
 }
 
 
-inline void FillLineSegment(float4 ClipPos1, float4 ClipPos2, int2 VertexIndex, bool BackFacing, inout LineSegment output)
+
+
+uint4 CheckVertexIndex(uint2 VertexIndex, float3 ClipState)
 {
-    output.ClipPosition[0] = ClipPos1;
-    output.ClipPosition[1] = ClipPos2;
-    float4 NDCPos1 = CalculateNDCPosition(ClipPos1);
-    float4 NDCPos2 = CalculateNDCPosition(ClipPos2);
-    output.NDCPosition[0] = UnifyNDCPosition(NDCPos1);
-    output.NDCPosition[1] = UnifyNDCPosition(NDCPos2);
-
-    output.VertexIndex[0] = VertexIndex.x;
-    output.VertexIndex[1] = VertexIndex.y;
-    output.BackFacing = BackFacing ? 1 : 0;
-    uint2 PixelLength = CalculatePixelLength(output.NDCPosition[0].xy, output.NDCPosition[1].xy);
-    output.PixelLength = PixelLength.x;
-    output.PixelLengthShrink = PixelLength.y;
-    output.PixelLengthShrinkTotal = 0;
+    return uint4(VertexIndex, ClipState.y <= 0.0000001f ? 0 : 1, ClipState.z >= 0.9999999f ? 0 : 1);
 }
 
-int2 CheckVertexIndex(uint2 VertexIndex, float3 ClipState)
+
+
+void SyncAdjacency(uint VertexIndex, int LineId)
 {
-    return int2(ClipState.y <= 0.0000001f ? VertexIndex.x : -1, ClipState.z >= 0.9999999f ? VertexIndex.y : -1);
+    // Sync adjacency for chainning pass
+    uint RunTimeIndex = VertexIndex;
+
+    // Add adj num
+    uint Original = 0;
+    InterlockedAdd(RunTimeVertexBuffer[RunTimeIndex].AdjNum, 1, Original);
+
+    if (Original <= 2) {
+        Original = -1;
+        InterlockedCompareExchange(RunTimeVertexBuffer[RunTimeIndex].Left, -1, LineId, Original);
+        if (Original != -1)
+            InterlockedCompareExchange(RunTimeVertexBuffer[RunTimeIndex].Right, -1, LineId, Original);
+    }
+
 }
 
 
-void ExtractEdge(float3 V1, float3 V2, uint2 Index, float3 CurrentFaceNormal, float3 AdjFaceNormal, float3 LocalViewVector, float CreasePremultiplyAngleThreshold, bool NeedExtractSilhouette, bool NeedExtractCrease)
+void ExtractEdge(float3 V0, float3 V1, uint2 Index, 
+    uint2 MeshletIndex, 
+    float3 CurrentFaceNormal, float3 AdjFaceNormal, float3 LocalViewVector, float CreasePremultiplyAngleThreshold)
 {
     bool Add = false;
+
+    bool NeedExtractSilhouette = SilhouetteEnable > 0;
+    bool NeedExtractCrease = CreaseEnable > 0;
 
     float DotFactorCurrentFace = dot(CurrentFaceNormal, LocalViewVector);
     float DotFactorAdjFace = dot(AdjFaceNormal, LocalViewVector);
@@ -262,25 +279,65 @@ void ExtractEdge(float3 V1, float3 V2, uint2 Index, float3 CurrentFaceNormal, fl
     bool AdjIsBackFace = step(DotFactorAdjFace, BACK_FACE_THRESHOLD);
     bool BackFacing = CurrentIsBackFace && AdjIsBackFace;
 
+    float4 ClipPos0BeforeClip = CalculateClipSpacePosition(V0);
     float4 ClipPos1BeforeClip = CalculateClipSpacePosition(V1);
-    float4 ClipPos2BeforeClip = CalculateClipSpacePosition(V2);
+    float4 Pos0ForClipping = ClipPos0BeforeClip;
     float4 Pos1ForClipping = ClipPos1BeforeClip;
-    float4 Pos2ForClipping = ClipPos2BeforeClip;
 #if DEBUG_CLIPPING
+    Pos0ForClipping = CalculateClipSpacePositionForClipping(V0);
     Pos1ForClipping = CalculateClipSpacePositionForClipping(V1);
-    Pos2ForClipping = CalculateClipSpacePositionForClipping(V2);
 #endif
 
-    float3 ClipState = PreClipping(Pos1ForClipping, Pos2ForClipping);
-    float4 ClipPos1 = ClampPosition(float4(ClipPos1BeforeClip + ClipState.y * (ClipPos2BeforeClip - ClipPos1BeforeClip)));
-    float4 ClipPos2 = ClampPosition(float4(ClipPos1BeforeClip + ClipState.z * (ClipPos2BeforeClip - ClipPos1BeforeClip)));
+    float3 ClipState = PreClipping(Pos0ForClipping, Pos1ForClipping);
+    float4 ClipPos0 = ClampPosition(float4(ClipPos0BeforeClip + ClipState.y * (ClipPos1BeforeClip - ClipPos0BeforeClip)));
+    float4 ClipPos1 = ClampPosition(float4(ClipPos0BeforeClip + ClipState.z * (ClipPos1BeforeClip - ClipPos0BeforeClip)));
 
-    if (Add && ClipState.x >= 0.0f)
+    bool UnClipped = ClipState.x >= 0.0f;
+    if (Add)
     {
+        float4 NDCPos0 = CalculateNDCPosition(ClipPos0);
+        float4 NDCPos1 = CalculateNDCPosition(ClipPos1);
+        NDCPos0 = UnifyNDCPosition(NDCPos0);
+        NDCPos1 = UnifyNDCPosition(NDCPos1);
+
         LineSegment Line = (LineSegment)0;
-        FillLineSegment(ClipPos1, ClipPos2, CheckVertexIndex(Index, ClipState), BackFacing, Line);
-        Segments.Append(Line);
-        ArgBufferCounting();
+
+        Line.NDCPosition[0] = float4(NDCPos0.xy, ClipPos0.zw);
+        Line.NDCPosition[1] = float4(NDCPos1.xy, ClipPos1.zw);
+
+        Line.BackFacing = BackFacing ? 1 : 0;
+
+        //uint4 VertexIndex = CheckVertexIndex(uint2(V1, V2), ClipState);
+        Line.RunTimeVertexIndex[0] = Index.x;
+        Line.RunTimeVertexIndex[1] = Index.y;
+
+        Line.Direction = normalize(NDCPos1.xy - NDCPos0.xy);
+
+        Line.MeshletIndex[0] = MeshletIndex.x;
+        Line.MeshletIndex[1] = MeshletIndex.y;
+
+        Line.Id = ArgBufferCounting(UnClipped);
+        Segments[Line.Id] = Line;
+
+        if (UnClipped) {
+
+            VisibleLineSegment VisibleLine = (VisibleLineSegment)0;
+            uint2 PixelLength = CalculatePixelLength(Line.NDCPosition[0].xy, Line.NDCPosition[1].xy);
+            VisibleLine.PixelLength = PixelLength.x;
+            VisibleLine.PixelLengthShrink = PixelLength.y;
+            VisibleLine.PixelLengthShrinkTotal = 0;
+
+            float2 NDC0XYBeforeClip = UnifyNDCPositionXY(CalculateNDCPositionXY(ClipPos0BeforeClip));
+            float2 NDC1XYBeforeClip = UnifyNDCPositionXY(CalculateNDCPositionXY(ClipPos1BeforeClip));
+            VisibleLine.InvPixelLengthBeforeClippedMinusOne = 1.0f / float(CalculatePixelLength(NDC0XYBeforeClip, NDC1XYBeforeClip).x - 1.0f);
+            VisibleLine.ClippedPositionOffset = CalculatePixelLength(NDC0XYBeforeClip, Line.NDCPosition[0].xy).x;
+            VisibleLine.Id = Line.Id;
+            VisibleSegments.Append(VisibleLine);
+
+        }
+
+        SyncAdjacency(Index.x, Line.Id);
+        SyncAdjacency(Index.y, Line.Id);
     }
 
 }
@@ -292,7 +349,8 @@ void Extraction (uint3 id : SV_DispatchThreadID)
     if (id.x >= TotalAdjacencyTrianglesNum) return;
 
     AdjFace CurrentFace = AdjacencyTriangles[id.x];
-      
+
+
     float3 VertexX = Vertices[CurrentFace.x].v;
     float3 VertexY = Vertices[CurrentFace.y].v;
     float3 VertexZ = Vertices[CurrentFace.z].v;
@@ -302,37 +360,39 @@ void Extraction (uint3 id : SV_DispatchThreadID)
     bool AddZX = false;
 
     float3 CurrentFaceNormal = ComputeNormal(VertexX, VertexY, VertexZ);
-
-    bool NeedExtractSilhouette =  SilhouetteEnable > 0;
-    bool NeedExtractCrease = CreaseEnable > 0;
     float CreasePremultiplyAngleThreshold = length(CurrentFaceNormal) * (cos(CreaseAngleThreshold) + 0.000001f); //+1.0e-6 for Epsilon
-
 
     if (CurrentFace.xy >= 1)
     {
         float3 AdjVertexXY = Vertices[CurrentFace.xy - 1].v;
         float3 AdjFaceXYNormal = ComputeNormal(VertexY, VertexX, AdjVertexXY);
-        float3 LocalViewVector = normalize(LocalSpaceViewPosition.xyz - (VertexX + VertexY) / 2.0f);
+        float3 LocalViewVector = normalize(LocalSpaceViewPosition.xyz - (VertexX + VertexY) * 0.5f);
 
-        ExtractEdge(VertexX, VertexY, uint2(CurrentFace.x, CurrentFace.y), CurrentFaceNormal, AdjFaceXYNormal, LocalViewVector, CreasePremultiplyAngleThreshold, NeedExtractSilhouette, NeedExtractCrease);
+        ExtractEdge(VertexX, VertexY, uint2(CurrentFace.x, CurrentFace.y), 
+            uint2(CurrentFace.xyLayer1, CurrentFace.xyLayer2), 
+            CurrentFaceNormal, AdjFaceXYNormal, LocalViewVector, CreasePremultiplyAngleThreshold);
     }
 
     if (CurrentFace.zx >= 1)
     {
         float3 AdjVertexZX = Vertices[CurrentFace.zx - 1].v;
         float3 AdjFaceZXNormal = ComputeNormal(VertexZ, AdjVertexZX, VertexX);
-        float3 LocalViewVector = normalize(LocalSpaceViewPosition.xyz - (VertexX + VertexZ) / 2.0f);
+        float3 LocalViewVector = normalize(LocalSpaceViewPosition.xyz - (VertexX + VertexZ) * 0.5f);
 
-        ExtractEdge(VertexZ, VertexX, uint2(CurrentFace.z, CurrentFace.x), CurrentFaceNormal, AdjFaceZXNormal, LocalViewVector, CreasePremultiplyAngleThreshold, NeedExtractSilhouette, NeedExtractCrease);
+        ExtractEdge(VertexZ, VertexX, uint2(CurrentFace.z, CurrentFace.x),
+            uint2(CurrentFace.zxLayer1, CurrentFace.zxLayer2), 
+            CurrentFaceNormal, AdjFaceZXNormal, LocalViewVector, CreasePremultiplyAngleThreshold);
     }
 
     if (CurrentFace.yz >= 1)
     {
         float3 AdjVertexYZ = Vertices[CurrentFace.yz - 1].v;
         float3 AdjFaceYZNormal = ComputeNormal(AdjVertexYZ, VertexZ, VertexY);
-        float3 LocalViewVector = normalize(LocalSpaceViewPosition.xyz - (VertexY + VertexZ) / 2.0f);
+        float3 LocalViewVector = normalize(LocalSpaceViewPosition.xyz - (VertexY + VertexZ) * 0.5f);
 
-        ExtractEdge(VertexY, VertexZ, uint2(CurrentFace.y, CurrentFace.z), CurrentFaceNormal, AdjFaceYZNormal, LocalViewVector, CreasePremultiplyAngleThreshold, NeedExtractSilhouette, NeedExtractCrease);
+        ExtractEdge(VertexY, VertexZ, uint2(CurrentFace.y, CurrentFace.z),
+            uint2(CurrentFace.yzLayer1, CurrentFace.yzLayer2), 
+            CurrentFaceNormal, AdjFaceYZNormal, LocalViewVector, CreasePremultiplyAngleThreshold);
     }
 
 

@@ -1,171 +1,231 @@
 // Each #kernel tells which function to compile; you can have many kernels
-#pragma kernel CSMain
+#pragma kernel Generate
+
+#include "Common.cginc"
+
+#define VISIBLE_LINE_SIZE VisibleLineArgBuffer[0]
+StructuredBuffer<uint> VisibleLineArgBuffer;
+StructuredBuffer<PlainLine> VisibleLines;
+StructuredBuffer<LineSegment> Segments;
+
+RWStructuredBuffer<RunTimeVertexState> RunTimeVertexBuffer;
+RWStructuredBuffer<uint> LineMeshArgBuffer;
+RWStructuredBuffer<LineMesh> LineMeshBuffer;
+
+uniform float LineExtractWidth;
+uniform float LineCenterOffset;
+uniform float3 ObjectScale;
+uniform float4  ScreenScaledResolution;
 
 
-
-/*
-* 
-* 原始网格结构:
-* 1.网格分为三层meshlet
-* 2.第一层meshlet: 256个三角形(或边？)为一个meshlet
-* 3.第二层meshlet: 256个第一层meshlet为一个meshlet
-* 4.第三层meshlet: 256个第二层meshlet为一个meshlet
-* 
-* 写到AdjFace中，每条边增加三层meshlet编号以及边界标记
-* 
-* 总共 256 x 256 x 256 = 16,777,216 级别面数(或边数)
-* 
-* 数据结构:
-* 1.运行时顶点列表(按照原序号存放运行时顶点数据)(固定数量)(需要每帧清理)（有冗余，并不是所有顶点都会用到）:
-*       领接边编号占位，用于判断领接边序号数组中哪个是被哪条边使用了
-*       领接边序号数组(包括第一二三层meshlet)(由于线段头的判断标准，只需2个，不需要考虑超过2个的领接边)
-*       是否第一层头顶点(如是，meshlet第一层统计数据将生效)
-*       meshlet第一层统计数据
-*       是否第二层头顶点(如是，meshlet第二层统计数据将生效)
-*       meshlet第二层统计数据(正反向)
-*       是否第三层头顶点(如是，meshlet第三层统计数据将生效)
-*       meshlet第三层统计数据(正反向)
-* 
-* 2.PlainLine线段列表：
-*       NDCPosition
-*       Id
-*       Visibility
-*       2个顶点序号
-*       领接边序号(由于线段头的判断标准，只需2个)
-*       第一层meshlet序号、是否边界标记
-*       第二层meshlet序号、是否边界标记
-*       第三层meshlet序号、是否边界标记
-*       当前边的第一二三层头顶点编号(用于回溯各层遍历数据)
-*       当前正逆向的顺序编号Sum
-* 
-* 3.第二三层线段头列表
-*       起始meshlet序号(激活的meshlet列表)
-*
-* 4.第二三层激活的meshlet列表
-*       Id
-*       2个顶点序号
-*       当前meshlet内部(即上一层结果)Sum
-*       当前正逆向的顺序编号Sum
-*       
-* 5.LineSegment
-*       增加2个顶点的adjNum
-*       增加第一层meshlet序号、是否边界标记
-*       增加第二层meshlet序号、是否边界标记
-*       增加第三层meshlet序号、是否边界标记
-* 
-* 
-* 
-* Generate Pass（这一pass可考虑提前生成mesh）：
-* 1.生成Pass1线段头列表
-*      判断是否线段头:
-*      a.在第二层meshlet边界的边（查询LineSegment的meshlet序号）
-*      b.与当前顶点领接顶点超过1个 (查询LineSegment的adjNum)
-*      c.与当前顶点领接顶点为0个(包括被可见性切断后新增的顶点) (查询LineSegment的adjNum)
-*      d.当前边与领接边角度小于给定的角度
-* 
-* 2.生成第二层线段头列表:
-*       判断当前线段是否为第三层meshlet线段头，如果是，加入到线段头列表
-*       判断是否线段头:
-*       a.在第三层meshlet边界的边 (查询LineSegment的meshlet序号）
-*       b.与当前顶点领接顶点超过1个 (查询LineSegment的adjNum)
-*       c.与当前顶点领接顶点为0个(包括被可见性切断后新增的顶点) (查询LineSegment的adjNum)
-*       d.当前边与领接边角度小于给定的角度 
-*      
-* 3.生成第三层线段头列表:
-*       判断是否线段头:
-*       a.不再判断边界
-*       b.与当前顶点领接顶点超过1个 (查询LineSegment的adjNum)
-*       c.与当前顶点领接顶点为0个(包括被可见性切断后新增的顶点) (查询LineSegment的adjNum)
-*       d.当前边与领接边角度小于给定的角度
-* 
-* 3.握手连接操作(第一层meshlet):
-*       a.写入当前边序号到顶点数据(运行时顶点列表，如果是slice，写入到slice数组中)中
-*       b.同步(MemmoryBarrier)
-*       c.取出顶点(如果是slice，从slice数组中读取)另一端边序号
-* 
-* 
-* Chainning Pass
-* Pass1遍历方法(线段头数组dispatch)(线段头数组已经按照meshlet分组):
-* 1.当前线程拿到一个线段头(PlainLine结构):
-*       记录当前头线段的头顶点编号(运行时顶点列表编号)
-*       开始循环 i ： 0 -> 256，i+=1：
-*           对当前线段：
-*           查询当前PlainLine结构下Sum值是否-1（使用InterlockedCompareExchange 查询与设置Sum值为i为同一步进行，检查返回original_value是否为-1）
-*           如果是，设置Sum值为i，设置当前边PlainLine结构下的头顶点编号为线段头顶点编号，继续循环
-*           如果不是，设置当前（stop index, total sum）到头顶点的meshlet层统计数据(运行时顶点列表)，跳出循环
-*           取当前对向领接边编号，访问PlainLine线段列表，取出下一个线段
-*
-* 2.生成第二层激活的meshlet列表:
-*       当前线程判断是否该由自己来进行这一操作：
-*           往第二层激活的meshlet列表添加新的meshlet
-*           写入左右2个顶点以及新的meshlet序号到新的meshlet数据中
-*           握手操作(第二层meshlet):
-*               a.写入当前meshlet序号到顶点数据(运行时顶点列表)
-*               b.同步(MemmoryBarrier)
-*               c.取出顶点另一端meshlet序号)
-* 
-* 3.往第二层线段头(运行时顶点数组)写入起始meshlet序号(激活的meshlet列表)
-* 
-* 
-* 
-* 
-* Pass2遍历方法(线段头数组dispatch)(线段头数组已经按照meshlet分组):
-* 1.当前线程拿到一个线段头(第二层线段头列表):
-*       从列表中取出第一个meshlet序号，使用这个序号从第二层激活的meshlet列表中取出头meshlet
-*       记录当前头meshlet的头顶点编号(运行时顶点列表编号)
-*       开始循环 i ： 0 -> 256，i+=1：
-*           对当前meshlet：
-*           查询当前meshlet结构下Sum值是否-1（使用InterlockedCompareExchange 查询与设置Sum值为i为同一步进行，检查返回original_value是否为-1）
-*           如果是，设置Sum值为meshlet内部统计和，设置当前边meshlet结构下的头meshlet的头顶点编号为头顶点编号，继续循环
-*           如果不是，设置当前（stop index, total sum）到头顶点的meshlet层统计数据(运行时顶点列表)，跳出循环
-*           取当前对向领接meshlet编号，访问第二层激活的meshlet列表，取出下一个meshlet
-*
-* 2.生成第三层激活的meshlet列表:
-*       当前线程判断是否该由自己来进行这一操作：
-*           往第三层激活的meshlet列表添加新的meshlet
-*           写入左右2个顶点以及新的meshlet序号到新的meshlet数据中
-*           握手操作(第三层meshlet):
-*               a.写入当前meshlet序号到顶点数据(运行时顶点列表)
-*               b.同步(MemmoryBarrier)
-*               c.取出顶点另一端meshlet序号)
-*
-* 3.往第三层线段头(运行时顶点数组)写入起始meshlet序号(激活的meshlet列表)
-*
-* 
-* 
-* 
-* Pass3遍历方法(线段头数组dispatch)(线段头数组已经按照meshlet分组):
-* 1.当前线程拿到一个线段头(第三层线段头列表):
-*       从列表中取出第一个meshlet序号，使用这个序号从第三层激活的meshlet列表中取出头meshlet
-*       记录当前头meshlet的头顶点编号(运行时顶点列表编号)
-*       开始循环 i ： 0 -> None，i+=1：
-*           对当前meshlet：
-*           查询当前meshlet结构下Sum值是否-1（使用InterlockedCompareExchange 查询与设置Sum值为i为同一步进行，检查返回original_value是否为-1）
-*           如果是，设置Sum值为meshlet内部统计和，设置当前边meshlet结构下的头meshlet的头顶点编号为头顶点编号，继续循环
-*           如果不是，设置当前（stop index, total sum）到头顶点的meshlet层统计数据(运行时顶点列表)，跳出循环
-*           取当前对向领接meshlet编号，访问第三层激活的meshlet列表，取出下一个meshlet
-* 
-* 
-* 最后统计结果计算：
-*       正向：第一层当前统计序号 + 第二层当前方向的统计和 + 第三层当前方向统计和
-*       反向：第一层对向统计结束序号 + （第一层正向统计结束序号-当前统计序号+1） + 第二层对方向的统计和 + 第三层对方向统计和
-* 
-* 
-*/
-
-
-// Create a RenderTexture with enableRandomWrite flag and set it
-// with cs.SetTexture
-RWTexture2D<float4> Result;
-
-
-
-
-
-[numthreads(8,8,1)]
-void CSMain (uint3 id : SV_DispatchThreadID)
+struct LineAttributes
 {
-    // TODO: insert actual code here!
+    float Curvature[2];
+    uint MeshletId;
+};
 
-    Result[id.xy] = float4(id.x & id.y, (id.x & 15)/15.0, (id.y & 15)/15.0, 0.0);
+
+
+float GetCurvature(float2 a, float2 b)
+{
+    return dot(a, b) * 0.5f + 0.5f;
+}
+
+
+float4 GetNormalOfLine(float2 a, float2 b)
+{
+    float dx = b.x - a.x;
+    float dy = b.y - a.y;
+
+    return float4(normalize(float2( -dy, dx)), normalize(float2(dy, -dx)));
+}
+
+uint AddLineMeshCounter()
+{
+    uint Id = 0;
+    InterlockedAdd(LineMeshArgBuffer[1], 2, Id);
+
+    return Id * 0.5;
+}
+
+
+
+
+void ExtractTriangleMesh(in PlainLine Current, in LineAttributes Attributes)
+{
+    float ExtractWidth = LineExtractWidth;
+    float InnerSideWidth = ExtractWidth * (LineCenterOffset + 0.5f);
+    float OuterSideWidth = ExtractWidth * (0.5f - LineCenterOffset);
+
+    float ScreenScaledFactor = ScreenScaledResolution.x * ScreenScaledResolution.w;
+    float4 CurrentNormal = GetNormalOfLine(Current.NDCPosition[0].xy, Current.NDCPosition[1].xy);
+    CurrentNormal.y *= ScreenScaledFactor;
+    CurrentNormal.w *= ScreenScaledFactor;
+
+    float2 ExtractedV0_1 = Current.NDCPosition[0].xy + CurrentNormal.xy * InnerSideWidth;
+    float2 ExtractedV0_2 = Current.NDCPosition[0].xy + CurrentNormal.zw * OuterSideWidth;
+    float2 ExtractedV1_1 = Current.NDCPosition[1].xy + CurrentNormal.xy * InnerSideWidth;
+    float2 ExtractedV1_2 = Current.NDCPosition[1].xy + CurrentNormal.zw * OuterSideWidth;
+
+    uint Id = AddLineMeshCounter();
+    LineMesh NewMesh = (LineMesh)0;
+    NewMesh.Position[0] = ExtractedV0_2;
+    NewMesh.Position[1] = ExtractedV0_1;
+    NewMesh.Position[2] = ExtractedV1_2;
+    NewMesh.Position[3] = ExtractedV1_1;
+    NewMesh.UV[0] = float2(0.0f, 0.0f);
+    NewMesh.UV[1] = float2(0.0f, 0.0f);
+    NewMesh.UV[2] = float2(0.0f, 0.0f);
+    NewMesh.UV[3] = float2(0.0f, 0.0f);
+    NewMesh.Curvature[0] = Interpolate(Attributes.Curvature[0], Attributes.Curvature[1], Current.PixelPosition[0]);
+    NewMesh.Curvature[1] = Interpolate(Attributes.Curvature[0], Attributes.Curvature[1], Current.PixelPosition[1]);
+    NewMesh.Id = Attributes.MeshletId;
+    LineMeshBuffer[Id] = NewMesh;
+}
+
+
+
+void SyncAdjacency(RunTimeVertexState RumTimeVertex, uint VertexIndex, int LinkState, uint PlainLineId, int LineSegmentId)
+{
+    if (LinkState == 0) {
+        if (RumTimeVertex.Left == LineSegmentId && RumTimeVertex.Left != -1)
+        {
+            RunTimeVertexBuffer[VertexIndex].Left = PlainLineId;
+        }
+        else if (RumTimeVertex.Right == LineSegmentId && RumTimeVertex.Right != -1)
+        {
+            RunTimeVertexBuffer[VertexIndex].Right = PlainLineId;
+        }
+    }
+
+}
+
+
+void CalculateCurvature(in float2 CurrentDirection, in float2 AdjSegmentDirOnV0, in float2 AdjSegmentDirOnV1, bool V0IsLineHead, bool V1IsLineHead, inout LineAttributes Attributes)
+{
+    float Curvature0 = GetCurvature( CurrentDirection, AdjSegmentDirOnV0);
+    float Curvature1 = GetCurvature(-CurrentDirection, AdjSegmentDirOnV1);
+
+    float V0Curvature = (V0IsLineHead && V1IsLineHead) ? 0.0f : (V0IsLineHead ? Curvature1 : Curvature0);
+    float V1Curvature = (V0IsLineHead && V1IsLineHead) ? 0.0f : (V1IsLineHead ? Curvature0 : Curvature1);
+
+    Attributes.Curvature[0] = pow(saturate(V0Curvature*20.0), 2.0);
+    Attributes.Curvature[1] = pow(saturate(V1Curvature*20.0), 2.0);
+
+}
+
+
+
+
+[numthreads(GENERATE_PASS_PER_THREAD_ELEMENT_NUM,1,1)]
+void Generate(uint3 id : SV_DispatchThreadID)
+{
+    uint CurrentId = id.x;
+
+    if (CurrentId >= VISIBLE_LINE_SIZE) return;
+
+    PlainLine Current = VisibleLines[CurrentId];
+    LineAttributes Attributes = (LineAttributes)0;
+
+    uint V0RunTimeIndex = Current.RunTimeVertexIndex[0];
+    uint V1RunTimeIndex = Current.RunTimeVertexIndex[1];
+    RunTimeVertexState RumTimeVertex0 = RunTimeVertexBuffer[V0RunTimeIndex];
+    RunTimeVertexState RumTimeVertex1 = RunTimeVertexBuffer[V1RunTimeIndex];
+
+    bool V0IsLineHead = RumTimeVertex0.AdjNum != 2 ? true : false;
+    bool V1IsLineHead = RumTimeVertex1.AdjNum != 2 ? true : false;
+
+    int AdjSegmentOnV0Id = (RumTimeVertex0.Left == Current.LineSegmentId) ? RumTimeVertex0.Right : RumTimeVertex0.Left;
+    int AdjSegmentOnV1Id = (RumTimeVertex1.Left == Current.LineSegmentId) ? RumTimeVertex1.Right : RumTimeVertex1.Left;
+    LineSegment AdjSegmentOnV0 = Segments[AdjSegmentOnV0Id];
+    LineSegment AdjSegmentOnV1 = Segments[AdjSegmentOnV1Id];
+    LineSegment CurrentSegment = Segments[Current.LineSegmentId];
+
+    bool t0 = false;
+    float2 CurrrentDirOnV0 = CurrentSegment.Direction;
+    float2 AdjSegmentDirOnV0 = float2(0.0f, 0.0f);
+    if (V0RunTimeIndex == AdjSegmentOnV0.RunTimeVertexIndex[0])
+    {
+        AdjSegmentDirOnV0 = AdjSegmentOnV0.Direction;
+    }
+    else if (V0RunTimeIndex == AdjSegmentOnV0.RunTimeVertexIndex[1])
+    {
+        AdjSegmentDirOnV0 = -AdjSegmentOnV0.Direction;
+    }
+    else
+    {
+        t0 = true;
+    }
+    float2 CurrrentDirOnV1 = CurrentSegment.Direction;
+    float2 AdjSegmentDirOnV1 = float2(0.0f, 0.0f);
+    if (V1RunTimeIndex == AdjSegmentOnV1.RunTimeVertexIndex[0])
+    {
+        AdjSegmentDirOnV1 = AdjSegmentOnV1.Direction;
+        CurrrentDirOnV1 = -CurrrentDirOnV1;
+    }
+    else if (V1RunTimeIndex == AdjSegmentOnV1.RunTimeVertexIndex[1])
+    {
+        AdjSegmentDirOnV1 = -AdjSegmentOnV1.Direction;
+        CurrrentDirOnV1 = -CurrrentDirOnV1;
+    }
+    else
+    {
+        t0 = true;
+    }
+    CalculateCurvature(CurrentSegment.Direction, AdjSegmentDirOnV0, AdjSegmentDirOnV1, V0IsLineHead, V1IsLineHead, Attributes);
+
+
+
+ 
+    Attributes.MeshletId = AdjSegmentOnV1.MeshletIndex[0];
+
+    float Angle0 = GetCurvature(CurrrentDirOnV0, AdjSegmentDirOnV0);
+    float Angle1 = GetCurvature(CurrrentDirOnV1, AdjSegmentDirOnV1);
+    if (Angle0 > 0.5f) V0IsLineHead = true;
+    if (Angle1 > 0.5f) V1IsLineHead = true;
+
+    float Curvature0 = 0.0f;
+    float Curvature1 = 0.0f;
+    if (V0IsLineHead && !V1IsLineHead) {
+        
+        Curvature1 = Angle1;
+        Curvature0 = Curvature1;
+    }
+    if (V1IsLineHead && !V0IsLineHead) {
+        Curvature0 = Angle0;
+        Curvature1 = Curvature0; 
+    }
+    if (!V0IsLineHead && !V1IsLineHead) {
+        Curvature0 = Angle0;
+        Curvature1 = Angle1;
+    }
+
+    if (V0IsLineHead && V1IsLineHead)
+    {
+        Curvature0 = 0.0f;
+        Curvature1 = 0.0f;
+
+    }
+    
+
+
+    Attributes.Curvature[0] =  pow(saturate(Curvature0 * 20.0), 1.0);
+    Attributes.Curvature[1] =  pow(saturate(Curvature1 * 20.0), 1.0);
+
+
+
+
+
+
+    //SyncAdjacency(RumTimeVertex0, V0RunTimeIndex, Current.LinkState[0], Current.Id, Current.LineSegmentId);
+    //SyncAdjacency(RumTimeVertex1, V1RunTimeIndex, Current.LinkState[1], Current.Id, Current.LineSegmentId);
+
+
+
+
+
+
+    ////Gernerate Mesh
+    ExtractTriangleMesh(Current, Attributes);
+
 }

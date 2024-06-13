@@ -29,6 +29,8 @@
 #define VISIBILITY_CACHE_NUM 2 // 64/32
 
 
+#define GENERATE_PASS_PER_THREAD_ELEMENT_NUM 256
+
 #include "Structures.cginc"
 
 
@@ -44,10 +46,14 @@ inline float4 CalculateNDCPosition(float4 ClipPosition)
 
     return Projected;
 }
-
-inline float4 UnifyNDCPosition(float4 NDCPosition)
+inline float2 CalculateNDCPositionXY(float4 ClipPosition)
 {
-    float4 UnifyNDCPosition = float4(NDCPosition.x * 0.5f + 0.5f, NDCPosition.y * 0.5f + 0.5f, NDCPosition.z, 1.0f);
+    return float2(ClipPosition.xy / ClipPosition.w);
+}
+
+float4 UnifyNDCPosition(float4 NDCPosition)
+{
+    float4 UnifyNDCPosition = float4(NDCPosition.x * 0.5f + 0.5f, NDCPosition.y * 0.5f + 0.5f, NDCPosition.z, NDCPosition.w);
 #if FLIPPED_PROJECTION
     UnifyNDCPosition.y = 1.0f - UnifyNDCPosition.y;
 #endif
@@ -56,8 +62,19 @@ inline float4 UnifyNDCPosition(float4 NDCPosition)
 #endif
     return UnifyNDCPosition;
 }
+float2 UnifyNDCPositionXY(float2 NDCPosition)
+{
+    float2 UnifyNDCPosition = float2(NDCPosition.x * 0.5f + 0.5f, NDCPosition.y * 0.5f + 0.5f);
+#if FLIPPED_PROJECTION
+    UnifyNDCPosition.y = 1.0f - UnifyNDCPosition.y;
+#endif
 
-inline float4 ReverseUnifyNDCPosition(float4 UnifyNDCPosition)
+    return UnifyNDCPosition;
+}
+
+
+
+float4 ReverseUnifyNDCPosition(float4 UnifyNDCPosition)
 {
     float4 NDCPosition = UnifyNDCPosition;
 
@@ -91,3 +108,23 @@ inline bool ZTest(float PositionDepth, float SceneDepth)
 #endif
 }
 
+inline float Interpolate(float V0Attribute, float V1Attribute, float TFromV0)
+{
+    float T = saturate(TFromV0);
+    return V0Attribute * (1.0f - T) + V1Attribute * T;
+}
+
+inline float2 Interpolate(float2 V0Attribute, float2 V1Attribute, float TFromV0)
+{
+    float T = saturate(TFromV0);
+    return V0Attribute * (1.0f - T) + V1Attribute * T;
+}
+
+
+
+float3 Hash31(float p)
+{
+    float3 p3 = frac(float3(p, p, p) * float3(0.1031f, 0.1030f, 0.0973f));
+    p3 += dot(p3, p3.yzx + 33.33f);
+    return frac((p3.xxy + p3.yzz) * p3.zyx);
+}

@@ -22,54 +22,70 @@ Shader "LineRender/LineShader"{
 
 			fixed4 TintColor;
 			float4 WorldPositionOffset;
+			float MeshletLayer1Strength;
+			float MeshletLayer2Strength;
 
 			//UNITY_DECLARE_DEPTH_TEXTURE(_CameraDepthTexture);
 
 			#include "Common.cginc"
 
-			StructuredBuffer<PlainLine> Lines;
+			StructuredBuffer<LineMesh> Lines;
 			//StructuredBuffer<float3> Positions;
 
 			struct Output
 			{
 				float4 position : SV_POSITION;
-				float4 screenpos : TEXCOORD0;
-				float4 color : TEXCOORD1;
+				float2 uv : TEXCOORD0;
+				float curvature : TEXCOORD1;
+
+				float4 color : TEXCOORD2;
 			};
+
 
 
 			Output vert(uint vertex_id: SV_VertexID, uint instance_id : SV_InstanceID)
 			{
-				//uint2 edgeIndex = LinesIndex[instance_id];
-				//uint positionIndex = edgeIndex[vertex_id];
-				//float3 localposition = Positions[positionIndex];
-				PlainLine Line = Lines[instance_id];
-				//float3 localposition = Line.LocalPosition[vertex_id];
-
-				//float4 worldposition = mul(ObjectWorldMatrix, float4(localposition, 1));
-				//worldposition.xyz += WorldPositionOffset.xyz;
-				float4 position = ReverseUnifyNDCPosition(float4(Line.NDCPosition[vertex_id].xy, 1.0f, 1.0f)); // 1.0f to turn off perspective divide
-				//position = UnityWorldToClipPos(worldposition);
+				const uint index[2][3] = { 0, 1, 2, 1, 3, 2 };
+				uint instance_select = instance_id % 2 == 0;
+				uint instanceId = instance_select ? instance_id * 0.5 : (instance_id - 1) * 0.5;
+				uint vertexId =  index[instance_select][vertex_id];
+				
+				LineMesh Line = Lines[instanceId];
+				float4 position = ReverseUnifyNDCPosition(float4(Line.Position[vertexId], 1.0f, 1.0f)); // w = 1.0f to turn off perspective divide
+				float2 uv = Line.UV[vertexId];
+				float curvature = Line.Curvature[vertexId < 2 ? 0 : 1];
 
 				Output output = (Output)0;
 				output.position = position;
-
+				output.uv = uv;
+				output.curvature = curvature;
 				
 				output.color = float4(1.0, 1.0, 1.0, 1.0);
 				//if (Line.BackFacing == 1)
 				//	output.color = float4(1.0, 1.0, 0.0, 1.0);
-				if (Line.Visibility == 0)
-					output.color *= float4(0.5, 0.5, 0.0, 1.0);
+				//if (Line.Visibility == 0)
+				//	output.color *= float4(0.5, 0.5, 0.0, 1.0);
+
+				
+				/*
+				if (Line.LinkState[vertex_id] == 0) {
+					AdjVertex V1 = Vertices[Line.VertexIndex[vertex_id]];
+					output.color.rgb = lerp(float3(1.0, 1.0, 1.0), float3(1.0, 0.0, 0.0), V1.IsInMeshletBorder2);
+				}
+				else
+				{
+					output.color.rgb = float3(1.0, 1.0, 1.0);
+				}*/
+				output.color.rgb =  Hash31((float)Line.Id);
+				
 				return output;
 			}
 
-			fixed4 frag(Output input) : SV_TARGET{
+			fixed4 frag(Output input) : SV_TARGET
+			{
 
-				//float depthTexValue = SAMPLE_DEPTH_TEXTURE_PROJ(_CameraDepthTexture, UNITY_PROJ_COORD(input.screenpos));
 				fixed4 finalColor = fixed4(1, 1, 1, 1);
-
-				//if (((input.screenpos.z / input.screenpos.w)) >= depthTexValue)
-					finalColor.rgb = TintColor.rgb * input.color.rgb;
+				finalColor.rgb = input.curvature; input.color.rgb;// TintColor.rgb* input.color.rgb;
 	
 				return finalColor;
 			}

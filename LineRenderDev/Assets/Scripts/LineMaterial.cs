@@ -23,6 +23,14 @@ public class LineMaterial : MonoBehaviour
     [Tooltip("Material to render line")]
     public Material LineRenderMaterial;
 
+    [Tooltip("The width of line")]
+    [Range(0.0f, 10.0f)]
+    public float LineWidth = 1.0f;
+
+    [Tooltip("Offset the line along the edge")]
+    [Range(-0.5f, 0.5f)]
+    public float LineCenterOffset = 0.0f;
+
     /// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     [TitleGroup("Visibility")]

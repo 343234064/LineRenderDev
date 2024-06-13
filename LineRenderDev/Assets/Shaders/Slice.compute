@@ -30,14 +30,14 @@ RWStructuredBuffer<uint> OutputArray;
 #define ELEMENT_TYPE uint
 
 StructuredBuffer<uint> SegmentArgBuffer;
-RWStructuredBuffer<LineSegment> InputArray;
+RWStructuredBuffer<VisibleLineSegment> InputArray;
 #define GET_INPUT_ELEMENT_PASS1(idx) InputArray[idx].PixelLengthShrink
 #define GET_INPUT_ELEMENT_PASS2(idx) InputArray[idx].PixelLengthShrinkTotal  
 #define GET_OUTPUT_ELEMENT(idx) InputArray[idx].PixelLengthShrinkTotal  
 #define INPUT_SIZE SegmentArgBuffer[0]
 #define OUTPUT_SIZE SegmentArgBuffer[0]
 
-RWStructuredBuffer<uint> SliceArgBuffer;
+RWStructuredBuffer<uint> SliceArgBuffer; 
 RWStructuredBuffer<Slice> Slices;
 
 #endif
@@ -168,10 +168,16 @@ void SumTotal(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID)
 }
 
 
+
+
+
+
 [numthreads(SLICE_PASS_PER_THREAD_ELEMENT_NUM, 1, 1)]
 void SumTotalAndSlice(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID)
 {
-	if (id.x < (uint)OUTPUT_SIZE && gid.x < SLICE_PASS_PER_THREAD_ELEMENT_NUM) {
+	if (id.x < (uint)OUTPUT_SIZE && gid.x < SLICE_PASS_PER_THREAD_ELEMENT_NUM) 
+	{
+
 		ELEMENT_TYPE Current = GET_INPUT_ELEMENT_PASS1(id.x);
 		ELEMENT_TYPE CurrentSum = GET_OUTPUT_ELEMENT(id.x) + BucketArray[gid.x];
 		ELEMENT_TYPE CurrentSumPrev = CurrentSum - Current;
@@ -200,19 +206,20 @@ void SumTotalAndSlice(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID)
 			for (int i = 0; i < Rank; i++) {
 				BeginSegmentIndex = id.x;
 				Output.BeginPixel = BaseOffset - SLICE_PIXEL_SIZE * i;//BeginPixelShrink start from 1
-				
+
 				if (Output.BeginPixel > Current)
 				{
 					BeginSegmentIndex = BeginSegmentIndex + 1;
 					Output.BeginPixel = Output.BeginPixel - Current;
 				}
 				Output.BeginSegmentIndex = BeginSegmentIndex;
-				if(BeginSegmentIndex < INPUT_SIZE)
+				if (BeginSegmentIndex < INPUT_SIZE)
 					AppendToBuffer(SliceId, Output);
 				SliceId -= 1;
 			}
 		}
 
 	}
+	
 
 }

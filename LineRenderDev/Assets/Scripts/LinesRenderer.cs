@@ -32,6 +32,10 @@ public class LinesRenderer : MonoBehaviour
     [TitleGroup("Global Shaders")]
 
     [AssetSelector(Filter = "Assets/")]
+    [Required("Reset Pass Shader Is Required")]
+    public ComputeShader ResetPassShader;
+
+    [AssetSelector(Filter = "Assets/")]
     [Required("Extract Pass Shader Is Required")]
     public ComputeShader ExtractPassShader;
 
@@ -43,6 +47,9 @@ public class LinesRenderer : MonoBehaviour
     [Required("Visible Pass Shader Is Required")]
     public ComputeShader VisiblePassShader;
 
+    [AssetSelector(Paths = "Assets/")]
+    [Required("Generate Pass Shader Is Required")]
+    public ComputeShader GeneratePassShader;
 
     /// ///////////////////////////////////////////////////////
     [TitleGroup("Meshes")]
@@ -122,10 +129,13 @@ public class LinesRenderer : MonoBehaviour
         LineShader InputShaders = new LineShader();
         Renderer = new RenderLayer();
 
+        InputShaders.ResetPassShader = ResetPassShader;
         InputShaders.ExtractPassShader = ExtractPassShader;
         InputShaders.SlicePassShader = SlicePassShader;
         InputShaders.VisibilityPassShader = VisiblePassShader;
-        Renderer.Init(InputShaders);
+        InputShaders.GeneratePassShader = GeneratePassShader;
+        if(!Renderer.Init(InputShaders))
+            Debug.LogError("Renderer init failed, some shader is missing.");
 
         RenderCamera.AddCommandBuffer(CameraEvent.AfterForwardAlpha, Renderer.GetRenderCommand());
     }
@@ -202,8 +212,18 @@ public class LinesRenderer : MonoBehaviour
     {
         Renderer.ClearCommandBuffer();
 
-        Matrix4x4 ViewProjectionMatrix = GL.GetGPUProjectionMatrix(RenderCamera.projectionMatrix, true) * RenderCamera.worldToCameraMatrix;
-        Matrix4x4 ViewProjectionMatrixForClipping = GL.GetGPUProjectionMatrix(GamerCamera.projectionMatrix, true) * GamerCamera.worldToCameraMatrix;
+        Matrix4x4 ProjectionMatrix = GL.GetGPUProjectionMatrix(RenderCamera.projectionMatrix, true);
+        Matrix4x4 ProjectionMatrixForClipping = GL.GetGPUProjectionMatrix(GamerCamera.projectionMatrix, true);
+        Matrix4x4 ViewProjectionMatrix = ProjectionMatrix * RenderCamera.worldToCameraMatrix;
+        Matrix4x4 ViewProjectionMatrixForClipping = ProjectionMatrixForClipping * GamerCamera.worldToCameraMatrix;
+
+        Matrix4x4 LineWidthScaleMatrix = ProjectionMatrix * Matrix4x4.LookAt(new Vector3(0.0f, 0.0f, 1.0f), new Vector3(0.0f, 0.0f, 0.0f), new Vector3(0.0f, 1.0f, 0.0f));
+        Vector2 LineWidthScaleVec = new Vector2(
+            (2.0f * LineWidthScaleMatrix[0, 0] + LineWidthScaleMatrix[0, 3]) / (2.0f * LineWidthScaleMatrix[3, 0] + LineWidthScaleMatrix[3, 3]) - (LineWidthScaleMatrix[0, 0] + LineWidthScaleMatrix[0, 3]) / ( LineWidthScaleMatrix[3, 0] + LineWidthScaleMatrix[3, 3]),
+            (2.0f * LineWidthScaleMatrix[1, 0] + LineWidthScaleMatrix[1, 3]) / (2.0f * LineWidthScaleMatrix[3, 0] + LineWidthScaleMatrix[3, 3]) - (LineWidthScaleMatrix[1, 0] + LineWidthScaleMatrix[1, 3]) / (LineWidthScaleMatrix[3, 0] + LineWidthScaleMatrix[3, 3])
+            );
+        float LineWidthScale = LineWidthScaleVec.magnitude * 0.001f;
+
         foreach (MeshInfo Current in MeshInfoListForRender)
         {
             if(Current.Available)
@@ -216,8 +236,9 @@ public class LinesRenderer : MonoBehaviour
                 Renderer.EveryFrameParams.WorldViewProjectionMatrix = ViewProjectionMatrix * Current.Context.RumtimeTransform.localToWorldMatrix;
                 Renderer.EveryFrameParams.WorldViewProjectionMatrixForClipping = ViewProjectionMatrixForClipping * Current.Context.RumtimeTransform.localToWorldMatrix;
                 Renderer.EveryFrameParams.ScreenScaledResolution = new Vector4(camera.scaledPixelWidth, camera.scaledPixelHeight, 1.0f / camera.scaledPixelWidth, 1.0f / camera.scaledPixelHeight);
-                Renderer.EveryFrameParams.ScreenWidthFixed = Screen.currentResolution.width;
-                Renderer.EveryFrameParams.ScreenHeightFixed = Screen.currentResolution.height;
+                Renderer.EveryFrameParams.LineWidth = LineWidthScale * Current.Context.LineMaterialSetting.LineWidth;
+                Renderer.EveryFrameParams.LineCenterOffset = Current.Context.LineMaterialSetting.LineCenterOffset;
+                Renderer.EveryFrameParams.ObjectScale = Current.Context.RumtimeTransform.lossyScale;
 
                 Renderer.Render(Current.Context);
             }
