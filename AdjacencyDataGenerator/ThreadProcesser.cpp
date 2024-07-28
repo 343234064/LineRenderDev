@@ -308,6 +308,7 @@ void ThreadProcesser::Clear()
 
 void ThreadProcesser::InternelDoRequest()
 {
+	double t = 0.0;
 	if (QuestList.size() == 0) {
 		Progress = 1.0;
 	}
@@ -332,8 +333,15 @@ void ThreadProcesser::InternelDoRequest()
 
 	if (Progress >= 0.999999999999999)
 	{
-		Progress = 1.0;
-		WorkingCounter.Decrement();
+		if (CurrentQuestPos == QuestList.size()) {
+			Progress = 1.0;
+			WorkingCounter.Decrement();
+		}
+		else
+		{
+			std::cout << "Progress Over 1.0 But QuestList Not Finish" << std::endl;
+			std::cout << CurrentQuestPos << "|" << QuestList.size() << std::endl;
+		}
 	}
 
 }

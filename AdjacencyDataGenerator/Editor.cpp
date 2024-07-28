@@ -1,7 +1,7 @@
-#include "Editor.h"
 #include <ShObjIdl_core.h>
 #include <d3dcompiler.h>
 
+#include "Editor.h"
 
 
 
@@ -43,6 +43,8 @@ Editor::Editor(HWND hwnd, int numFramesInFlight, ID3D12Device* d3dDevice, ID3D12
     Terminated = false;
     Working = false;
     Loaded = false;
+    CurrentPassIndex = 0;
+
 }
 
 Editor::~Editor()
@@ -98,6 +100,8 @@ void Editor::Render(ID3D12GraphicsCommandList* CommandList)
         ImGui::Text("");
 
         ImGui::BeginDisabled(Working);
+        ImGui::SetNextItemWidth(200.0f);
+        ImGui::SliderFloat("Meshlet Normal Weight", &Processer->MeshletNormalWeight, 0.0f, 1.0f);
         if (ImGui::Button("Generate") || PreLoad)
         {
             if (PreLoad) PreLoad = false;
@@ -111,8 +115,8 @@ void Editor::Render(ID3D12GraphicsCommandList* CommandList)
         ImGui::End();
     }
 
-    if (MeshViewer)
-        MeshViewer->ShowViewerSettingUI(Processer.get(), Loaded, Working);
+    if (MeshViewer.get())
+        MeshViewer->ShowViewerSettingUI( Loaded, Working);
    
     ImGui::Render();
     ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), CommandList);
@@ -203,10 +207,10 @@ void Editor::OnOneProgressFinished()
     std::string& ErrorString = Processer->GetErrorString();
     if (ErrorString.size() > 0) {
         std::cout << LINE_STRING << std::endl;
-        std::cout << "Something get error, please see error0.log." << std::endl;
+        std::cout << "Something get error, please see error" + std::to_string(CurrentPassIndex) + ".log." << std::endl;
         std::cout << LINE_STRING << std::endl;
 
-        Processer->DumpErrorString(0);
+        Processer->DumpErrorString(CurrentPassIndex);
     }
   
 }
@@ -216,7 +220,7 @@ void Editor::OnAllProgressFinished()
 
     Export(Processer.get(), TriangleFilePath, Hint.Text);
     Loaded = true;
-    MeshViewer->LoadMeshFromProcesser(Processer.get());
+    //MeshViewer->LoadMeshFromProcesser(Processer.get());
 }
 
 
@@ -230,6 +234,8 @@ double Editor::GetProgress()
         OnOneProgressFinished();
         PassType NextPass = PassPool.front();
         if (NextPass != nullptr) {
+            CurrentPassIndex++;
+
             bool Success = NextPass(Processer.get(), TriangleFilePath, Hint.Text);
             if (!Success)
             {
@@ -280,12 +286,25 @@ bool Editor::KickGenerateMission()
         Terminated = false;
         Loaded = false;
         Hint.NormalColor();
+        CurrentPassIndex = 0;
 
         PassPool.push(PassType(PassGenerateFaceAndEdgeData));
-        PassPool.push(PassType(PassGenerateAdjacencyData));
-        PassPool.push(PassType(PassShrinkAdjacencyData));
-        PassPool.push(PassType(PassGenerateAdjacencyVertexMap));
-        PassPool.push(PassType(PassSerializeAdjacencyVertexMap));
+        PassPool.push(PassType(PassGenerateVertexNormal));
+        PassPool.push(PassType(PassGenerateMeshletLayer1Data));
+        PassPool.push(PassType(PassGenerateMeshlet));
+        PassPool.push(PassType(PassSerializeMeshLayer1Data));
+        //legacy
+        //PassPool.push(PassType(PassGenerateAdjacencyData));
+        //PassPool.push(PassType(PassShrinkAdjacencyData));
+        //PassPool.push(PassType(PassGenerateAdjacencyVertexMap));
+        //PassPool.push(PassType(PassSerializeAdjacencyVertexMap));
+        //PassPool.push(PassType(PassGenerateMeshletLayer1Data));
+        //PassPool.push(PassType(PassGenerateMeshletLayer1));
+        //PassPool.push(PassType(PassGenerateMeshletLayer2Data));
+        //PassPool.push(PassType(PassGenerateMeshletLayer2));
+        //PassPool.push(PassType(PassSerializeMeshletLayer2));
+        //PassPool.push(PassType(PassSerializeMeshletLayer1));
+        //PassPool.push(PassType(PassSerializeMeshletToEdge));
 
         PassPool.push(PassType(PassGenerateRenderData));
     }
@@ -303,7 +322,7 @@ bool Editor::KickGenerateMission()
 void Editor::RenderBackground(ID3D12GraphicsCommandList* CommandList)
 {
 
-    if (MeshViewer) {
+    if (MeshViewer.get()) {
      
         Float3 DisplaySize = Float3(ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y, 0.0);
         MeshViewer->RenderModel(DisplaySize, CommandList);
@@ -314,7 +333,7 @@ void Editor::RenderBackground(ID3D12GraphicsCommandList* CommandList)
 
 
 
-void MeshRenderer::ShowViewerSettingUI(AdjacencyProcesser* Processer, bool ModelIsLoaded, bool GeneratorIsWorking)
+void MeshRenderer::ShowViewerSettingUI(bool ModelIsLoaded, bool GeneratorIsWorking)
 {
 
     ImGui::SetNextWindowPos(ImVec2(4, 256), ImGuiCond_FirstUseEver);
@@ -327,13 +346,9 @@ void MeshRenderer::ShowViewerSettingUI(AdjacencyProcesser* Processer, bool Model
         if (!ModelIsLoaded)
         {
             Hint.Error("Please Run Generate First.");
-            return;
         }
-
-        bool Success = LoadMeshFromProcesser(Processer);
-        if (!Success)
-        {
-            Hint.Error("Load Mesh Failed.");
+        else {
+            Sygnal = true;
         }
     }
     ImGui::TextColored(Hint.Color, Hint.Text.c_str());
@@ -347,6 +362,35 @@ void MeshRenderer::ShowViewerSettingUI(AdjacencyProcesser* Processer, bool Model
     }
     ImGui::InputFloat("Move Speed", &RenderCamera.MoveSpeed, 0.1f, 1.0f, "%.3f");
     ImGui::InputFloat("FOV(Vertical)", &RenderCamera.FovY, 0.01f, 1.0f, "%.3f");
+    ImGui::InputFloat("NearZ", &RenderCamera.NearZ, 0.01f, 1.0f, "%.5f");
+    ImGui::InputFloat("FarZ", &RenderCamera.FarZ, 0.01f, 1.0f, "%.5f");
+
+    ImGui::SeparatorText("View Setting");
+
+    static int Val = 0;
+    ImGui::Checkbox("Show Wire Frame", &ShowWireFrame);
+    ImGui::Checkbox("Show Face Normal", &ShowFaceNormal);
+    ImGui::Checkbox("Show Vertex Normal", &ShowVertexNormal);
+
+    ImGui::SeparatorText("Meshlet");
+    ImGui::RadioButton("Default", &Val, 0);
+    //ImGui::RadioButton("Show Adjacency Face", &Val, 1);
+    //if (ImGui::TreeNodeEx("==========", ImGuiTreeNodeFlags_Leaf))
+    //{
+    //    ImGui::SliderFloat("Alpha", &AdjacencyFaceTransparent, 0.0f, 1.0f);
+
+    //    ImGui::TreePop();
+    //}
+    ImGui::RadioButton("Show Meshlet Layer ", &Val, 1);
+    if (ImGui::TreeNodeEx("==========", ImGuiTreeNodeFlags_Leaf))
+    {
+        ImGui::SliderFloat("Layer 1 Alpha", &MeshletLayerTransparent[0], 0.0f, 1.0f);
+        ImGui::SliderFloat("Layer 2 Alpha", &MeshletLayerTransparent[1], 0.0f, 1.0f);
+        ImGui::SliderFloat("Layer 3 Alpha", &MeshletLayerTransparent[2], 0.0f, 1.0f);
+
+        ImGui::TreePop();
+    }
+    ShowMeshletLayer = (Val == 1) ? true : false;
 
     ImGui::End();
 
@@ -419,9 +463,34 @@ void MeshRenderer::ShowViewerSettingUI(AdjacencyProcesser* Processer, bool Model
 }
 
 
+
+bool CreateCommittedResource(UINT64 Size, ID3D12Device* Device, ID3D12Resource** DestBuffer)
+{
+    D3D12_HEAP_PROPERTIES HeapProp;
+    memset(&HeapProp, 0, sizeof(D3D12_HEAP_PROPERTIES));
+    HeapProp.Type = D3D12_HEAP_TYPE_UPLOAD;
+
+    D3D12_RESOURCE_DESC Desc;
+    memset(&Desc, 0, sizeof(D3D12_RESOURCE_DESC));
+    Desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    Desc.Width = Size;
+    Desc.Height = 1;
+    Desc.DepthOrArraySize = 1;
+    Desc.MipLevels = 1;
+    Desc.Format = DXGI_FORMAT_UNKNOWN;
+    Desc.SampleDesc.Count = 1;
+    Desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    Desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+    if (Device->CreateCommittedResource(&HeapProp, D3D12_HEAP_FLAG_NONE, &Desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(DestBuffer)) < 0)
+        return false;
+
+    return true;
+}
+
 bool MeshRenderer::LoadMeshFromProcesser(AdjacencyProcesser* Processer)
 {
-    if (D3dDevice == nullptr) return false;
+    if (D3dDevice == nullptr || Processer == nullptr) return false;
     ClearResource();
     
     std::cout << LINE_STRING << std::endl;
@@ -433,113 +502,115 @@ bool MeshRenderer::LoadMeshFromProcesser(AdjacencyProcesser* Processer)
 
         Mesh NewMesh;
         NewMesh.Name = SrcList[i]->Name;
-        NewMesh.IndexNum[0] = SrcList[i]->FaceList.size() * 3;
-        NewMesh.IndexNum[1] = SrcList[i]->FaceList.size() * 6;
-        NewMesh.VertexNum = SrcList[i]->FaceList.size() * 3;
+        NewMesh.Triangle.IndexNum = SrcList[i]->FaceList.size() * 3;
+        NewMesh.Triangle.VertexNum = SrcList[i]->FaceList.size() * 3;
+        NewMesh.FaceNormal.IndexNum = SrcList[i]->FaceList.size() * 2;
+        NewMesh.FaceNormal.VertexNum = SrcList[i]->FaceList.size() * 2;
+        NewMesh.VertexNormal.IndexNum = SrcList[i]->VertexData->VertexList.size() * 2;
+        NewMesh.VertexNormal.VertexNum = SrcList[i]->VertexData->VertexList.size() * 2;
         NewMesh.Bounding = SrcList[i]->VertexData->Bounding;
 
         std::cout << "Loading Mesh : " << NewMesh.Name << std::endl;
-        std::cout << "Index Num  : " << NewMesh.IndexNum[0] << std::endl;
-        std::cout << "Vertex Num : " << NewMesh.VertexNum << std::endl;
+        std::cout << "Index Num  : " << NewMesh.Triangle.IndexNum << std::endl;
+        std::cout << "Vertex Num : " << NewMesh.Triangle.VertexNum << std::endl;
 
-        {
-            D3D12_HEAP_PROPERTIES HeapProp;
-            memset(&HeapProp, 0, sizeof(D3D12_HEAP_PROPERTIES));
-            HeapProp.Type = D3D12_HEAP_TYPE_UPLOAD;
 
-            D3D12_RESOURCE_DESC Desc;
-            memset(&Desc, 0, sizeof(D3D12_RESOURCE_DESC));
-            Desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-            Desc.Width = NewMesh.VertexNum * sizeof(DrawRawVertex);
-            Desc.Height = 1;
-            Desc.DepthOrArraySize = 1;
-            Desc.MipLevels = 1;
-            Desc.Format = DXGI_FORMAT_UNKNOWN;
-            Desc.SampleDesc.Count = 1;
-            Desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-            Desc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-            if (D3dDevice->CreateCommittedResource(&HeapProp, D3D12_HEAP_FLAG_NONE, &Desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&NewMesh.VertexBuffer)) < 0)
-                return false;
-        }
-
-        {
-            D3D12_HEAP_PROPERTIES HeapProp;
-            memset(&HeapProp, 0, sizeof(D3D12_HEAP_PROPERTIES));
-            HeapProp.Type = D3D12_HEAP_TYPE_UPLOAD;
-
-            D3D12_RESOURCE_DESC Desc;
-            memset(&Desc, 0, sizeof(D3D12_RESOURCE_DESC));
-            Desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-            Desc.Width = NewMesh.IndexNum[0] * sizeof(DrawRawIndex);
-            Desc.Height = 1;
-            Desc.DepthOrArraySize = 1;
-            Desc.MipLevels = 1;
-            Desc.Format = DXGI_FORMAT_UNKNOWN;
-            Desc.SampleDesc.Count = 1;
-            Desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-            Desc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-            if (D3dDevice->CreateCommittedResource(&HeapProp, D3D12_HEAP_FLAG_NONE, &Desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&NewMesh.IndexBuffer[0])) < 0)
-                return false;
-        }
-
-        {
-            D3D12_HEAP_PROPERTIES HeapProp;
-            memset(&HeapProp, 0, sizeof(D3D12_HEAP_PROPERTIES));
-            HeapProp.Type = D3D12_HEAP_TYPE_UPLOAD;
-
-            D3D12_RESOURCE_DESC Desc;
-            memset(&Desc, 0, sizeof(D3D12_RESOURCE_DESC));
-            Desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-            Desc.Width = NewMesh.IndexNum[1] * sizeof(DrawRawIndex);
-            Desc.Height = 1;
-            Desc.DepthOrArraySize = 1;
-            Desc.MipLevels = 1;
-            Desc.Format = DXGI_FORMAT_UNKNOWN;
-            Desc.SampleDesc.Count = 1;
-            Desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-            Desc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-            if (D3dDevice->CreateCommittedResource(&HeapProp, D3D12_HEAP_FLAG_NONE, &Desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&NewMesh.IndexBuffer[1])) < 0)
-                return false;
-        }
-
-        void* VertexResource = nullptr;
-        void* IndexResource = nullptr;
-        void* IndexLineResource = nullptr;
         D3D12_RANGE Range;
-        memset(&Range, 0, sizeof(D3D12_RANGE));
+        {
+            if (!CreateCommittedResource(NewMesh.Triangle.VertexNum * sizeof(DrawRawVertex), D3dDevice, &NewMesh.Triangle.VertexBuffer))
+                return false;
+            if (!CreateCommittedResource(NewMesh.Triangle.IndexNum * sizeof(DrawRawIndex), D3dDevice, &NewMesh.Triangle.IndexBuffer))
+                return false;
 
-        if (NewMesh.VertexBuffer->Map(0, &Range, &VertexResource) != S_OK)
-            return false;
-        DrawRawVertex* VertexDest = (DrawRawVertex*)VertexResource;
-        memcpy(VertexDest, SrcList[i]->VertexData->DrawVertexList, NewMesh.VertexNum * sizeof(DrawRawVertex));
-        NewMesh.VertexBuffer->Unmap(0, &Range);
+            void* VertexResource = nullptr;
+            void* IndexResource = nullptr;
+            memset(&Range, 0, sizeof(D3D12_RANGE));
 
-        if (NewMesh.IndexBuffer[0]->Map(0, &Range, &IndexResource) != S_OK)
-            return false;
-        DrawRawIndex* IndexDest = (DrawRawIndex*)IndexResource;
-        memcpy(IndexDest, SrcList[i]->DrawIndexList, NewMesh.IndexNum[0] * sizeof(DrawRawIndex));
-        NewMesh.IndexBuffer[0]->Unmap(0, &Range);
+            if (NewMesh.Triangle.VertexBuffer->Map(0, &Range, &VertexResource) != S_OK)
+                return false;
+            DrawRawVertex* VertexDest = (DrawRawVertex*)VertexResource;
+            memcpy(VertexDest, SrcList[i]->VertexData->DrawVertexList, NewMesh.Triangle.VertexNum * sizeof(DrawRawVertex));
+            NewMesh.Triangle.VertexBuffer->Unmap(0, &Range);
 
-        if (NewMesh.IndexBuffer[1]->Map(0, &Range, &IndexLineResource) != S_OK)
-            return false;
-        DrawRawIndex* IndexLineDest = (DrawRawIndex*)IndexLineResource;
-        memcpy(IndexLineDest, SrcList[i]->DrawIndexLineList, NewMesh.IndexNum[1] * sizeof(DrawRawIndex));
-        NewMesh.IndexBuffer[1]->Unmap(0, &Range);
+            if (NewMesh.Triangle.IndexBuffer->Map(0, &Range, &IndexResource) != S_OK)
+                return false;
+            DrawRawIndex* IndexDest = (DrawRawIndex*)IndexResource;
+            memcpy(IndexDest, SrcList[i]->DrawIndexList, NewMesh.Triangle.IndexNum * sizeof(DrawRawIndex));
+            NewMesh.Triangle.IndexBuffer->Unmap(0, &Range);
 
-        NewMesh.VertexBufferView.BufferLocation = NewMesh.VertexBuffer->GetGPUVirtualAddress();
-        NewMesh.VertexBufferView.StrideInBytes = sizeof(DrawRawVertex);
-        NewMesh.VertexBufferView.SizeInBytes = NewMesh.VertexNum * sizeof(DrawRawVertex);
+            NewMesh.Triangle.VertexBufferView.BufferLocation = NewMesh.Triangle.VertexBuffer->GetGPUVirtualAddress();
+            NewMesh.Triangle.VertexBufferView.StrideInBytes = sizeof(DrawRawVertex);
+            NewMesh.Triangle.VertexBufferView.SizeInBytes = NewMesh.Triangle.VertexNum * sizeof(DrawRawVertex);
 
-        NewMesh.IndexBufferView[0].BufferLocation = NewMesh.IndexBuffer[0]->GetGPUVirtualAddress();
-        NewMesh.IndexBufferView[0].Format = DXGI_FORMAT_R32_UINT;
-        NewMesh.IndexBufferView[0].SizeInBytes = NewMesh.IndexNum[0] * sizeof(DrawRawIndex);
+            NewMesh.Triangle.IndexBufferView.BufferLocation = NewMesh.Triangle.IndexBuffer->GetGPUVirtualAddress();
+            NewMesh.Triangle.IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
+            NewMesh.Triangle.IndexBufferView.SizeInBytes = NewMesh.Triangle.IndexNum * sizeof(DrawRawIndex);
+        }
 
-        NewMesh.IndexBufferView[1].BufferLocation = NewMesh.IndexBuffer[1]->GetGPUVirtualAddress();
-        NewMesh.IndexBufferView[1].Format = DXGI_FORMAT_R32_UINT;
-        NewMesh.IndexBufferView[1].SizeInBytes = NewMesh.IndexNum[1] * sizeof(DrawRawIndex);
+        {
+            if (!CreateCommittedResource(NewMesh.FaceNormal.VertexNum * sizeof(DrawRawVertex), D3dDevice, &NewMesh.FaceNormal.VertexBuffer))
+                return false;
+            if (!CreateCommittedResource(NewMesh.FaceNormal.IndexNum * sizeof(DrawRawIndex), D3dDevice, &NewMesh.FaceNormal.IndexBuffer))
+                return false;
+
+            void* VertexResource = nullptr;
+            void* IndexResource = nullptr;
+            memset(&Range, 0, sizeof(D3D12_RANGE));
+
+            if (NewMesh.FaceNormal.VertexBuffer->Map(0, &Range, &VertexResource) != S_OK)
+                return false;
+            DrawRawVertex* VertexDest = (DrawRawVertex*)VertexResource;
+            memcpy(VertexDest, SrcList[i]->VertexData->DrawFaceNormalVertexList, NewMesh.FaceNormal.VertexNum * sizeof(DrawRawVertex));
+            NewMesh.FaceNormal.VertexBuffer->Unmap(0, &Range);
+
+            if (NewMesh.FaceNormal.IndexBuffer->Map(0, &Range, &IndexResource) != S_OK)
+                return false;
+            DrawRawIndex* IndexDest = (DrawRawIndex*)IndexResource;
+            memcpy(IndexDest, SrcList[i]->DrawFaceNormalIndexList, NewMesh.FaceNormal.IndexNum * sizeof(DrawRawIndex));
+            NewMesh.FaceNormal.IndexBuffer->Unmap(0, &Range);
+
+            NewMesh.FaceNormal.VertexBufferView.BufferLocation = NewMesh.FaceNormal.VertexBuffer->GetGPUVirtualAddress();
+            NewMesh.FaceNormal.VertexBufferView.StrideInBytes = sizeof(DrawRawVertex);
+            NewMesh.FaceNormal.VertexBufferView.SizeInBytes = NewMesh.FaceNormal.VertexNum * sizeof(DrawRawVertex);
+
+            NewMesh.FaceNormal.IndexBufferView.BufferLocation = NewMesh.FaceNormal.IndexBuffer->GetGPUVirtualAddress();
+            NewMesh.FaceNormal.IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
+            NewMesh.FaceNormal.IndexBufferView.SizeInBytes = NewMesh.FaceNormal.IndexNum * sizeof(DrawRawIndex);
+        }
+
+        {
+            if (!CreateCommittedResource(NewMesh.VertexNormal.VertexNum * sizeof(DrawRawVertex), D3dDevice, &NewMesh.VertexNormal.VertexBuffer))
+                return false;
+            if (!CreateCommittedResource(NewMesh.VertexNormal.IndexNum * sizeof(DrawRawIndex), D3dDevice, &NewMesh.VertexNormal.IndexBuffer))
+                return false;
+
+            void* VertexResource = nullptr;
+            void* IndexResource = nullptr;
+            memset(&Range, 0, sizeof(D3D12_RANGE));
+
+            if (NewMesh.VertexNormal.VertexBuffer->Map(0, &Range, &VertexResource) != S_OK)
+                return false;
+            DrawRawVertex* VertexDest = (DrawRawVertex*)VertexResource;
+            memcpy(VertexDest, SrcList[i]->VertexData->DrawVertexNormalVertexList, NewMesh.VertexNormal.VertexNum * sizeof(DrawRawVertex));
+            NewMesh.VertexNormal.VertexBuffer->Unmap(0, &Range);
+
+            if (NewMesh.VertexNormal.IndexBuffer->Map(0, &Range, &IndexResource) != S_OK)
+                return false;
+            DrawRawIndex* IndexDest = (DrawRawIndex*)IndexResource;
+            memcpy(IndexDest, SrcList[i]->DrawVertexNormalIndexList, NewMesh.VertexNormal.IndexNum * sizeof(DrawRawIndex));
+            NewMesh.VertexNormal.IndexBuffer->Unmap(0, &Range);
+
+            NewMesh.VertexNormal.VertexBufferView.BufferLocation = NewMesh.VertexNormal.VertexBuffer->GetGPUVirtualAddress();
+            NewMesh.VertexNormal.VertexBufferView.StrideInBytes = sizeof(DrawRawVertex);
+            NewMesh.VertexNormal.VertexBufferView.SizeInBytes = NewMesh.VertexNormal.VertexNum * sizeof(DrawRawVertex);
+
+            NewMesh.VertexNormal.IndexBufferView.BufferLocation = NewMesh.VertexNormal.IndexBuffer->GetGPUVirtualAddress();
+            NewMesh.VertexNormal.IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
+            NewMesh.VertexNormal.IndexBufferView.SizeInBytes = NewMesh.VertexNormal.IndexNum * sizeof(DrawRawIndex);
+        }
+
+
+
 
         std::cout << "Loading Mesh Finished : " << NewMesh.Name << std::endl;
 
@@ -565,6 +636,16 @@ void MeshRenderer::ClearResource()
     MeshList.clear();
 
     TotalBounding.Clear();
+
+    ShowWireFrame = false;
+    ShowFaceNormal = false;
+    ShowVertexNormal = false;
+    ShowAdjacencyFace = false;
+    ShowMeshletLayer = false;
+    AdjacencyFaceTransparent = 1.0f;
+    MeshletLayerTransparent[0] = 1.0f;
+    MeshletLayerTransparent[1] = 0.0f;
+    MeshletLayerTransparent[2] = 0.0f;
 }
 
 
@@ -576,7 +657,7 @@ bool MeshRenderer::InitRenderPipeline()
         D3D12_DESCRIPTOR_RANGE DescriptorRange[1] = {};
         //CBV
         DescriptorRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-        DescriptorRange[0].NumDescriptors = 1;
+        DescriptorRange[0].NumDescriptors = 2;
         DescriptorRange[0].BaseShaderRegister = 0;
         DescriptorRange[0].RegisterSpace = 0;
         DescriptorRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
@@ -618,8 +699,10 @@ bool MeshRenderer::InitRenderPipeline()
     {
         ID3DBlob* BlobVertexShader1 = nullptr;
         ID3DBlob* BlobVertexShader2 = nullptr;
+        ID3DBlob* BlobVertexShader3 = nullptr;
         ID3DBlob* BlobPixelShader1 = nullptr;
         ID3DBlob* BlobPixelShader2 = nullptr;
+        ID3DBlob* BlobPixelShader3 = nullptr;
         ID3DBlob* BlobVertexCompileMsg = nullptr;
         ID3DBlob* BlobPixelCompileMsg = nullptr;
 
@@ -637,8 +720,9 @@ bool MeshRenderer::InitRenderPipeline()
         std::filesystem::path ShaderPath = ExePathW.replace_filename(std::filesystem::path("Shaders/BaseShader.hlsl"));
         
         bool Success = true;
-        D3D_SHADER_MACRO Defines1[] = { {"DRAW_LINE", "0"} , {NULL, NULL} };
-        D3D_SHADER_MACRO Defines2[] = { {"DRAW_LINE", "1"} , {NULL, NULL} };
+        D3D_SHADER_MACRO Defines1[] = { {"DRAW_WIREFRAME", "0"} , {"DRAW_NORMAL", "0"} , {NULL, NULL} };
+        D3D_SHADER_MACRO Defines2[] = { {"DRAW_WIREFRAME", "1"} , {"DRAW_NORMAL", "0"} , {NULL, NULL} };
+        D3D_SHADER_MACRO Defines3[] = { {"DRAW_WIREFRAME", "0"} , {"DRAW_NORMAL", "1"} , {NULL, NULL} };
 
         std::cout << "Compile Shader Path : " << ShaderPath.generic_string() << std::endl;
         if(FAILED(D3DCompileFromFile(ShaderPath.generic_wstring().c_str(), Defines1, nullptr, "VSMain", "vs_5_0", CompileFlags, 0, &BlobVertexShader1, &BlobVertexCompileMsg)))
@@ -648,6 +732,12 @@ bool MeshRenderer::InitRenderPipeline()
             Success = false;
         }
         if (FAILED(D3DCompileFromFile(ShaderPath.generic_wstring().c_str(), Defines2, nullptr, "VSMain", "vs_5_0", CompileFlags, 0, &BlobVertexShader2, &BlobVertexCompileMsg)))
+        {
+            if (BlobVertexCompileMsg)
+                std::cout << (const char*)(BlobVertexCompileMsg->GetBufferPointer()) << std::endl;
+            Success = false;
+        }
+        if (FAILED(D3DCompileFromFile(ShaderPath.generic_wstring().c_str(), Defines3, nullptr, "VSMain", "vs_5_0", CompileFlags, 0, &BlobVertexShader3, &BlobVertexCompileMsg)))
         {
             if (BlobVertexCompileMsg)
                 std::cout << (const char*)(BlobVertexCompileMsg->GetBufferPointer()) << std::endl;
@@ -668,6 +758,12 @@ bool MeshRenderer::InitRenderPipeline()
                 std::cout << (const char*)(BlobPixelCompileMsg->GetBufferPointer()) << std::endl;
             Success = false;
         }
+        if (FAILED(D3DCompileFromFile(ShaderPath.generic_wstring().c_str(), Defines3, nullptr, "PSMain", "ps_5_0", CompileFlags, 0, &BlobPixelShader3, &BlobPixelCompileMsg)))
+        {
+            if (BlobPixelCompileMsg)
+                std::cout << (const char*)(BlobPixelCompileMsg->GetBufferPointer()) << std::endl;
+            Success = false;
+        }
         if (BlobPixelCompileMsg)
             BlobPixelCompileMsg->Release();
 
@@ -677,10 +773,14 @@ bool MeshRenderer::InitRenderPipeline()
                 BlobVertexShader1->Release();
             if (BlobVertexShader2)
                 BlobVertexShader2->Release();
+            if (BlobVertexShader3)
+                BlobVertexShader3->Release();
             if (BlobPixelShader1)
                 BlobPixelShader1->Release();
             if (BlobPixelShader2)
                 BlobPixelShader2->Release();
+            if (BlobPixelShader3)
+                BlobPixelShader3->Release();
             Release();
             std::cout << "Compile Shader Failed." << std::endl;
             return false;
@@ -690,7 +790,7 @@ bool MeshRenderer::InitRenderPipeline()
         {
             { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
             { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-            { "COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+            { "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
         };
 
         D3D12_GRAPHICS_PIPELINE_STATE_DESC PipelineStateDesc = {};
@@ -713,7 +813,7 @@ bool MeshRenderer::InitRenderPipeline()
 
         PipelineStateDesc.DepthStencilState.DepthEnable = TRUE;
         PipelineStateDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-        PipelineStateDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+        PipelineStateDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
         PipelineStateDesc.DepthStencilState.StencilEnable = FALSE;
         
         PipelineStateDesc.SampleMask = UINT_MAX;
@@ -730,10 +830,14 @@ bool MeshRenderer::InitRenderPipeline()
                 BlobVertexShader1->Release();
             if (BlobVertexShader2)
                 BlobVertexShader2->Release();
+            if (BlobVertexShader3)
+                BlobVertexShader3->Release();
             if (BlobPixelShader1)
                 BlobPixelShader1->Release();
             if (BlobPixelShader2)
                 BlobPixelShader2->Release();
+            if (BlobPixelShader3)
+                BlobPixelShader3->Release();
             Release();
             std::cout << "Create Solid Pipeline State Failed." << std::endl;
             return false;
@@ -743,6 +847,35 @@ bool MeshRenderer::InitRenderPipeline()
         PipelineStateDesc.VS.BytecodeLength = BlobVertexShader2->GetBufferSize();
         PipelineStateDesc.PS.pShaderBytecode = BlobPixelShader2->GetBufferPointer();
         PipelineStateDesc.PS.BytecodeLength = BlobPixelShader2->GetBufferSize();
+        PipelineStateDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+        PipelineStateDesc.RasterizerState.AntialiasedLineEnable = true;
+        PipelineStateDesc.BlendState.RenderTarget[0].BlendEnable = false;
+        if (FAILED(D3dDevice->CreateGraphicsPipelineState(&PipelineStateDesc, IID_PPV_ARGS(&WireFramePipelineState))))
+        {
+            if (BlobVertexShader1)
+                BlobVertexShader1->Release();
+            if (BlobVertexShader2)
+                BlobVertexShader2->Release();
+            if (BlobVertexShader3)
+                BlobVertexShader3->Release();
+            if (BlobPixelShader1)
+                BlobPixelShader1->Release();
+            if (BlobPixelShader2)
+                BlobPixelShader2->Release();
+            if (BlobPixelShader3)
+                BlobPixelShader3->Release();
+            Release();
+            std::cout << "Create WireFrame Pipeline State Failed." << std::endl;
+            return false;
+        }
+
+        PipelineStateDesc.VS.pShaderBytecode = BlobVertexShader3->GetBufferPointer();
+        PipelineStateDesc.VS.BytecodeLength = BlobVertexShader3->GetBufferSize();
+        PipelineStateDesc.PS.pShaderBytecode = BlobPixelShader3->GetBufferPointer();
+        PipelineStateDesc.PS.BytecodeLength = BlobPixelShader3->GetBufferSize();
+        PipelineStateDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+        PipelineStateDesc.RasterizerState.AntialiasedLineEnable = true;
+        PipelineStateDesc.BlendState.RenderTarget[0].BlendEnable = false;
         PipelineStateDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE;
         if (FAILED(D3dDevice->CreateGraphicsPipelineState(&PipelineStateDesc, IID_PPV_ARGS(&LinePipelineState))))
         {
@@ -750,12 +883,16 @@ bool MeshRenderer::InitRenderPipeline()
                 BlobVertexShader1->Release();
             if (BlobVertexShader2)
                 BlobVertexShader2->Release();
+            if (BlobVertexShader3)
+                BlobVertexShader3->Release();
             if (BlobPixelShader1)
                 BlobPixelShader1->Release();
             if (BlobPixelShader2)
                 BlobPixelShader2->Release();
+            if (BlobPixelShader3)
+                BlobPixelShader3->Release();
             Release();
-            std::cout << "Create Solid Pipeline State Failed." << std::endl;
+            std::cout << "Create Line Pipeline State Failed." << std::endl;
             return false;
         }
     }
@@ -806,6 +943,50 @@ bool MeshRenderer::InitRenderPipeline()
 
      }
 
+    {
+        D3D12_HEAP_PROPERTIES HeapProp;
+        memset(&HeapProp, 0, sizeof(D3D12_HEAP_PROPERTIES));
+        HeapProp.Type = D3D12_HEAP_TYPE_UPLOAD;
+
+        D3D12_RESOURCE_DESC ParamsBufferDesc = {};
+        ParamsBufferDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+        ParamsBufferDesc.Width = (MaterialParams.Size() + 255) & ~255; //Constant buffer must be aligned with 256
+        ParamsBufferDesc.Height = 1;
+        ParamsBufferDesc.DepthOrArraySize = 1;
+        ParamsBufferDesc.MipLevels = 1;
+        ParamsBufferDesc.Format = DXGI_FORMAT_UNKNOWN;
+        ParamsBufferDesc.SampleDesc.Count = 1;
+        ParamsBufferDesc.SampleDesc.Quality = 0;
+        ParamsBufferDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        ParamsBufferDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+        ParamsBufferDesc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+
+        if (FAILED(D3dDevice->CreateCommittedResource(&HeapProp, D3D12_HEAP_FLAG_NONE, &ParamsBufferDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&ParametersBuffer))))
+        {
+            Release();
+            std::cout << "Create Material Paramaters Buffer Failed." << std::endl;
+            return false;
+        }
+
+
+        D3D12_CONSTANT_BUFFER_VIEW_DESC ParametersBufferViewDesc = {};
+        ParametersBufferViewDesc.BufferLocation = ParametersBuffer->GetGPUVirtualAddress();
+        ParametersBufferViewDesc.SizeInBytes = (MaterialParams.Size() + 255) & ~255; //Constant buffer must be aligned with 256
+        D3D12_CPU_DESCRIPTOR_HANDLE CPUCBVHandle = D3dSrcDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+        CPUCBVHandle.ptr += D3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        CPUCBVHandle.ptr += D3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        D3dDevice->CreateConstantBufferView(&ParametersBufferViewDesc, CPUCBVHandle);
+
+        D3D12_RANGE Range = {};
+        memset(&Range, 0, sizeof(D3D12_RANGE));
+        if (FAILED(ParametersBuffer->Map(0, &Range, reinterpret_cast<void**>(&MaterialParams.GPUAddress))))
+        {
+            std::cout << "ParametersBuffer Map Failed." << std::endl;
+            return false;
+        }
+        MaterialParams.Copy();
+
+    }
     return true;
 }
 
@@ -837,7 +1018,7 @@ void MeshRenderer::UpdateEveryFrameState(const Float3& DisplaySize)
     //UpDir = DirectX::XMVectorSet(0.0, 1.0, 0.0, 0.0);
     //ViewMatrix = DirectX::XMMatrixLookAtLH(EyePos, LookAt, UpDir);
 
-    DirectX::XMMATRIX ProjectionMatrix = DirectX::XMMatrixPerspectiveFovLH(RenderCamera.FovY, RenderCamera.AspectRatio, RenderCamera.NearZ, RenderCamera.FarZ);
+    DirectX::XMMATRIX ProjectionMatrix = DirectX::XMMatrixPerspectiveFovLH(RenderCamera.FovY, RenderCamera.AspectRatio, MAX(0.0000001f, RenderCamera.NearZ), MAX(0.0000001f, RenderCamera.FarZ));
 
     DirectX::XMMATRIX MVP = XMMatrixMultiply(ViewMatrix, ProjectionMatrix);
 
@@ -846,6 +1027,12 @@ void MeshRenderer::UpdateEveryFrameState(const Float3& DisplaySize)
     _mm_storeu_ps(ConstantParams.WorldViewProjection[2], MVP.r[2]);
     _mm_storeu_ps(ConstantParams.WorldViewProjection[3], MVP.r[3]);
 
+
+    MaterialParams.DisplayMode = ShowMeshletLayer ? 1 : 0;
+    MaterialParams.DisplayTransparent0 = MeshletLayerTransparent[0];
+    MaterialParams.DisplayTransparent1 = MeshletLayerTransparent[1];
+    MaterialParams.DisplayTransparent2 = 0.0f;
+    MaterialParams.DisplayTransparent3 = 0.0f;
 }
 
 void MeshRenderer::RenderModel(const Float3& DisplaySize, ID3D12GraphicsCommandList* CommandList)
@@ -855,6 +1042,7 @@ void MeshRenderer::RenderModel(const Float3& DisplaySize, ID3D12GraphicsCommandL
     UpdateEveryFrameState(DisplaySize);
     
     ConstantParams.Copy();
+    MaterialParams.Copy();
 
     D3D12_VIEWPORT Viewport;
     memset(&Viewport, 0, sizeof(D3D12_VIEWPORT));
@@ -882,22 +1070,51 @@ void MeshRenderer::RenderModel(const Float3& DisplaySize, ID3D12GraphicsCommandL
     CommandList->SetPipelineState(SolidPipelineState);
     for (std::vector<Mesh>::iterator it = MeshList.begin(); it != MeshList.end(); it++)
     {
-        CommandList->IASetIndexBuffer(&(it->IndexBufferView[0]));
-        CommandList->IASetVertexBuffers(0, 1, &(it->VertexBufferView));
+        CommandList->IASetIndexBuffer(&(it->Triangle.IndexBufferView));
+        CommandList->IASetVertexBuffers(0, 1, &(it->Triangle.VertexBufferView));
         CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        CommandList->DrawIndexedInstanced(it->IndexNum[0], 1, 0, 0, 0);
+        CommandList->DrawIndexedInstanced(it->Triangle.IndexNum, 1, 0, 0, 0);
 
     }
 
-    CommandList->SetPipelineState(LinePipelineState);
-    for (std::vector<Mesh>::iterator it = MeshList.begin(); it != MeshList.end(); it++)
+    if (ShowWireFrame)
     {
-        CommandList->IASetIndexBuffer(&(it->IndexBufferView[1]));
-        CommandList->IASetVertexBuffers(0, 1, &(it->VertexBufferView));
-        CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINELIST);
-        CommandList->DrawIndexedInstanced(it->IndexNum[1], 1, 0, 0, 0);
+        CommandList->SetPipelineState(WireFramePipelineState);
+        for (std::vector<Mesh>::iterator it = MeshList.begin(); it != MeshList.end(); it++)
+        {
+            CommandList->IASetIndexBuffer(&(it->Triangle.IndexBufferView));
+            CommandList->IASetVertexBuffers(0, 1, &(it->Triangle.VertexBufferView));
+            CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            CommandList->DrawIndexedInstanced(it->Triangle.IndexNum, 1, 0, 0, 0);
+        }
+    }
+
+    if (ShowFaceNormal)
+    {
+        CommandList->SetPipelineState(LinePipelineState);
+        for (std::vector<Mesh>::iterator it = MeshList.begin(); it != MeshList.end(); it++)
+        {
+            CommandList->IASetIndexBuffer(&(it->FaceNormal.IndexBufferView));
+            CommandList->IASetVertexBuffers(0, 1, &(it->FaceNormal.VertexBufferView));
+            CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINELIST);
+            CommandList->DrawIndexedInstanced(it->FaceNormal.IndexNum, 1, 0, 0, 0);
+        }
+
+    }
+
+    if (ShowVertexNormal)
+    {
+        CommandList->SetPipelineState(LinePipelineState);
+        for (std::vector<Mesh>::iterator it = MeshList.begin(); it != MeshList.end(); it++)
+        {
+            CommandList->IASetIndexBuffer(&(it->VertexNormal.IndexBufferView));
+            CommandList->IASetVertexBuffers(0, 1, &(it->VertexNormal.VertexBufferView));
+            CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINELIST);
+            CommandList->DrawIndexedInstanced(it->VertexNormal.IndexNum, 1, 0, 0, 0);
+        }
 
     }
 }
+
 
 

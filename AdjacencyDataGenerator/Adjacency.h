@@ -1,81 +1,34 @@
 #pragma once
 
 #include "ThreadProcesser.h"
+#include <iostream>
 #include <unordered_map>
+#include <unordered_set>
 #include <queue>
 #include <set>
 #include <fstream>
 #include <filesystem>
 
-typedef unsigned char Byte;
-typedef unsigned int uint;
+#include "Utils.h"
+#include "Meshlet.h"
+
 
 using namespace std;
 
-#define MAX(a,b)            (((a) > (b)) ? (a) : (b))
-#define MIN(a,b)            (((a) < (b)) ? (a) : (b))
 
 #define LINE_STRING "================================"
 class AdjacencyProcesser;
 bool PassGenerateVertexMap(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
 bool PassGenerateFaceAndEdgeData(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
-bool PassGenerateAdjacencyData(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
-bool PassShrinkAdjacencyData(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
-bool PassGenerateAdjacencyVertexMap(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
-bool PassSerializeAdjacencyVertexMap(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
+bool PassGenerateVertexNormal(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
+bool PassGenerateMeshletLayer1Data(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
+bool PassGenerateMeshlet(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State); 
+bool PassSerializeMeshLayer1Data(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
 bool PassGenerateRenderData(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
 void Export(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
 
 
-//Not commutative
-inline unsigned int HashCombine(unsigned int A, unsigned int C)
-{
-	unsigned int B = 0x9e3779b9;
-	A += B;
 
-	A -= B; A -= C; A ^= (C >> 13);
-	B -= C; B -= A; B ^= (A << 8);
-	C -= A; C -= B; C ^= (B >> 13);
-	A -= B; A -= C; A ^= (C >> 12);
-	B -= C; B -= A; B ^= (A << 16);
-	C -= A; C -= B; C ^= (B >> 5);
-	A -= B; A -= C; A ^= (C >> 3);
-	B -= C; B -= A; B ^= (A << 10);
-	C -= A; C -= B; C ^= (B >> 15);
-
-	return C;
-}
-
-inline size_t HashCombine2(size_t A, size_t C)
-{
-	size_t value = A;
-	value ^= C + 0x9e3779b9 + (A << 6) + (A >> 2);
-	return value;
-}
-
-
-struct Float3
-{
-	Float3() :
-		x(0.0), y(0.0), z(0.0) {}
-	Float3(float a) :
-		x(a), y(a), z(a) {}
-	Float3(float _x, float _y, float _z):
-		x(_x), y(_y), z(_z) {}
-
-	float x;
-	float y;
-	float z;
-
-	friend Float3 operator-(const Float3& a, const Float3& b);
-	friend Float3 operator+(const Float3& a, const Float3& b);
-	friend Float3 operator*(const Float3& a, const double b);
-	friend Float3 operator*(const Float3& a, const Float3& b);
-	friend Float3 Normalize(const Float3& a);
-	friend float Length(const Float3& a);
-	friend Float3 Cross(const Float3& a, const Float3& b);
-	friend float Dot(const Float3& a, const Float3& b);
-};
 
 
 
@@ -135,21 +88,23 @@ struct BoundingBox
 struct DrawRawVertex
 {
 	DrawRawVertex():
-		pos(), color()
+		pos(), normal(), color(), alpha(0.0f)
 	{}
-	DrawRawVertex(Float3 _pos, Float3 _nor, Float3 _col):
-		pos(_pos), normal(_nor), color(_col)
+	DrawRawVertex(Float3 _pos, Float3 _nor, Float3 _col, float _alpha):
+		pos(_pos), normal(_nor), color(_col), alpha(_alpha)
 	{}
 	Float3 pos;
 	Float3 normal;
 	Float3 color;
+	float alpha;
 };
 typedef unsigned int DrawRawIndex;
 
 
 #define EPS 0.000001f
-struct Vertex3
+class Vertex3
 {
+public:
 	Vertex3(float _x = 0, float _y = 0, float _z = 0) :
 		x(_x), y(_y), z(_z)
 	{
@@ -172,10 +127,23 @@ struct Vertex3
 		return !(*this == other);
 	}
 
+	static uint ByteSize()
+	{
+		return 3 * sizeof(float);
+	}
+
+	Float3 Get()
+	{
+		return Float3(x, y, z);
+	}
+
+public:
 	float x;
 	float y;
 	float z;
 	size_t hash;
+
+	Float3 normal;
 };
 
 class Index
@@ -227,21 +195,33 @@ public:
 class Face
 {
 public:
-	explicit Face(Index _x, Index _y, Index _z, uint e1, uint e2, uint e3):
-		x(_x), y(_y), z(_z), 
+	explicit Face(Index _x, Index _y, Index _z, uint e1, uint e2, uint e3, Float3 n = 0.0f, Float3 c = 0.0f) :
+		x(_x), y(_y), z(_z),
 		xy(e1), yz(e2), zx(e3),
-		IsRead(false), IsAddToAdjFaceList(false), BlackWhite(0) {}
+		normal(n), center(c)
+	{
+		meshletId[0] = -1;
+		meshletId[1] = -1;
+	}
+
+	//vertex index
 	Index x;
 	Index y;
 	Index z;
+
 	//edge index
 	uint xy;
 	uint yz;
 	uint zx;
 
-	bool IsRead;
-	bool IsAddToAdjFaceList;
-	int BlackWhite;
+	//normal
+	Float3 normal;
+	Float3 center;
+	
+	//meshlet
+	int meshletId[2];
+
+public:
 
 	Index GetOppositePoint(Index v1, Index  v2)
 	{
@@ -255,7 +235,7 @@ public:
 			if (v2.value == x.value) return z;
 			else if (v2.value == z.value) return x;
 		}
-		else if(v1.value == z.value)
+		else if (v1.value == z.value)
 		{
 			if (v2.value == x.value) return y;
 			else if (v2.value == y.value) return x;
@@ -263,6 +243,10 @@ public:
 
 		return x;
 	}
+
+
+
+
 };
 
 struct FacePair
@@ -285,15 +269,27 @@ public:
 		v1(_v1, _actual_v1), v2(_v2, _actual_v2), id(0)
 	{
 		hash = HashCombine(MIN(v1.value, v2.value), MAX(v1.value, v2.value));
+
+		MeshletIndex[0] = -1;
+		MeshletIndex[1] = -1;
+
 	}
 	Edge(Index _v1, Index _v2) :
 		v1(_v1), v2(_v2), id(0)
 	{
 		hash = HashCombine(MIN(v1.value, v2.value), MAX(v1.value, v2.value));
+
+		MeshletIndex[0] = -1;
+		MeshletIndex[1] = -1;
+
 	}
 	Edge(const Edge& e):
 		v1(e.v1), v2(e.v2), hash(e.hash), id(e.id)
-	{}
+	{
+		MeshletIndex[0] = -1;
+		MeshletIndex[1] = -1;
+
+	}
 
 	bool operator==(const Edge& other) const
 	{
@@ -305,12 +301,26 @@ public:
 		return !(*this == other);
 	}
 
+
+
 	size_t hash;
 	Index v1;
 	Index v2;
 
 	uint id;
+
+public:
+	static size_t ByteSizeOfMeshletData()
+	{
+		return sizeof(int) * 2;
+	}
+
+	int MeshletIndex[2];
 };
+
+
+
+
 
 namespace std {
 	template <> struct hash<Index>
@@ -336,67 +346,13 @@ namespace std {
 			return x.hash;
 		}
 	};
+
 }
 
-class AdjFace
-{
-public:
-	AdjFace() = delete;
-	AdjFace(const Face& face) :
-		x(face.x),
-		y(face.y),
-		z(face.z)
-	{
-		adjPoint[0] = 0;
-		adjPoint[1] = 0;
-		adjPoint[2] = 0;
-		adjFaceIndex[0] = 0;
-		adjFaceIndex[1] = 0;
-		adjFaceIndex[2] = 0;
-		hasAdjFace[0] = false;
-		hasAdjFace[1] = false;
-		hasAdjFace[2] = false;
-		faceIndex = 0;
-	}
 
-	Index x;
-	Index y;
-	Index z;
 
-	// xy, yz, zx
-	Index adjPoint[3]; 
-	uint adjFaceIndex[3];
-	bool hasAdjFace[3];
 
-	uint faceIndex;
-public:
-	static uint ByteSize()
-	{
-		return sizeof(uint) * 6;
-	}
-};
 
-class AdjVertex
-{
-public:
-	AdjVertex() = delete;
-	AdjVertex(const Vertex3& _v) :
-		x(_v.x), y(_v.y), z(_v.z), adjId(0), adjSerializedId(0), adjNum(0)
-	{}
-
-	float x;
-	float y;
-	float z;
-	uint adjId;
-	uint adjSerializedId;
-	uint adjNum;
-
-public:
-	static uint ByteSize()
-	{
-		return 3 * sizeof(float) + 2 * sizeof(uint);
-	}
-};
 
 
 class VertexContext
@@ -406,6 +362,8 @@ public:
 		Name("None"),
 		BytesData(nullptr),
 		DrawVertexList(nullptr),
+		DrawFaceNormalVertexList(nullptr),
+		DrawVertexNormalVertexList(nullptr),
 		TotalLength(0),
 		VertexLength(0),
 		CurrentVertexPos(0),
@@ -415,6 +373,12 @@ public:
 		if (DrawVertexList != nullptr)
 			delete[] DrawVertexList;
 		DrawVertexList = nullptr;
+		if (DrawFaceNormalVertexList != nullptr)
+			delete[] DrawFaceNormalVertexList;
+		DrawFaceNormalVertexList = nullptr;
+		if (DrawVertexNormalVertexList != nullptr)
+			delete[] DrawVertexNormalVertexList;
+		DrawVertexNormalVertexList = nullptr;
 	}
 
 public:
@@ -422,7 +386,7 @@ public:
 	Byte* BytesData;
 	std::vector<Vertex3> RawVertex;
 	// shrinked vertex list without repeated vertex
-	std::vector<AdjVertex> VertexList;
+	std::vector<Vertex3> VertexList;
 	// vertex data -> merged vertex  index
 	std::unordered_map<Vertex3, uint> VertexMap;
 	// actual vertex index in BytesData -> merged vertex  index 
@@ -430,6 +394,8 @@ public:
 
 	// for debug rendering
 	DrawRawVertex* DrawVertexList;
+	DrawRawVertex* DrawFaceNormalVertexList;
+	DrawRawVertex* DrawVertexNormalVertexList;
 	BoundingBox Bounding;
 
 	uint TotalLength;
@@ -453,9 +419,9 @@ public:
 	{
 		std::ofstream OutFile(Name + "_VertexList.txt", std::ios::out);
 		uint i = 0;
-		for (std::vector<AdjVertex>::iterator it = VertexList.begin(); it != VertexList.end(); it++, i++)
+		for (std::vector<Vertex3>::iterator it = VertexList.begin(); it != VertexList.end(); it++, i++)
 		{
-			OutFile << "Vertex : id " << i << " | " << it->x << "," << it->y << "," << it->z << " | adjId: " << it->adjId << " adjNum: " << it->adjNum << std::endl;
+			OutFile << "Vertex : id " << i << " | " << it->x << "," << it->y << "," << it->z  << std::endl;
 		}
 		OutFile.close();
 	}
@@ -490,11 +456,11 @@ public:
 		Name("None"),
 		BytesData(nullptr), 
 		DrawIndexList(nullptr),
-		DrawIndexLineList(nullptr),
+		DrawFaceNormalIndexList(nullptr),
+		DrawVertexNormalIndexList(nullptr),
 		TotalLength(0), 
 		IndicesLength(0),
 		TriangleNum(0),
-		TotalAdjacencyVertexNum(0),
 		CurrentFacePos(0),
 		CurrentIndexPos(0),
 		VertexData(nullptr)
@@ -504,39 +470,36 @@ public:
 		if (DrawIndexList != nullptr)
 			delete[] DrawIndexList;
 		DrawIndexList = nullptr;
-		if (DrawIndexLineList != nullptr)
-			delete[] DrawIndexLineList;
-		DrawIndexLineList = nullptr;
+		if (DrawFaceNormalIndexList != nullptr)
+			delete[] DrawFaceNormalIndexList;
+		DrawFaceNormalIndexList = nullptr;
+		if (DrawVertexNormalIndexList != nullptr)
+			delete[] DrawVertexNormalIndexList;
+		DrawVertexNormalIndexList = nullptr;
 	}
 
 public:
 	std::string Name;
 	Byte* BytesData;
-	//Pass0
+	//vertex data
 	VertexContext* VertexData;
-	//Pass1
+	//triangle data
 	std::vector<Face> FaceList;
 	std::vector<Edge> EdgeList;
-	std::unordered_map<Edge, FacePair> EdgeFaceList;
-	//Pass2
-	std::queue<uint> FaceIdQueue;
-	std::set<uint> FaceIdPool;
-	std::vector<AdjFace> AdjacencyFaceList;
-	//Pass3
-	std::vector<AdjFace> AdjacencyFaceListShrink;
-	//Pass4
-	std::unordered_map<uint, std::set<uint>> AdjacencyVertexMap; // vertex -> adjacency vertex
-	//Pass5
-	std::vector<std::vector<uint>> AdjacencyVertexList;
+	std::unordered_map<Edge, FacePair> EdgeFaceList; // edge -> adjacency face
+	std::unordered_map<uint, std::set<uint>> AdjacencyVertexFaceMap; // vertex -> adjacency face
 	
+	//meshlet
+	MeshOpt MeshletLayer1Data;
+
 	// for debug rendering
 	DrawRawIndex* DrawIndexList;
-	DrawRawIndex* DrawIndexLineList;
+	DrawRawIndex* DrawFaceNormalIndexList;
+	DrawRawIndex* DrawVertexNormalIndexList;
 
 	uint TotalLength;
 	uint IndicesLength;
 	uint TriangleNum;
-	uint TotalAdjacencyVertexNum;
 
 	uint CurrentFacePos;
 	uint CurrentIndexPos;
@@ -544,16 +507,9 @@ public:
 public:
 	uint GetVertexDataByteSize()
 	{
-		return (uint)(VertexData->VertexList.size() * AdjVertex::ByteSize());
+		return (uint)(VertexData->VertexList.size() * Vertex3::ByteSize());
 	}
-	uint GetAdjacencyVertexListByteSize()
-	{
-		return (uint)(TotalAdjacencyVertexNum * sizeof(uint));
-	}
-	uint GetAdjacencyFaceListByteSize()
-	{
-		return (uint)(AdjacencyFaceListShrink.size() * AdjFace::ByteSize());
-	}
+
 
 	void DumpFaceList()
 	{
@@ -586,45 +542,7 @@ public:
 		OutFile.close();
 	}
 
-	void DumpAdjacencyFaceList()
-	{
-		std::ofstream OutFile(Name + "_AdjList.txt", std::ios::out);
-		for (std::vector<AdjFace>::iterator it = AdjacencyFaceList.begin(); it != AdjacencyFaceList.end(); it++)
-		{
-			OutFile << "AdjFace: " << it->x.value << ", " << it->y.value << ", " << it->z.value << " | "
-				<< it->adjPoint[0].value << "(" << it->hasAdjFace[0] << ") " << it->adjPoint[1].value << "(" << it->hasAdjFace[1] << ") " << it->adjPoint[2].value << "(" << it->hasAdjFace[2] << ") "
-				<< " | " << it->adjFaceIndex[0] << ", " << it->adjFaceIndex[1] << ", "  << it->adjFaceIndex[2]<< std::endl;
-		}
-		OutFile.close();
-	}
 
-	void DumpAdjacencyFaceListShrink()
-	{
-		std::ofstream OutFile(Name + "_AdjList.txt", std::ios::out);
-		for (std::vector<AdjFace>::iterator it = AdjacencyFaceListShrink.begin(); it != AdjacencyFaceListShrink.end(); it++)
-		{
-			OutFile << "AdjFace: " << it->x.value << ", " << it->y.value << ", " << it->z.value << " | "
-				<< it->adjPoint[0].value << "(" << it->hasAdjFace[0] << ") " << it->adjPoint[1].value << "(" << it->hasAdjFace[1] << ") " << it->adjPoint[2].value << "(" << it->hasAdjFace[2] << ") "
-				<< " | " << it->adjFaceIndex[0] << ", " << it->adjFaceIndex[1] << ", " << it->adjFaceIndex[2] << std::endl;
-		}
-		OutFile.close();
-	}
-
-	void DumpAdjacencyVertexList()
-	{
-		std::ofstream OutFile(Name + "_AdjVertex.txt", std::ios::out);
-		for (std::vector<AdjVertex>::iterator it = VertexData->VertexList.begin(); it != VertexData->VertexList.end(); it++)
-		{
-			OutFile << "AdjVertex: " << it->x << ", " << it->y << ", " << it->z << " | "
-				<< " adjId: " << it->adjId << " adjSerializedId: " << it->adjSerializedId << " | " << " adjNum: " << it->adjNum << " | ";
-			for (std::vector<uint>::iterator it2 = AdjacencyVertexList[it->adjId].begin(); it2 != AdjacencyVertexList[it->adjId].end(); it2++)
-			{
-				OutFile << *it2 << " ";
-			}
-			OutFile << std::endl;
-		}
-		OutFile.close();
-	}
 };
 
 class AdjacencyProcesser
@@ -637,7 +555,8 @@ public:
 		TriangleBytesData(nullptr),
 		TotalTriangleBytesNum(0),
 		VertexBytesData(nullptr),
-		TotalVertexBytesNum(0)
+		TotalVertexBytesNum(0),
+		MeshletNormalWeight(0.1f)
 	{}
 	~AdjacencyProcesser()
 	{
@@ -672,29 +591,29 @@ public:
 		}
 	}
 
-	//Pass 0
+	//Pass 0 Gernerate Vertex List
 	bool GetReady0(std::filesystem::path& VertexFilePath);
 	void* RunFunc0(void* SourceData, double* OutProgressPerRun);
 
-	//Pass 1
+	//Pass 1 Gernerate Edge & Face List
 	bool GetReady1(std::filesystem::path& FilePath);
 	void* RunFunc1(void* SourceData, double* OutProgressPerRun);
 	
-	//Pass 2
+	//Pass 2 Gernerate Vertex Normal
 	bool GetReady2();
 	void* RunFunc2(void* SourceData, double* OutProgressPerRun);
 
-	//Pass 3
-	bool GetReady3();
-	void* RunFunc3(void* SourceData, double* OutProgressPerRun);
+	//Pass 3 Preparing Meshlet Layer1 Data
+	bool GetReadyForGenerateMeshletLayer1Data();
+	void* RunGenerateMeshletLayer1Data(void* SourceData, double* OutProgressPerRun);
 
-	//Pass 4
-	bool GetReady4();
-	void* RunFunc4(void* SourceData, double* OutProgressPerRun);
+	//Pass 4 Gernerate Meshlet
+	bool GetReadyGenerateMeshlet();
+	void* RunGenerateMeshlet(void* SourceData, double* OutProgressPerRun);
 
-	//Pass 5
-	bool GetReady5();
-	void* RunFunc5(void* SourceData, double* OutProgressPerRun);
+	//Pass 5 Serialize Meshlet Layer1
+	bool GetReadyForSerializeMeshletLayer1();
+	void* RunFuncForSerializeMeshletLayer1(void* SourceData, double* OutProgressPerRun);
 
 	//Pass Generate Render Data
 	bool GetReadyGenerateRenderData();
@@ -787,23 +706,12 @@ public:
 	void Export(std::filesystem::path& FilePath);
 	
 	
+public:
+	//Parameters For Generation
+	float MeshletNormalWeight;
 
 private:
-	bool HandleAdjacencyFace(
-		const uint CurrentFaceId,
-		const Edge& EdgeToSearch,
-		uint EdgeIndex,
-		SourceContext* Src,
-		uint* OutAdjFaceId, AdjFace* OutAdjFace);
-	bool QueryAdjacencyFace(
-		const uint CurrentFaceId,
-		const Edge& EdgeToSearch,
-		uint EdgeIndex,
-		SourceContext* Src,
-		uint* OutAdjFaceId);
 
-	void ExportAdjacencyFaceList(Byte* Buffer, uint* BytesOffset, const SourceContext* Context);
-	void ExportAdjacencyVertexList(Byte* Buffer, uint* BytesOffset, const SourceContext* Context);
 	void ExportVertexData(Byte* Buffer, uint* BytesOffset, const SourceContext* Context);
 
 private:
@@ -819,4 +727,6 @@ private:
 
 	std::vector<SourceContext*> TriangleContextList;
 	std::vector<VertexContext*> VertexContextList;
+
+
 };

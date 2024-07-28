@@ -18,6 +18,7 @@
 #include "Adjacency.h"
 
 
+
 class HintText
 {
 public:
@@ -62,8 +63,8 @@ public:
         Position(0.0),
         FovY(30.8),
         AspectRatio(1.0),
-        NearZ(1.0),
-        FarZ(5000.0),
+        NearZ(0.1),
+        FarZ(10000.0),
         MoveSpeed(0.2),
         RotateSpeed(0.2),
         LookAt(0.0),
@@ -141,22 +142,20 @@ public:
 
 };
 
-class Mesh
+
+class MeshData
 {
 public:
-    Mesh():
-        Name(""),
+    MeshData() :
         VertexNum(0),
         VertexBuffer(nullptr)
     {
-        IndexNum[0] = 0;
-        IndexNum[1] = 0;
-        IndexBuffer[0] = nullptr;
-        IndexBuffer[1] = nullptr;
-        IndexBufferView[0] = {};
-        IndexBufferView[1] = {};
+        IndexNum = 0;
+        IndexBuffer = nullptr;
+        IndexBufferView = {};
         VertexBufferView = {};
     }
+
 
     void Clear()
     {
@@ -165,27 +164,45 @@ public:
             VertexBuffer = nullptr;
         }
 
-        if (IndexBuffer[0]) {
-            IndexBuffer[0]->Release();
-            IndexBuffer[0] = nullptr;
+        if (IndexBuffer) {
+            IndexBuffer->Release();
+            IndexBuffer = nullptr;
         }
-        if (IndexBuffer[1]) {
-            IndexBuffer[1]->Release();
-            IndexBuffer[1] = nullptr;
-        }
-        IndexNum[0] = 0;
-        IndexNum[1] = 0;
+
+        IndexNum = 0;
         VertexNum = 0;
     }
 
 public:
-    std::string Name;
-    int IndexNum[2];
+    int IndexNum;
     int VertexNum;
-    ID3D12Resource* IndexBuffer[2];
+    ID3D12Resource* IndexBuffer;
     ID3D12Resource* VertexBuffer;
-    D3D12_INDEX_BUFFER_VIEW IndexBufferView[2];
+    D3D12_INDEX_BUFFER_VIEW IndexBufferView;
     D3D12_VERTEX_BUFFER_VIEW VertexBufferView;
+
+};
+class Mesh
+{
+public:
+    Mesh():
+        Name("")
+    {
+    }
+
+
+    void Clear()
+    {
+        Triangle.Clear();
+        FaceNormal.Clear();
+        VertexNormal.Clear();
+    }
+
+public:
+    std::string Name;
+    MeshData Triangle;
+    MeshData FaceNormal;
+    MeshData VertexNormal;
 
     BoundingBox Bounding;
 };
@@ -216,6 +233,48 @@ public:
     void* GPUAddress;
     float  WorldViewProjection[4][4];
 };
+class MaterialParameters
+{
+public:
+    MaterialParameters() :
+        GPUAddress(nullptr)
+    {
+        DisplayMode = 0;
+        DisplayTransparent0 = 0.0f;
+        DisplayTransparent1 = 0.0f;
+        DisplayTransparent2 = 0.0f;
+        DisplayTransparent3 = 0.0f;
+    }
+
+    size_t Size()
+    {
+        return sizeof(int) + sizeof(float) + sizeof(float) + sizeof(float) + sizeof(float);
+    }
+
+    void Copy()
+    {
+        if (GPUAddress) {
+            unsigned char* Dest = reinterpret_cast<unsigned char*>(GPUAddress);
+            memcpy(Dest, &DisplayMode, sizeof(int));
+            Dest += sizeof(int);
+            memcpy(Dest, &DisplayTransparent0, sizeof(float));
+            Dest += sizeof(float);
+            memcpy(Dest, &DisplayTransparent1, sizeof(float));
+            Dest += sizeof(float);
+            memcpy(Dest, &DisplayTransparent2, sizeof(float));
+            Dest += sizeof(float);
+            memcpy(Dest, &DisplayTransparent3, sizeof(float));
+        }
+    }
+
+public:
+    void* GPUAddress;
+    int  DisplayMode;
+    float DisplayTransparent0;
+    float DisplayTransparent1;
+    float DisplayTransparent2;
+    float DisplayTransparent3;
+};
 
 
 class MeshRenderer
@@ -226,9 +285,20 @@ public:
         D3dSrcDescriptorHeap(d3dSrcDescHeap),
         RootSignature(nullptr),
         SolidPipelineState(nullptr),
+        WireFramePipelineState(nullptr),
         LinePipelineState(nullptr),
         ConstantsBuffer(nullptr)
     {
+        ShowWireFrame = false;
+        ShowFaceNormal = false;
+        ShowVertexNormal = false;
+        ShowAdjacencyFace = false;
+        ShowMeshletLayer = false;
+        AdjacencyFaceTransparent = 1.0f;
+        MeshletLayerTransparent[0] = 1.0f;
+        MeshletLayerTransparent[1] = 0.0f;
+        MeshletLayerTransparent[2] = 0.0f;
+
         if (!InitRenderPipeline())
         {
             Hint.Error("Init Renderer Error");
@@ -242,10 +312,23 @@ public:
         Release();
     }
 
-    bool LoadMeshFromProcesser(AdjacencyProcesser* Processer);
-    void RenderModel(const Float3& DisplaySize, ID3D12GraphicsCommandList* CommandList);
+    void LoadMesh(AdjacencyProcesser* Processer)
+    {
+        bool Success = LoadMeshFromProcesser(Processer);
+        if (!Success)
+        {
+            Hint.Error("Load Mesh Failed.");
+        }
+        Sygnal = false;
+    }
+    bool NeedWaitForNextFrame()
+    {
+        return Sygnal;
+    }
 
-    void ShowViewerSettingUI(AdjacencyProcesser* Processer, bool ModelIsLoaded, bool GeneratorIsWorking);
+    
+    void RenderModel(const Float3& DisplaySize, ID3D12GraphicsCommandList* CommandList);
+    void ShowViewerSettingUI(bool ModelIsLoaded, bool GeneratorIsWorking);
 
 
 private:
@@ -253,6 +336,11 @@ private:
     void ClearResource();
     void Release()
     {
+        if (ParametersBuffer)
+        {
+            ParametersBuffer->Release();
+            ParametersBuffer = nullptr;
+        }
         if (ConstantsBuffer)
         {
             ConstantsBuffer->Release();
@@ -261,6 +349,10 @@ private:
         if (SolidPipelineState) {
             SolidPipelineState->Release();
             SolidPipelineState = nullptr;
+        }
+        if (WireFramePipelineState) {
+            WireFramePipelineState->Release();
+            WireFramePipelineState = nullptr;
         }
         if (LinePipelineState) {
             LinePipelineState->Release();
@@ -273,13 +365,28 @@ private:
     }
 
     void UpdateEveryFrameState(const Float3& DisplaySize);
- 
+    bool LoadMeshFromProcesser(AdjacencyProcesser* Processer);
+
+
+
+
 private:
     HintText Hint;
+    bool ShowWireFrame;
+    bool ShowFaceNormal;
+    bool ShowVertexNormal;
+    bool ShowAdjacencyFace;
+    float AdjacencyFaceTransparent;
+    bool ShowMeshletLayer;
+    float MeshletLayerTransparent[3];
+
+private:
     std::vector<Mesh> MeshList;
     Constants ConstantParams;
+    MaterialParameters MaterialParams;
     Camera RenderCamera;
     BoundingBox TotalBounding;
+    bool Sygnal;
 
 private:
     ID3D12Device* D3dDevice;
@@ -287,8 +394,11 @@ private:
 
     ID3D12RootSignature* RootSignature;
     ID3D12PipelineState* SolidPipelineState;
+    ID3D12PipelineState* WireFramePipelineState;
     ID3D12PipelineState* LinePipelineState;
     ID3D12Resource* ConstantsBuffer;
+    ID3D12Resource* ParametersBuffer;
+
 
 };
 
@@ -308,6 +418,17 @@ public:
     }
     void Render(ID3D12GraphicsCommandList* CommandList);
 
+    bool NeedWaitForSumittedFrame()
+    {
+        if (!MeshViewer.get()) return false;
+        return MeshViewer->NeedWaitForNextFrame();
+    }
+
+    void OnLastFrameFinished()
+    {
+        if (MeshViewer.get())
+            MeshViewer->LoadMesh(Processer.get());
+    }
 
 private:
     void OnLoadButtonClicked();
@@ -339,6 +460,8 @@ private:
     bool Working;
     bool Loaded;
     bool PreLoad;
+    int CurrentPassIndex;
+
 
 };
 

@@ -63,6 +63,23 @@ void WaitForLastSubmittedFrame()
     WaitForSingleObject(gFenceEvent, INFINITE);
 }
 
+void WaitForCurrentFrame()
+{
+    FrameContext* frameCtx = &gFrameContext[gFrameIndex % NUM_FRAMES_IN_FLIGHT];
+
+    UINT64 fenceValue = frameCtx->FenceValue;
+    if (fenceValue == 0)
+        return; // No fence was signaled
+
+    frameCtx->FenceValue = 0;
+    if (gFence->GetCompletedValue() >= fenceValue)
+        return;
+
+    gFence->SetEventOnCompletion(fenceValue, gFenceEvent);
+    WaitForSingleObject(gFenceEvent, INFINITE);
+}
+
+
 FrameContext* WaitForNextFrameResources()
 {
     UINT nextFrameIndex = gFrameIndex + 1;
@@ -235,7 +252,7 @@ bool CreateDeviceD3D(HWND hWnd)
     {
         D3D12_DESCRIPTOR_HEAP_DESC desc = {};
         desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-        desc.NumDescriptors = 2; 
+        desc.NumDescriptors = 3;  //0 for ui rendering, 1 2 for constant buffer in model rendering
         desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         if (gD3dDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&gD3dSrvDescHeap)) != S_OK)
             return false;
@@ -377,7 +394,7 @@ int main(int argc, char** argv)
     ::ShowWindow(hwnd, SW_SHOWDEFAULT);
     ::UpdateWindow(hwnd);
 
-    PreLoadFilePath = "F:\\OutlineDev\\LineRenderDev\\LineRenderDev\\Assets\\Models\\SphereAndTorus.triangles";
+    //PreLoadFilePath = "F:\\OutlineDev\\LineRenderDev\\LineRenderDev\\Assets\\Models\\SphereAndTorus.triangles";
     gEditor = new Editor(hwnd, NUM_FRAMES_IN_FLIGHT, gD3dDevice, gD3dSrvDescHeap);
     gEditor->PreLoadFile(PreLoadFilePath);
 
@@ -399,9 +416,14 @@ int main(int argc, char** argv)
         if (done)
             break;
 
-        FrameContext* frameCtx = WaitForNextFrameResources();
+        if (gEditor->NeedWaitForSumittedFrame())
+        {
+            WaitForLastSubmittedFrame();
+            gEditor->OnLastFrameFinished();
+        }
+        FrameContext* NextFrameCtx = WaitForNextFrameResources();
         UINT backBufferIdx = gSwapChain->GetCurrentBackBufferIndex();
-        frameCtx->CommandAllocator->Reset();
+        NextFrameCtx->CommandAllocator->Reset();
 
         D3D12_RESOURCE_BARRIER barrier = {};
         barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -410,7 +432,7 @@ int main(int argc, char** argv)
         barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
         barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
         barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-        gD3dCommandList->Reset(frameCtx->CommandAllocator, nullptr);
+        gD3dCommandList->Reset(NextFrameCtx->CommandAllocator, nullptr);
         gD3dCommandList->ResourceBarrier(1, &barrier);
 
         const float clear_color_with_alpha[4] = { clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w };
@@ -435,7 +457,7 @@ int main(int argc, char** argv)
         UINT64 fenceValue = gFenceLastSignaledValue + 1;
         gD3dCommandQueue->Signal(gFence, fenceValue);
         gFenceLastSignaledValue = fenceValue;
-        frameCtx->FenceValue = fenceValue;
+        NextFrameCtx->FenceValue = fenceValue;
     }
 
     WaitForLastSubmittedFrame();

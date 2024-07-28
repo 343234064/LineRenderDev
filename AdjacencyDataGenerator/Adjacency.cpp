@@ -1,6 +1,7 @@
 #include "Adjacency.h"
 #include <iostream>
 
+#include "Utils.h"
 
 #define WRITE_MESSAGE(Message, Obj) \
 	MessageString += Message; \
@@ -16,103 +17,6 @@
 #define VER_ELEMENT_LENGTH 4
 
 
-
-Float3 operator-(const Float3& a, const Float3& b)
-{
-	return Float3(a.x - b.x, a.y - b.y, a.z - b.z);
-}
-
-Float3 operator+(const Float3& a, const Float3& b)
-{
-	return Float3(a.x + b.x, a.y + b.y, a.z + b.z);
-}
-
-Float3 operator*(const Float3& a, const double b)
-{
-	return Float3(a.x * b, a.y * b, a.z * b);
-}
-
-Float3 operator*(const Float3& a, const Float3& b)
-{
-	return Float3(a.x * b.x, a.y * b.y, a.z * b.z);
-}
-
-Float3 Normalize(const Float3& a)
-{
-	float MagInv = 1.0f / Length(a);
-	return a * MagInv;
-}
-
-float Length(const Float3& a)
-{
-	return MAX(0.000001f, sqrt(a.x * a.x + a.y * a.y + a.z * a.z));
-}
-
-Float3 Cross(const Float3& a, const Float3& b)
-{
-	return Float3(
-		a.y * b.z - a.z * b.y,
-		a.z * b.x - a.x * b.z,
-		a.x * b.y - a.y * b.x
-	);
-}
-
-float Dot(const Float3& a, const Float3& b)
-{
-	return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-
-inline int BytesToUnsignedIntegerLittleEndian(Byte* Src, uint Offset)
-{
-	return static_cast<int>(static_cast<Byte>(Src[Offset]) |
-		static_cast<Byte>(Src[Offset + 1]) << 8 |
-		static_cast<Byte>(Src[Offset + 2]) << 16 |
-		static_cast<Byte>(Src[Offset + 3]) << 24);
-}
-
-inline float BytesToFloatLittleEndian(Byte* Src, uint Offset)
-{
-	uint32_t value = static_cast<uint32_t>(Src[Offset]) |
-		static_cast<uint32_t>(Src[Offset + 1]) << 8 |
-		static_cast<uint32_t>(Src[Offset + 2]) << 16 |
-		static_cast<uint32_t>(Src[Offset + 3]) << 24;
-
-	return *reinterpret_cast<float*>(&value);
-}
- 
-inline std::string BytesToASCIIString(Byte* Src, int Offset, int Length)
-{
-	char* Buffer = new char[size_t(Length) + 1];
-	memcpy(Buffer, Src + Offset, Length);
-	Buffer[Length] = '\0';
-
-	std::string Str = Buffer;
-	delete[] Buffer;
-	return std::move(Str);
-}
-
-
-inline void WriteUnsignedIntegerToBytesLittleEndian(Byte* Src, uint* Offset, uint Value)
-{
-	Src[*Offset] = Value & 0x000000ff;
-	Src[*Offset + 1] = (Value & 0x0000ff00) >> 8;
-	Src[*Offset + 2] = (Value & 0x00ff0000) >> 16;
-	Src[*Offset + 3] = (Value & 0xff000000) >> 24;
-	*Offset += 4;
-}
-
-inline void WriteASCIIStringToBytes(Byte* Dst, uint* Offset, std::string& Value)
-{
-	memcpy(Dst + *Offset, Value.c_str(), Value.length());
-	*Offset += Value.length();
-}
-
-inline void WriteFloatToBytesLittleEndian(Byte* Src, uint* Offset, float Value)
-{
-	uint* T = (uint*)&Value;
-	uint V = *T;
-	WriteUnsignedIntegerToBytesLittleEndian(Src, Offset, V);
-}
 
 
 bool AdjacencyProcesser::GetReady0(std::filesystem::path& VertexFilePath)
@@ -336,6 +240,7 @@ bool AdjacencyProcesser::GetReady1(std::filesystem::path& FilePath)
 		Context->FaceList.reserve(Context->TriangleNum);
 		Context->EdgeList.clear();
 		Context->EdgeFaceList.clear();
+		Context->AdjacencyVertexFaceMap.clear();
 
 		WRITE_MESSAGE_DIGIT("Mesh: ", i);
 		WRITE_MESSAGE_DIGIT("Triangle: ", Context->TriangleNum);
@@ -501,8 +406,47 @@ void* AdjacencyProcesser::RunFunc1(void* SourceData, double* OutProgressPerRun)
 #endif
 	}
 
-	Src->FaceList.emplace_back(Face(ix, iy, iz, e1.id, e2.id, e3.id));
-	Src->FaceIdPool.insert(Src->CurrentFacePos);
+	Float3 px = Src->VertexData->VertexList[ix.value].Get();
+	Float3 py = Src->VertexData->VertexList[iy.value].Get();
+	Float3 pz = Src->VertexData->VertexList[iz.value].Get();
+	Float3 Normal = CalculateNormal(px, py, pz);
+	Float3 Center = (px + py + pz) / 3.0f;
+
+	Src->FaceList.emplace_back(Face(ix, iy, iz, e1.id, e2.id, e3.id, Normal, Center));
+
+
+	std::unordered_map<uint, std::set<uint>>::iterator xFind = Src->AdjacencyVertexFaceMap.find(ix.value);
+	if (xFind != Src->AdjacencyVertexFaceMap.end())
+	{
+		xFind->second.insert(Src->CurrentFacePos);
+	}
+	else
+	{
+		Src->AdjacencyVertexFaceMap.insert(std::unordered_map<uint, std::set<uint>>::value_type(ix.value, std::set<uint>()));
+		Src->AdjacencyVertexFaceMap[ix.value].insert(Src->CurrentFacePos);
+	}
+
+	std::unordered_map<uint, std::set<uint>>::iterator yFind = Src->AdjacencyVertexFaceMap.find(iy.value);
+	if (yFind != Src->AdjacencyVertexFaceMap.end())
+	{
+		yFind->second.insert(Src->CurrentFacePos);
+	}
+	else
+	{
+		Src->AdjacencyVertexFaceMap.insert(std::unordered_map<uint, std::set<uint>>::value_type(iy.value, std::set<uint>()));
+		Src->AdjacencyVertexFaceMap[iy.value].insert(Src->CurrentFacePos);
+	}
+
+	std::unordered_map<uint, std::set<uint>>::iterator zFind = Src->AdjacencyVertexFaceMap.find(iz.value);
+	if (zFind != Src->AdjacencyVertexFaceMap.end())
+	{
+		zFind->second.insert(Src->CurrentFacePos);
+	}
+	else
+	{
+		Src->AdjacencyVertexFaceMap.insert(std::unordered_map<uint, std::set<uint>>::value_type(iz.value, std::set<uint>()));
+		Src->AdjacencyVertexFaceMap[iz.value].insert(Src->CurrentFacePos);
+	}
 
 
 	Src->CurrentFacePos++;
@@ -517,12 +461,11 @@ void* AdjacencyProcesser::RunFunc1(void* SourceData, double* OutProgressPerRun)
 }
 
 
-
 bool AdjacencyProcesser::GetReady2()
 {
-	if (AsyncProcesser == nullptr || TriangleContextList.size() == 0 || TriangleBytesData == nullptr || IsWorking())
+	if (AsyncProcesser == nullptr || TriangleContextList.size() == 0 || IsWorking())
 	{
-		ErrorString += "GetReady1 has not run yet or is still working.\n";
+		ErrorString += "Gerneration has not run yet or is still working.\n";
 		return false;
 	}
 	AsyncProcesser->Clear();
@@ -530,29 +473,17 @@ bool AdjacencyProcesser::GetReady2()
 	ErrorString = "";
 	MessageString = "";
 
-	for (int i = 0; i < TriangleContextList.size(); i++) {
-		WRITE_MESSAGE_DIGIT("Mesh: ", i);
-		WRITE_MESSAGE_DIGIT("Face: ", TriangleContextList[i]->FaceList.size());
-		WRITE_MESSAGE_DIGIT("Edge: ", TriangleContextList[i]->EdgeFaceList.size());
-	}
-
-
-	for (uint i = 0; i < TriangleContextList.size() ; i++)
-	{	
+	for (uint i = 0; i < TriangleContextList.size(); i++)
+	{
 		TriangleContextList[i]->CurrentFacePos = 0;
 		TriangleContextList[i]->CurrentIndexPos = 0;
 
-		if (TriangleContextList[i]->FaceList.size() >= 1) {
-			TriangleContextList[i]->FaceList[0].BlackWhite = 1;
-			TriangleContextList[i]->FaceIdQueue.push(0);
-			TriangleContextList[i]->FaceIdPool.erase(0);
-
-			TriangleContextList[i]->AdjacencyFaceList.reserve(TriangleContextList[i]->FaceList.size());
-		}
+		WRITE_MESSAGE("Mesh Name : ", TriangleContextList[i]->Name);
+		WRITE_MESSAGE_DIGIT("VertexLength: ", TriangleContextList[i]->VertexData->VertexList.size());
+		WRITE_MESSAGE_DIGIT("FaceLength: ", TriangleContextList[i]->FaceList.size());
 
 		AsyncProcesser->AddData((void*)TriangleContextList[i]);
 	}
-
 
 	std::function<void* (void*, double*)> Runnable = std::bind(&AdjacencyProcesser::RunFunc2, this, std::placeholders::_1, std::placeholders::_2);
 	AsyncProcesser->SetRunFunc(Runnable);
@@ -565,499 +496,50 @@ bool AdjacencyProcesser::GetReady2()
 		return false;
 	}
 
-
 	return true;
-}
-
-#define DEBUG_3 1
-
-
-bool AdjacencyProcesser::HandleAdjacencyFace(
-	const uint CurrentFaceId,
-	const Edge& EdgeToSearch,
-	uint EdgeIndex, 
-	SourceContext* Src,
-	uint* OutAdjFaceId, AdjFace* OutAdjFace)
-{
-	bool HasAdjFace = false;
-	std::unordered_map<Edge, FacePair>::iterator it = Src->EdgeFaceList.find(EdgeToSearch);
-	if (it != Src->EdgeFaceList.end())
-	{
-		FacePair& adj = it->second;
-		if (adj.set1 && adj.face1 != CurrentFaceId)
-		{
-			OutAdjFace->adjPoint[EdgeIndex] = Src->FaceList[adj.face1].GetOppositePoint(EdgeToSearch.v1, EdgeToSearch.v2);
-			OutAdjFace->hasAdjFace[EdgeIndex] = true;
-			OutAdjFace->adjFaceIndex[EdgeIndex] = adj.face1;
-			*OutAdjFaceId = adj.face1;
-			HasAdjFace = true;
-		}
-		else if (adj.set2 && adj.face2 != CurrentFaceId)
-		{
-			OutAdjFace->adjPoint[EdgeIndex] = Src->FaceList[adj.face2].GetOppositePoint(EdgeToSearch.v1, EdgeToSearch.v2);
-			OutAdjFace->hasAdjFace[EdgeIndex] = true;
-			OutAdjFace->adjFaceIndex[EdgeIndex] = adj.face2;
-			*OutAdjFaceId = adj.face2;
-			HasAdjFace = true;
-		}
-	}
-#if DEBUG_3
-	else
-	{
-		ErrorString += "Find Edge Error. Current Face: " + std::to_string(CurrentFaceId) + " | " + std::to_string(OutAdjFace->x.actual_value) + "," + std::to_string(OutAdjFace->y.actual_value) + "," + std::to_string(OutAdjFace->z.actual_value) + "\n";
-		ErrorString += "Edge: " + std::to_string(EdgeToSearch.v1.actual_value) + ", " + std::to_string(EdgeToSearch.v2.actual_value) + "\n";
-	}
-#endif
-
-	return HasAdjFace;
-}
-
-
-bool AdjacencyProcesser::QueryAdjacencyFace(
-	const uint CurrentFaceId,
-	const Edge& EdgeToSearch,
-	uint EdgeIndex,
-	SourceContext* Src,
-	uint* OutAdjFaceId)
-{
-	bool HasAdjFace = false;
-	std::unordered_map<Edge, FacePair>::iterator it = Src->EdgeFaceList.find(EdgeToSearch);
-	if (it != Src->EdgeFaceList.end())
-	{
-		FacePair& adj = it->second;
-		if (adj.set1 && adj.face1 != CurrentFaceId)
-		{
-			*OutAdjFaceId = adj.face1;
-			HasAdjFace = true;
-		}
-		else if (adj.set2 && adj.face2 != CurrentFaceId)
-		{
-			*OutAdjFaceId = adj.face2;
-			HasAdjFace = true;
-		}
-	}
-#if DEBUG_3
-	else
-	{
-		ErrorString += "Find Edge Error. Current Face: " + std::to_string(CurrentFaceId) + "\n";
-		ErrorString += "Edge: " + std::to_string(EdgeToSearch.v1.actual_value) + ", " + std::to_string(EdgeToSearch.v2.actual_value) + "\n";
-	}
-#endif
-
-	return HasAdjFace;
 }
 
 void* AdjacencyProcesser::RunFunc2(void* SourceData, double* OutProgressPerRun)
 {
 	SourceContext* Src = (SourceContext*)SourceData;
-
-	if (!Src->FaceIdQueue.empty()) {
-		int CurrentFaceId = Src->FaceIdQueue.front();
-
-		Face& CurrentFace = Src->FaceList[CurrentFaceId];
-
-		
-		if (!CurrentFace.IsRead)
-		{
-			Edge xy(CurrentFace.x, CurrentFace.y);
-			Edge yz(CurrentFace.y, CurrentFace.z);
-			Edge zx(CurrentFace.z, CurrentFace.x);
-
-			uint xy_adj_face_id = 0;
-			uint yz_adj_face_id = 0;
-			uint zx_adj_face_id = 0;
-
-			if (CurrentFace.BlackWhite == 1)
-			{
-				AdjFace NewAdjFace(CurrentFace);
-				NewAdjFace.faceIndex = CurrentFaceId;
-
-				bool xy_has_adj_face = HandleAdjacencyFace(CurrentFaceId, xy, 0, Src, &xy_adj_face_id, &NewAdjFace);
-				bool yz_has_adj_face = HandleAdjacencyFace(CurrentFaceId, yz, 1, Src, &yz_adj_face_id, &NewAdjFace);
-				bool zx_has_adj_face = HandleAdjacencyFace(CurrentFaceId, zx, 2, Src, &zx_adj_face_id, &NewAdjFace);
-
-				Src->AdjacencyFaceList.emplace_back(NewAdjFace);
-
-				if (xy_has_adj_face && !Src->FaceList[xy_adj_face_id].IsRead)
-				{
-					if (Src->FaceList[xy_adj_face_id].BlackWhite == 0)
-					{
-						Src->FaceList[xy_adj_face_id].BlackWhite = -1;
-						Src->FaceIdQueue.push(xy_adj_face_id);
-						Src->FaceIdPool.erase(xy_adj_face_id);
-					}
-				}
-				if (yz_has_adj_face && !Src->FaceList[yz_adj_face_id].IsRead)
-				{
-					if (Src->FaceList[yz_adj_face_id].BlackWhite == 0)
-					{
-						Src->FaceList[yz_adj_face_id].BlackWhite = -1;
-						Src->FaceIdQueue.push(yz_adj_face_id);
-						Src->FaceIdPool.erase(yz_adj_face_id);
-					}
-				}
-				if (zx_has_adj_face && !Src->FaceList[zx_adj_face_id].IsRead)
-				{
-					if (Src->FaceList[zx_adj_face_id].BlackWhite == 0)
-					{
-						Src->FaceList[zx_adj_face_id].BlackWhite = -1;
-						Src->FaceIdQueue.push(zx_adj_face_id);
-						Src->FaceIdPool.erase(zx_adj_face_id);
-					}
-				}
-				CurrentFace.IsRead = true;
-				
-			}
-			else if (CurrentFace.BlackWhite == -1)
-			{
-				bool NeedRevert = false;
-
-				bool xy_has_adj_face = QueryAdjacencyFace(CurrentFaceId, xy, 0, Src, &xy_adj_face_id);
-				bool yz_has_adj_face = QueryAdjacencyFace(CurrentFaceId, yz, 1, Src, &yz_adj_face_id);
-				bool zx_has_adj_face = QueryAdjacencyFace(CurrentFaceId, zx, 2, Src, &zx_adj_face_id);
-
-				if (xy_has_adj_face && !Src->FaceList[xy_adj_face_id].IsRead)
-				{
-					if (Src->FaceList[xy_adj_face_id].BlackWhite == 0)
-					{
-						Src->FaceList[xy_adj_face_id].BlackWhite = 1;
-						Src->FaceIdQueue.push(xy_adj_face_id);
-						Src->FaceIdPool.erase(xy_adj_face_id);
-					}
-					else if (Src->FaceList[xy_adj_face_id].BlackWhite == -1)
-					{
-						NeedRevert = true;
-					}
-				}
-				if (yz_has_adj_face && !Src->FaceList[yz_adj_face_id].IsRead)
-				{
-					if (Src->FaceList[yz_adj_face_id].BlackWhite == 0)
-					{
-						Src->FaceList[yz_adj_face_id].BlackWhite = 1;
-						Src->FaceIdQueue.push(yz_adj_face_id);
-						Src->FaceIdPool.erase(yz_adj_face_id);
-					}
-					else if (Src->FaceList[yz_adj_face_id].BlackWhite == -1)
-					{
-						NeedRevert = true;
-					}
-				}
-				if (zx_has_adj_face && !Src->FaceList[zx_adj_face_id].IsRead)
-				{
-					if (Src->FaceList[zx_adj_face_id].BlackWhite == 0)
-					{
-						Src->FaceList[zx_adj_face_id].BlackWhite = 1;
-						Src->FaceIdQueue.push(zx_adj_face_id);
-						Src->FaceIdPool.erase(zx_adj_face_id);
-					}
-					else if (Src->FaceList[zx_adj_face_id].BlackWhite == -1)
-					{
-						NeedRevert = true;
-					}
-				}
-
-				if (NeedRevert)
-				{
-					CurrentFace.BlackWhite = 1;
-				}
-				else
-					CurrentFace.IsRead = true;
-			}
-			else
-			{
-				CurrentFace.BlackWhite = 1;
-			}
-		}
-
-		double Step = 0.0;
-		if (CurrentFace.IsRead) {
-			Src->FaceIdQueue.pop();
-			Step = 1.0 / Src->TriangleNum;
-		}
-		*OutProgressPerRun = Step;
-	}
-	else {
-		if (!Src->FaceIdPool.empty())
-		{
-			Src->FaceIdQueue.push(*Src->FaceIdPool.begin());
-			Src->FaceIdPool.erase(Src->FaceIdPool.begin());
-		}
-		else {
-			*OutProgressPerRun = 1.0;
-		}
-	}
-
-
-
-	if (Src->FaceIdPool.empty() && Src->FaceIdQueue.empty())
-		return (void*)Src;
-	else
-		return nullptr;
-}
-
-
-bool AdjacencyProcesser::GetReady3()
-{
-	if (AsyncProcesser == nullptr || TriangleContextList.size() == 0 || TriangleBytesData == nullptr || IsWorking())
-	{
-		ErrorString += "GetReady2 has not run yet or is still working.\n";
-		return false;
-	}
-	AsyncProcesser->Clear();
-
-	ErrorString = "";
-	MessageString = "";
-
-	for (int i = 0; i < TriangleContextList.size(); i++) {
-		WRITE_MESSAGE_DIGIT("Mesh: ", i);
-		WRITE_MESSAGE_DIGIT("Adj Face Num Before Shrink: ", TriangleContextList[i]->AdjacencyFaceList.size());
-
-	}
-
-
-	for (uint i = 0; i < TriangleContextList.size(); i++)
-	{
-		TriangleContextList[i]->CurrentFacePos = 0;
-		TriangleContextList[i]->CurrentIndexPos = 0;
-		AsyncProcesser->AddData((void*)TriangleContextList[i]);
-	}
-
-
-	std::function<void* (void*, double*)> Runnable = std::bind(&AdjacencyProcesser::RunFunc3, this, std::placeholders::_1, std::placeholders::_2);
-	AsyncProcesser->SetRunFunc(Runnable);
-
-	AsyncProcesser->SetIntervalTime(0.0);
-
-	if (!AsyncProcesser->Kick())
-	{
-		ErrorString += "Start async request failed.\n";
-		return false;
-	}
-
-
-	return true;
-}
-
-
-void* AdjacencyProcesser::RunFunc3(void* SourceData, double* OutProgressPerRun)
-{
-	SourceContext* Src = (SourceContext*)SourceData;
-
-	AdjFace& CurrentAdjFace = Src->AdjacencyFaceList[Src->CurrentFacePos];
-
-	bool IsAdjWhite1 = true;
-	bool IsAdjWhite2 = true;
-	bool IsAdjWhite3 = true;
-	if (CurrentAdjFace.hasAdjFace[0]) {
-		Face& Adj = Src->FaceList[CurrentAdjFace.adjFaceIndex[0]];
-		IsAdjWhite1 = (Adj.BlackWhite == -1) ? true : false;
-		if (Adj.IsAddToAdjFaceList)
-		{
-			CurrentAdjFace.hasAdjFace[0] = false;
-		}
-	}
-	if (CurrentAdjFace.hasAdjFace[1]) {
-		Face& Adj = Src->FaceList[CurrentAdjFace.adjFaceIndex[1]];
-		IsAdjWhite2 = (Adj.BlackWhite == -1) ? true : false;
-		if (Adj.IsAddToAdjFaceList)
-		{
-			CurrentAdjFace.hasAdjFace[1] = false;
-		}
-	}
-	if (CurrentAdjFace.hasAdjFace[2]) {
-		Face& Adj = Src->FaceList[CurrentAdjFace.adjFaceIndex[2]];
-		IsAdjWhite3 = (Adj.BlackWhite == -1) ? true : false;
-		if (Adj.IsAddToAdjFaceList)
-		{
-			CurrentAdjFace.hasAdjFace[2] = false;
-		}
-	}
-	
-	if (IsAdjWhite1 || IsAdjWhite2 || IsAdjWhite3)
-	{
-		Src->AdjacencyFaceListShrink.push_back(CurrentAdjFace);
-		Src->FaceList[CurrentAdjFace.faceIndex].IsAddToAdjFaceList = true;
-	}
-	else
-	{
-		Src->FaceList[CurrentAdjFace.faceIndex].BlackWhite = -1;
-	}
-
-	Src->CurrentFacePos++;
-
-	double Step = 1.0 / Src->AdjacencyFaceList.size();
-	*OutProgressPerRun = Step;
-
-	if (Src->CurrentFacePos >= Src->AdjacencyFaceList.size())
-		return (void*)Src;
-	else
-		return nullptr;
-}
-
-
-bool AdjacencyProcesser::GetReady4()
-{
-	if (AsyncProcesser == nullptr || TriangleContextList.size() == 0 || IsWorking())
-	{
-		ErrorString += "GetReady3 has not run yet or is still working.\n";
-		return false;
-	}
-	AsyncProcesser->Clear();
-
-	ErrorString = "";
-	MessageString = "";
-
-	for (uint i = 0; i < TriangleContextList.size(); i++)
-	{
-		TriangleContextList[i]->CurrentFacePos = 0;
-		AsyncProcesser->AddData((void*)TriangleContextList[i]);
-	}
-
-	std::function<void* (void*, double*)> Runnable = std::bind(&AdjacencyProcesser::RunFunc4, this, std::placeholders::_1, std::placeholders::_2);
-	AsyncProcesser->SetRunFunc(Runnable);
-
-	AsyncProcesser->SetIntervalTime(0.0);
-
-	if (!AsyncProcesser->Kick())
-	{
-		ErrorString += "Start async request failed.\n";
-		return false;
-	}
-
-	return true;
-}
-
-
-void* AdjacencyProcesser::RunFunc4(void* SourceData, double* OutProgressPerRun)
-{
-	SourceContext* Src = (SourceContext*)SourceData;
-
-	AdjFace& CurrentAdjFace = Src->AdjacencyFaceListShrink[Src->CurrentFacePos];
-
-	Index x = CurrentAdjFace.x;
-	Index y = CurrentAdjFace.y;
-	Index z = CurrentAdjFace.z;
-
-	std::unordered_map<uint, std::set<uint>>::iterator it = Src->AdjacencyVertexMap.find(x.value);
-	if (it != Src->AdjacencyVertexMap.end())
-	{
-		std::set<uint>::iterator yit = it->second.find(y.value);
-		if (yit == it->second.end()) it->second.insert(y.value);
-		std::set<uint>::iterator zit = it->second.find(z.value);
-		if (zit == it->second.end()) it->second.insert(z.value);
-	}
-	else
-	{
-		Src->AdjacencyVertexMap.insert(std::unordered_map<uint, std::set<uint>>::value_type(x.value, std::set<uint>()));
-		Src->AdjacencyVertexMap[x.value].insert(y.value);
-		Src->AdjacencyVertexMap[x.value].insert(z.value);
-	}
-
-	it = Src->AdjacencyVertexMap.find(y.value);
-	if (it != Src->AdjacencyVertexMap.end())
-	{
-		std::set<uint>::iterator xit = it->second.find(x.value);
-		if (xit == it->second.end()) it->second.insert(x.value);
-		std::set<uint>::iterator zit = it->second.find(z.value);
-		if (zit == it->second.end()) it->second.insert(z.value);
-	}
-	else
-	{
-		Src->AdjacencyVertexMap.insert(std::unordered_map<uint, std::set<uint>>::value_type(y.value, std::set<uint>()));
-		Src->AdjacencyVertexMap[y.value].insert(x.value);
-		Src->AdjacencyVertexMap[y.value].insert(z.value);
-	}
-
-	it = Src->AdjacencyVertexMap.find(z.value);
-	if (it != Src->AdjacencyVertexMap.end())
-	{
-		std::set<uint>::iterator xit = it->second.find(x.value);
-		if (xit == it->second.end()) it->second.insert(x.value);
-		std::set<uint>::iterator yit = it->second.find(y.value);
-		if (yit == it->second.end()) it->second.insert(y.value);
-	}
-	else
-	{
-		Src->AdjacencyVertexMap.insert(std::unordered_map<uint, std::set<uint>>::value_type(z.value, std::set<uint>()));
-		Src->AdjacencyVertexMap[z.value].insert(x.value);
-		Src->AdjacencyVertexMap[z.value].insert(y.value);
-	}
-
-	Src->CurrentFacePos++;
-
-	double Step = 1.0 / Src->AdjacencyFaceListShrink.size();
-	*OutProgressPerRun = Step;
-
-	if (Src->CurrentFacePos >= Src->AdjacencyFaceListShrink.size())
-		return (void*)Src;
-	else
-		return nullptr;
-}
-
-
-bool AdjacencyProcesser::GetReady5()
-{
-	if (AsyncProcesser == nullptr || TriangleContextList.size() == 0 || IsWorking())
-	{
-		ErrorString += "GetReady4 has not run yet or is still working.\n";
-		return false;
-	}
-	AsyncProcesser->Clear();
-
-	ErrorString = "";
-	MessageString = "";
-
-	for (uint i = 0; i < TriangleContextList.size(); i++)
-	{
-		TriangleContextList[i]->CurrentFacePos = 0;
-		TriangleContextList[i]->CurrentIndexPos = 0;
-		TriangleContextList[i]->TotalAdjacencyVertexNum = 0;
-		AsyncProcesser->AddData((void*)TriangleContextList[i]);
-
-		WRITE_MESSAGE_DIGIT("AdjVertexMap Num: ", TriangleContextList[i]->AdjacencyVertexMap.size());
-	}
-
-	std::function<void* (void*, double*)> Runnable = std::bind(&AdjacencyProcesser::RunFunc5, this, std::placeholders::_1, std::placeholders::_2);
-	AsyncProcesser->SetRunFunc(Runnable);
-
-	AsyncProcesser->SetIntervalTime(0.0);
-
-	if (!AsyncProcesser->Kick())
-	{
-		ErrorString += "Start async request failed.\n";
-		return false;
-	}
-
-	return true;
-}
-
-
-void* AdjacencyProcesser::RunFunc5(void* SourceData, double* OutProgressPerRun)
-{
-	SourceContext* Src = (SourceContext*)SourceData;
 	VertexContext* VertexData = Src->VertexData;
 
-	AdjVertex& CurrentAdjVertex = VertexData->VertexList[Src->CurrentIndexPos];
+	Vertex3& CurrentVertex = VertexData->VertexList[Src->CurrentIndexPos];
+	
+	Float3 Normal;
 
-	std::unordered_map<uint, std::set<uint>>::iterator it = Src->AdjacencyVertexMap.find(Src->CurrentIndexPos);
-	if(it != Src->AdjacencyVertexMap.end())
-	{
-		uint adjId = (uint)(Src->AdjacencyVertexList.size());
-		CurrentAdjVertex.adjId = adjId;
-		CurrentAdjVertex.adjSerializedId = Src->TotalAdjacencyVertexNum;
-		CurrentAdjVertex.adjNum = (uint)(it->second.size());
+	std::set<uint>& AdjacencyFaceList = Src->AdjacencyVertexFaceMap[Src->CurrentIndexPos];
+	if (AdjacencyFaceList.size() > 0) {
 
-		std::vector<uint> AdjList;
-		for (std::set<uint>::iterator i = it->second.begin(); i != it->second.end(); i++) {
-			AdjList.push_back(*i);
-			Src->TotalAdjacencyVertexNum++;
+		std::vector<Float3> FaceNormals;
+		for (std::set<uint>::iterator i = AdjacencyFaceList.begin(); i != AdjacencyFaceList.end(); i++)
+		{
+			Float3 CurrentFaceNormal = Src->FaceList[*i].normal;
+			bool Add = true;
+			for (uint j = 0; j < FaceNormals.size(); j++)
+			{
+				if (Dot(FaceNormals[j], CurrentFaceNormal) >= 0.99988f)
+				{
+					Add = false;
+					break;
+				}
+			}
+			if (Add)
+				FaceNormals.push_back(CurrentFaceNormal);
+
 		}
-		Src->AdjacencyVertexList.push_back(AdjList);
+		for (std::vector<Float3>::iterator j = FaceNormals.begin(); j != FaceNormals.end(); j++)
+		{
+			Normal = Normal + *j;
+		}
+
+		Normal = Normalize(Normal);
 	}
 	else
-	{
-		ErrorString += "Cannot find vertex in AdjacencyVertexMap. Current Vertex Pos: " + std::to_string(Src->CurrentIndexPos) + "\n";
-	}
+		Normal = Normalize(CurrentVertex.Get());
+
+
+	CurrentVertex.normal = Normal;
 
 
 	Src->CurrentIndexPos++;
@@ -1073,11 +555,270 @@ void* AdjacencyProcesser::RunFunc5(void* SourceData, double* OutProgressPerRun)
 
 
 
+bool AdjacencyProcesser::GetReadyForGenerateMeshletLayer1Data()
+{
+	if (AsyncProcesser == nullptr || TriangleContextList.size() == 0 || IsWorking())
+	{
+		ErrorString += "Gerneration has not run yet or is still working.\n";
+		return false;
+	}
+	AsyncProcesser->Clear();
+
+	ErrorString = "";
+	MessageString = "";
+
+	for (uint i = 0; i < TriangleContextList.size(); i++)
+	{
+		TriangleContextList[i]->CurrentFacePos = 0;
+		TriangleContextList[i]->CurrentIndexPos = 0;
+
+		TriangleContextList[i]->MeshletLayer1Data.Init(TriangleContextList[i]->VertexData->VertexList.size(), TriangleContextList[i]->FaceList.size());
+		
+
+		AsyncProcesser->AddData((void*)TriangleContextList[i]);
+	}
+
+	std::function<void* (void*, double*)> Runnable = std::bind(&AdjacencyProcesser::RunGenerateMeshletLayer1Data, this, std::placeholders::_1, std::placeholders::_2);
+	AsyncProcesser->SetRunFunc(Runnable);
+
+	AsyncProcesser->SetIntervalTime(0.0);
+
+	if (!AsyncProcesser->Kick())
+	{
+		ErrorString += "Start async request failed.\n";
+		return false;
+	}
+
+	return true;
+}
+
+
+
+void* AdjacencyProcesser::RunGenerateMeshletLayer1Data(void* SourceData, double* OutProgressPerRun)
+{
+	SourceContext* Src = (SourceContext*)SourceData;
+	VertexContext* VertexData = Src->VertexData;
+	MeshOpt& CurrentMeshletData = Src->MeshletLayer1Data;
+
+	Face& CurrentFace = Src->FaceList[Src->CurrentFacePos];
+
+	Vertex3& Vertex0 = VertexData->VertexList[CurrentFace.x.value];
+	Vertex3& Vertex1 = VertexData->VertexList[CurrentFace.y.value];
+	Vertex3& Vertex2 = VertexData->VertexList[CurrentFace.z.value];
+
+	Float3 V0 = Vertex0.Get();
+	Float3 V1 = Vertex1.Get();
+	Float3 V2 = Vertex2.Get();
+
+	Float3 V10 = V1 - V0;
+	Float3 V20 = V2 - V0;
+	Float3 Normal = Cross(V10, V20);
+	float Area = Length(Normal) * 0.5f;
+
+	MeshOptTriangle NewCell = MeshOptTriangle(CurrentFace.center, CurrentFace.normal, Area, CurrentFace.x.value, CurrentFace.y.value, CurrentFace.z.value);
+
+	//find adjacency triangle
+	std::unordered_map<uint, std::set<uint>>::iterator it = Src->AdjacencyVertexFaceMap.find(CurrentFace.x.value);
+	if (it != Src->AdjacencyVertexFaceMap.end())
+	{
+		std::set<uint>& AdjFaceList = it->second;
+		for (std::set<uint>::iterator i = AdjFaceList.begin(); i != AdjFaceList.end(); i++)
+		{
+			CurrentMeshletData.vertices[CurrentFace.x.value].neighborTriangles.insert(*i);
+		}
+		CurrentMeshletData.live_triangles[CurrentFace.x.value] = AdjFaceList.size();
+	}
+	else
+	{
+		ErrorString += "Cannot find vertex in AdjacencyVertexFaceMap. Current Vertex: " + std::to_string(CurrentFace.x.value) + "\n";
+	}
+
+	it = Src->AdjacencyVertexFaceMap.find(CurrentFace.y.value);
+	if (it != Src->AdjacencyVertexFaceMap.end())
+	{
+		std::set<uint>& AdjFaceList = it->second;
+		for (std::set<uint>::iterator i = AdjFaceList.begin(); i != AdjFaceList.end(); i++)
+		{
+			CurrentMeshletData.vertices[CurrentFace.y.value].neighborTriangles.insert(*i);
+		}
+		CurrentMeshletData.live_triangles[CurrentFace.y.value] = AdjFaceList.size();;
+	}
+	else
+	{
+		ErrorString += "Cannot find vertex in AdjacencyVertexFaceMap. Current Vertex: " + std::to_string(CurrentFace.y.value) + "\n";
+	}
+
+	it = Src->AdjacencyVertexFaceMap.find(CurrentFace.z.value);
+	if (it != Src->AdjacencyVertexFaceMap.end())
+	{
+		std::set<uint>& AdjFaceList = it->second;
+		for (std::set<uint>::iterator i = AdjFaceList.begin(); i != AdjFaceList.end(); i++)
+		{
+			CurrentMeshletData.vertices[CurrentFace.z.value].neighborTriangles.insert(*i);
+		}
+		CurrentMeshletData.live_triangles[CurrentFace.z.value] = AdjFaceList.size();
+	}
+	else
+	{
+		ErrorString += "Cannot find vertex in AdjacencyVertexFaceMap. Current Vertex: " + std::to_string(CurrentFace.z.value) + "\n";
+	}
+
+	CurrentMeshletData.mesh_area = CurrentMeshletData.mesh_area + NewCell.Area;
+	CurrentMeshletData.triangles.push_back(NewCell);
+	CurrentMeshletData.kdindices[Src->CurrentFacePos] = unsigned int(Src->CurrentFacePos);
+
+	Src->CurrentFacePos++;
+
+	double Step = 1.0 / Src->FaceList.size();
+	*OutProgressPerRun = Step;
+
+	if (Src->CurrentFacePos >= Src->FaceList.size())
+		return (void*)Src;
+	else
+		return nullptr;
+}
+
+
+bool AdjacencyProcesser::GetReadyGenerateMeshlet()
+{
+	if (AsyncProcesser == nullptr || TriangleContextList.size() == 0 || IsWorking())
+	{
+		ErrorString += "Gerneration has not run yet or is still working.\n";
+		return false;
+	}
+	AsyncProcesser->Clear();
+
+	ErrorString = "";
+	MessageString = "";
+
+	for (uint i = 0; i < TriangleContextList.size(); i++)
+	{
+		TriangleContextList[i]->CurrentFacePos = 0;
+		TriangleContextList[i]->CurrentIndexPos = 0;
+
+		size_t MaxTrianglesNumInMeshlet = 256;
+		TriangleContextList[i]->MeshletLayer1Data.GetReady(MaxTrianglesNumInMeshlet, TriangleContextList[i]->FaceList.size(), TriangleContextList[i]->VertexData->VertexList.size(), MeshletNormalWeight);
+
+		WRITE_MESSAGE_DIGIT("Max Cell Num In Meshlet: ", MaxTrianglesNumInMeshlet);
+		WRITE_MESSAGE_DIGIT("Current Cell Num: ", TriangleContextList[i]->MeshletLayer1Data.triangles.size());
+		WRITE_MESSAGE_DIGIT("ExpectedRadius: ", TriangleContextList[i]->MeshletLayer1Data.meshlet_expected_radius);
+
+		AsyncProcesser->AddData((void*)TriangleContextList[i]);
+	}
+
+	std::function<void* (void*, double*)> Runnable = std::bind(&AdjacencyProcesser::RunGenerateMeshlet, this, std::placeholders::_1, std::placeholders::_2);
+	AsyncProcesser->SetRunFunc(Runnable);
+
+	AsyncProcesser->SetIntervalTime(0.0);
+
+	if (!AsyncProcesser->Kick())
+	{
+		ErrorString += "Start async request failed.\n";
+		return false;
+	}
+
+	return true;
+}
+
+void* AdjacencyProcesser::RunGenerateMeshlet(void* SourceData, double* OutProgressPerRun)
+{
+	SourceContext* Src = (SourceContext*)SourceData;
+
+	if (Src->MeshletLayer1Data.RunStep(OutProgressPerRun)) {
+		return (void*)Src;
+	}
+	else {
+		return nullptr;
+	}
+
+}
+
+
+bool AdjacencyProcesser::GetReadyForSerializeMeshletLayer1()
+{
+	if (AsyncProcesser == nullptr || TriangleContextList.size() == 0 || IsWorking())
+	{
+		ErrorString += "Gerneration has not run yet or is still working.\n";
+		return false;
+	}
+	AsyncProcesser->Clear();
+
+	ErrorString = "";
+	MessageString = "";
+
+	for (uint i = 0; i < TriangleContextList.size(); i++)
+	{
+		TriangleContextList[i]->CurrentFacePos = 0;
+		TriangleContextList[i]->CurrentIndexPos = 0;
+
+		WRITE_MESSAGE("Mesh Name : ", TriangleContextList[i]->Name);
+		WRITE_MESSAGE_DIGIT("Layer 1 Meshlet Num: ", TriangleContextList[i]->MeshletLayer1Data.GetMeshletSize());
+
+
+		AsyncProcesser->AddData((void*)TriangleContextList[i]);
+	}
+
+	std::function<void* (void*, double*)> Runnable = std::bind(&AdjacencyProcesser::RunFuncForSerializeMeshletLayer1, this, std::placeholders::_1, std::placeholders::_2);
+	AsyncProcesser->SetRunFunc(Runnable);
+
+	AsyncProcesser->SetIntervalTime(0.0);
+
+	if (!AsyncProcesser->Kick())
+	{
+		ErrorString += "Start async request failed.\n";
+		return false;
+	}
+
+	return true;
+}
+
+void* AdjacencyProcesser::RunFuncForSerializeMeshletLayer1(void* SourceData, double* OutProgressPerRun)
+{
+	SourceContext* Src = (SourceContext*)SourceData;
+
+
+	double Step = 0.0;
+
+	const MeshOpt& MeshletLayer1Data = Src->MeshletLayer1Data;
+	if (MeshletLayer1Data.GetMeshletSize() > Src->CurrentIndexPos) {
+		const meshopt_Meshlet& CurrentMeshlet = MeshletLayer1Data.meshlets_list[Src->CurrentIndexPos];
+
+		if (CurrentMeshlet.triangle_count > Src->CurrentFacePos) {
+			unsigned int  CurrentFaceIndex = MeshletLayer1Data.meshlet_triangles[CurrentMeshlet.triangle_offset + Src->CurrentFacePos]; 
+
+			Face& DestFace = Src->FaceList[CurrentFaceIndex];
+			DestFace.meshletId[0] = Src->CurrentIndexPos;
+
+			Step = 0.0;
+			Src->CurrentFacePos++;
+		}
+		else
+		{
+			//if (CurrentMeshlet.triangle_count < 256)
+			//	std::cout << Src->Name << "|" <<CurrentMeshlet.triangle_count << std::endl;
+			Src->CurrentIndexPos++;
+			*OutProgressPerRun = 1.0 / MeshletLayer1Data.GetMeshletSize();
+
+			Src->CurrentFacePos = 0;
+		}
+	}
+
+	
+
+	if (Src->CurrentIndexPos >= MeshletLayer1Data.GetMeshletSize())
+		return (void*)Src;
+	else
+		return nullptr;
+
+}
+
+
+
 bool AdjacencyProcesser::GetReadyGenerateRenderData()
 {
 	if (AsyncProcesser == nullptr || TriangleContextList.size() == 0 || IsWorking())
 	{
-		ErrorString += "GetReady5 has not run yet or is still working.\n";
+		ErrorString += "Gerneration has not run yet or is still working.\n";
 		return false;
 	}
 	AsyncProcesser->Clear();
@@ -1098,9 +839,21 @@ bool AdjacencyProcesser::GetReadyGenerateRenderData()
 		TriangleContextList[i]->DrawIndexList = new DrawRawIndex[TriangleContextList[i]->FaceList.size() * 3];
 		memset(TriangleContextList[i]->DrawIndexList, 0, TriangleContextList[i]->FaceList.size() * 3);
 
-		if (TriangleContextList[i]->DrawIndexLineList != nullptr) delete[] TriangleContextList[i]->DrawIndexLineList;
-		TriangleContextList[i]->DrawIndexLineList = new DrawRawIndex[TriangleContextList[i]->FaceList.size() * 6];
-		memset(TriangleContextList[i]->DrawIndexLineList, 0, TriangleContextList[i]->FaceList.size() * 6);
+		if (TriangleContextList[i]->VertexData->DrawFaceNormalVertexList != nullptr) delete[] TriangleContextList[i]->VertexData->DrawFaceNormalVertexList;
+		TriangleContextList[i]->VertexData->DrawFaceNormalVertexList = new DrawRawVertex[TriangleContextList[i]->FaceList.size() * 2];
+		memset(TriangleContextList[i]->VertexData->DrawFaceNormalVertexList, 0, TriangleContextList[i]->FaceList.size() * 2);
+
+		if (TriangleContextList[i]->DrawFaceNormalIndexList != nullptr) delete[] TriangleContextList[i]->DrawFaceNormalIndexList;
+		TriangleContextList[i]->DrawFaceNormalIndexList = new DrawRawIndex[TriangleContextList[i]->FaceList.size() * 2];
+		memset(TriangleContextList[i]->DrawFaceNormalIndexList, 0, TriangleContextList[i]->FaceList.size() * 2);
+
+		if (TriangleContextList[i]->VertexData->DrawVertexNormalVertexList != nullptr) delete[] TriangleContextList[i]->VertexData->DrawVertexNormalVertexList;
+		TriangleContextList[i]->VertexData->DrawVertexNormalVertexList = new DrawRawVertex[TriangleContextList[i]->VertexData->VertexList.size() * 2];
+		memset(TriangleContextList[i]->VertexData->DrawVertexNormalVertexList, 0, TriangleContextList[i]->VertexData->VertexList.size() * 2);
+
+		if (TriangleContextList[i]->DrawVertexNormalIndexList != nullptr) delete[] TriangleContextList[i]->DrawVertexNormalIndexList;
+		TriangleContextList[i]->DrawVertexNormalIndexList = new DrawRawIndex[TriangleContextList[i]->VertexData->VertexList.size() * 2];
+		memset(TriangleContextList[i]->DrawVertexNormalIndexList, 0, TriangleContextList[i]->VertexData->VertexList.size() * 2);
 
 		TriangleContextList[i]->VertexData->Bounding.Clear();
 
@@ -1129,16 +882,21 @@ void* AdjacencyProcesser::RunFuncGenerateRenderData(void* SourceData, double* Ou
 
 	Face& CurrentFace= Src->FaceList[Src->CurrentFacePos];
 
-	AdjVertex V1 = VertexData->VertexList[CurrentFace.x.value];
-	AdjVertex V2 = VertexData->VertexList[CurrentFace.y.value];
-	AdjVertex V3 = VertexData->VertexList[CurrentFace.z.value];
+	Vertex3& V1 = VertexData->VertexList[CurrentFace.x.value];
+	Vertex3& V2 = VertexData->VertexList[CurrentFace.y.value];
+	Vertex3& V3 = VertexData->VertexList[CurrentFace.z.value];
 
-	Float3 color = CurrentFace.IsAddToAdjFaceList ? Float3(1.0, 0.0, 0.0) : Float3(1.0, 1.0, 1.0);
-	Float3 normal = Float3((V1.x + V2.x + V3.x) / 3.0f, (V1.y + V2.y + V3.y) / 3.0f, (V1.z + V2.z + V3.z) / 3.0f);
+	Float3 Color = 0.0f; 
+	float Alpha = 0.0f;
 
-	DrawRawVertex NewVertex1(Float3(V1.x, V1.y, V1.z), normal, color);
-	DrawRawVertex NewVertex2(Float3(V2.x, V2.y, V2.z), normal, color);
-	DrawRawVertex NewVertex3(Float3(V3.x, V3.y, V3.z), normal, color);
+	Color.x = float(CurrentFace.meshletId[0]);
+	if (Color.x == -1) std::cout << "Some Face Is Not Belong To Any Meshlet" << std::endl;
+
+
+	DrawRawVertex NewVertex1(V1.Get(), V1.normal, Color, Alpha);
+	DrawRawVertex NewVertex2(V2.Get(), V2.normal, Color, Alpha);
+	DrawRawVertex NewVertex3(V3.Get(), V3.normal, Color, Alpha);
+
 
 	uint LineIndex[3];
 	VertexData->DrawVertexList[Src->CurrentIndexPos] = NewVertex1;
@@ -1156,17 +914,41 @@ void* AdjacencyProcesser::RunFuncGenerateRenderData(void* SourceData, double* Ou
 	LineIndex[2] = Src->CurrentIndexPos;
 	Src->CurrentIndexPos++;
 
-	uint LineIndexOffset = (Src->CurrentIndexPos - 3)*2;
-	Src->DrawIndexLineList[LineIndexOffset++] = LineIndex[0];
-	Src->DrawIndexLineList[LineIndexOffset++] = LineIndex[1];
-	Src->DrawIndexLineList[LineIndexOffset++] = LineIndex[1];
-	Src->DrawIndexLineList[LineIndexOffset++] = LineIndex[2];
-	Src->DrawIndexLineList[LineIndexOffset++] = LineIndex[2];
-	Src->DrawIndexLineList[LineIndexOffset++] = LineIndex[0];
-
 	VertexData->Bounding.Resize(NewVertex1.pos);
 	VertexData->Bounding.Resize(NewVertex2.pos);
 	VertexData->Bounding.Resize(NewVertex3.pos);
+
+	//face normal
+	DrawRawVertex NewFaceNormalVertex1(CurrentFace.center, CurrentFace.normal, Color, Alpha);
+	DrawRawVertex NewFaceNormalVertex2(CurrentFace.center + CurrentFace.normal * 0.1f, CurrentFace.normal, Color, Alpha);
+	VertexData->DrawFaceNormalVertexList[2 * Src->CurrentFacePos] = NewFaceNormalVertex1;
+	VertexData->DrawFaceNormalVertexList[2 * Src->CurrentFacePos + 1] = NewFaceNormalVertex2;
+	Src->DrawFaceNormalIndexList[2 * Src->CurrentFacePos] = 2 * Src->CurrentFacePos;
+	Src->DrawFaceNormalIndexList[2 * Src->CurrentFacePos + 1] = 2 * Src->CurrentFacePos + 1;
+
+	//vertex normal
+	DrawRawVertex NewVertexNormalV1(V1.Get() + V1.normal * 0.1f, V1.normal, Color, Alpha);
+	DrawRawVertex NewVertexNormalV2(V2.Get() + V2.normal * 0.1f, V2.normal, Color, Alpha);
+	DrawRawVertex NewVertexNormalV3(V3.Get() + V3.normal * 0.1f, V3.normal, Color, Alpha);
+
+	uint V1Index = CurrentFace.x.value;
+	VertexData->DrawVertexNormalVertexList[2 * V1Index] = NewVertex1;
+	VertexData->DrawVertexNormalVertexList[2 * V1Index + 1] = NewVertexNormalV1;
+	Src->DrawVertexNormalIndexList[2 * V1Index] = 2 * V1Index;
+	Src->DrawVertexNormalIndexList[2 * V1Index + 1] = 2 * V1Index + 1;
+
+	uint V2Index = CurrentFace.y.value;
+	VertexData->DrawVertexNormalVertexList[2 * V2Index] = NewVertex2;
+	VertexData->DrawVertexNormalVertexList[2 * V2Index + 1] = NewVertexNormalV2;
+	Src->DrawVertexNormalIndexList[2 * V2Index] = 2 * V2Index;
+	Src->DrawVertexNormalIndexList[2 * V2Index + 1] = 2 * V2Index + 1;
+
+	uint V3Index = CurrentFace.z.value;
+	VertexData->DrawVertexNormalVertexList[2 * V3Index] = NewVertex3;
+	VertexData->DrawVertexNormalVertexList[2 * V3Index + 1] = NewVertexNormalV3;
+	Src->DrawVertexNormalIndexList[2 * V3Index] = 2 * V3Index;
+	Src->DrawVertexNormalIndexList[2 * V3Index + 1] = 2 * V3Index + 1;
+
 
 	Src->CurrentFacePos++;
 
@@ -1203,14 +985,7 @@ void AdjacencyProcesser::Export(std::filesystem::path& FilePath)
 		TotalBytesLength += UintBytesSize;// per struct size
 		TotalBytesLength += TriangleContextList[i]->GetVertexDataByteSize();
 
-		// adjacency vertex begin
-		TotalBytesLength += UintBytesSize;// total adjacency vertex num
-		TotalBytesLength += TriangleContextList[i]->GetAdjacencyVertexListByteSize();
 
-		// adjacency face begin
-		TotalBytesLength += UintBytesSize;// face num
-		TotalBytesLength += UintBytesSize;// per struct size
-		TotalBytesLength += TriangleContextList[i]->GetAdjacencyFaceListByteSize();
 	}
 
 	uint BytesOffset = 0;
@@ -1229,8 +1004,7 @@ void AdjacencyProcesser::Export(std::filesystem::path& FilePath)
 		WriteASCIIStringToBytes(Buffer, &BytesOffset, TriangleContextList[i]->Name);
 
 		ExportVertexData(Buffer, &BytesOffset, TriangleContextList[i]);
-		ExportAdjacencyVertexList(Buffer, &BytesOffset, TriangleContextList[i]);
-		ExportAdjacencyFaceList(Buffer, &BytesOffset, TriangleContextList[i]);
+
 	}
 
 	OutFile.write((char*)Buffer, TotalBytesLength);
@@ -1245,58 +1019,24 @@ void AdjacencyProcesser::ExportVertexData(Byte* Buffer, uint* BytesOffset, const
 
 	WRITE_MESSAGE_DIGIT("Vertex Num : ", VContext->VertexList.size());
 	WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, VContext->VertexList.size());
-	WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, AdjVertex::ByteSize());
+	WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Vertex3::ByteSize());
 
 	for (int j = 0; j < VContext->VertexList.size(); j++)
 	{
-		const AdjVertex& Curr = VContext->VertexList[j];
+		const Vertex3& Curr = VContext->VertexList[j];
 		WriteFloatToBytesLittleEndian(Buffer, BytesOffset, Curr.x);
 		WriteFloatToBytesLittleEndian(Buffer, BytesOffset, Curr.y);
 		WriteFloatToBytesLittleEndian(Buffer, BytesOffset, Curr.z);
-		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.adjSerializedId);
-		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.adjNum);
+		//WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.adjSerializedId);
+		//WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.adjNum);
+
+		////is vertex meshlet border
+		//WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.IsMeshletBorder[0] ? 1 : 0);
+		//WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.IsMeshletBorder[1] ? 1 : 0);
 	}
 }
 
-void AdjacencyProcesser::ExportAdjacencyVertexList(Byte* Buffer, uint* BytesOffset, const SourceContext* Context)
-{
-	WRITE_MESSAGE_DIGIT("AdjVertex Num : ", Context->TotalAdjacencyVertexNum);
-	WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Context->TotalAdjacencyVertexNum);
 
-	uint CheckNum = 0;
-	for (int j = 0; j < Context->AdjacencyVertexList.size(); j++)
-	{
-		const std::vector<uint>& Curr = Context->AdjacencyVertexList[j];
-		for (int i = 0; i < Curr.size(); i++)
-		{
-			WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr[i]);
-			CheckNum++;
-		}
-	}
-
-	if(CheckNum != Context->TotalAdjacencyVertexNum)
-		WRITE_MESSAGE("Error : TotalAdjacencyVertexNum != CheckNum", "");
-}
-
-
-void AdjacencyProcesser::ExportAdjacencyFaceList(Byte* Buffer, uint* BytesOffset, const SourceContext* Context)
-{
-	WRITE_MESSAGE_DIGIT("AdjFace Num : ", Context->AdjacencyFaceListShrink.size());
-	WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Context->AdjacencyFaceListShrink.size());
-	WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, AdjFace::ByteSize());
-
-	for (int j = 0; j < Context->AdjacencyFaceListShrink.size(); j++)
-	{
-		const AdjFace& Curr = Context->AdjacencyFaceListShrink[j];
-		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.x.value);
-		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.y.value);
-		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.z.value);
-		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.hasAdjFace[0] ? (Curr.adjPoint[0].value + 1) : 0);
-		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.hasAdjFace[1] ? (Curr.adjPoint[1].value + 1) : 0);
-		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.hasAdjFace[2] ? (Curr.adjPoint[2].value + 1) : 0);
-	}
-
-}
 
 
 bool PassGenerateVertexMap(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
@@ -1316,36 +1056,7 @@ bool PassGenerateVertexMap(AdjacencyProcesser* Processer, std::string& FilePath,
 		State = "Generate Vertex Map....... ";
 
 	return Success;
-	//if (Success) {
-	//	double Progress = 0.0;
-	//	while (true) {
-	//		std::cout << "Generate Vertex Map....... " << Progress * 100.0 << " %                                                             \r";
-	//		std::cout.flush();
 
-	//		if (Progress >= 1.0) break;
-
-	//		Progress = Processer->GetProgress();
-	//	}
-	//	std::cout << std::endl;
-
-	//	while (true)
-	//	{
-	//		if (Processer->IsWorking())
-	//			Processer->GetProgress();
-	//		else
-	//			break;
-	//	}
-	//}
-
-	//std::string& ErrorString = Processer->GetErrorString();
-	//if (ErrorString.size() > 0) {
-	//	std::cout << LINE_STRING << std::endl;
-	//	std::cout << "Something get error, please see error0.log." << std::endl;
-	//	std::cout << LINE_STRING << std::endl;
-
-	//	Processer->DumpErrorString(0);
-	//}
-	//std::cout << "Generate Vertex Map Completed." << std::endl;
 
 	/*
 	std::vector<VertexContext*> ContextList = Processer.GetVertexContextList();
@@ -1374,243 +1085,82 @@ bool PassGenerateFaceAndEdgeData(AdjacencyProcesser* Processer, std::string& Fil
 		State = "Generate Face And Edge Data....... ";
 
 	return Success;
-	//if (Success) {
-	//	double Progress = 0.0;
-	//	while (true) {
-	//		std::cout << "Generate Face And Edge Data....... " << Progress * 100.0 << " %                                                             \r";
-	//		std::cout.flush();
-
-	//		if (Progress >= 1.0) break;
-
-	//		Progress = Processer->GetProgress();
-	//	}
-	//	std::cout << std::endl;
-
-	//	while (true)
-	//	{
-	//		if (Processer->IsWorking())
-	//			Processer->GetProgress();
-	//		else
-	//			break;
-	//	}
-	//}
-
-	//std::string& ErrorString = Processer->GetErrorString();
-	//if (ErrorString.size() > 0) {
-	//	std::cout << LINE_STRING << std::endl;
-	//	std::cout << "Something get error, please see error1.log." << std::endl;
-	//	std::cout << LINE_STRING << std::endl;
-
-	//	Processer->DumpErrorString(1);
-	//}
-	//std::cout << "Generate Face And Edge Data Completed." << std::endl;
 
 }
 
-bool PassGenerateAdjacencyData(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
+
+
+bool PassGenerateVertexNormal(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
 {
 	bool Success = false;
 
-	std::cout << LINE_STRING << std::endl;
-	std::cout << "Begin Generate Adjacency Data..." << std::endl;
+	std::filesystem::path TriangleFilePath = FilePath;
 	Success = Processer->GetReady2();
-
 	std::cout << LINE_STRING << std::endl;
 	std::cout << Processer->GetMessageString() << std::endl;
 	std::cout << LINE_STRING << std::endl;
 
 	if (Success)
-		State = "Generate Adjacency Data....... ";
+		State = "Generate Vertex Normal....... ";
 
 	return Success;
-	//if (Success) {
-	//	double Progress = 0.0;
-	//	while (true) {
-	//		std::cout << "Generate Adjacency Data....... " << Progress * 100.0 << " %                                                             \r";
-	//		std::cout.flush();
 
-	//		if (Progress >= 1.0) break;
-
-	//		Progress = Processer->GetProgress();
-	//	}
-	//	std::cout << std::endl;
-
-	//	while (true)
-	//	{
-	//		if (Processer->IsWorking())
-	//			Processer->GetProgress();
-	//		else
-	//			break;
-	//	}
-	//}
-
-	//std::string& ErrorString = Processer->GetErrorString();
-	//if (ErrorString.size() > 0) {
-	//	std::cout << LINE_STRING << std::endl;
-	//	std::cout << "Something get error, please see error2.log." << std::endl;
-	//	std::cout << LINE_STRING << std::endl;
-
-	//	Processer->DumpErrorString(2);
-	//}
-
-	//std::cout << "Generate Adjacency Data Completed." << std::endl;
-
-	//return Success;
 }
 
-
-bool PassShrinkAdjacencyData(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
+bool PassGenerateMeshletLayer1Data(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
 {
 	bool Success = false;
 
 	std::cout << LINE_STRING << std::endl;
-	std::cout << "Begin Shrinking Adjacency Data..." << std::endl;
-	Success = Processer->GetReady3();
+	std::cout << "Begin Generating Meshlet Layer 1 Data..." << std::endl;
+	Success = Processer->GetReadyForGenerateMeshletLayer1Data();
 
 	std::cout << LINE_STRING << std::endl;
 	std::cout << Processer->GetMessageString() << std::endl;
 	std::cout << LINE_STRING << std::endl;
 
 	if (Success)
-		State = "Shrinking Adjacency Data....... ";
+		State = "Generating Meshlet Layer 1 Data....... ";
 
 	return Success;
-
-	//if (Success) {
-	//	double Progress = 0.0;
-	//	while (true) {
-	//		std::cout << "Shrinking Adjacency Data....... " << Progress * 100.0 << " %                                                             \r";
-	//		std::cout.flush();
-
-	//		if (Progress >= 1.0) break;
-
-	//		Progress = Processer->GetProgress();
-	//	}
-	//	std::cout << std::endl;
-
-	//	while (true)
-	//	{
-	//		if (Processer->IsWorking())
-	//			Processer->GetProgress();
-	//		else
-	//			break;
-	//	}
-	//}
-
-	//std::string& ErrorString = Processer->GetErrorString();
-	//if (ErrorString.size() > 0) {
-	//	std::cout << LINE_STRING << std::endl;
-	//	std::cout << "Something get error, please see error3.log." << std::endl;
-	//	std::cout << LINE_STRING << std::endl;
-
-	//	Processer->DumpErrorString(3);
-	//}
-	//std::cout << "Shrink Adjacency Data Completed." << std::endl;
-
-	//return Success;
 }
 
-bool PassGenerateAdjacencyVertexMap(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
+
+bool PassGenerateMeshlet(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
 {
 	bool Success = false;
 
-	std::cout << LINE_STRING << std::endl;
-	std::cout << "Begin Generate Adjacency Vertex Map..." << std::endl;
-	Success = Processer->GetReady4();
-
+	std::filesystem::path TriangleFilePath = FilePath;
+	Success = Processer->GetReadyGenerateMeshlet();
 	std::cout << LINE_STRING << std::endl;
 	std::cout << Processer->GetMessageString() << std::endl;
 	std::cout << LINE_STRING << std::endl;
 
 	if (Success)
-		State = "Generate Adjacency Vertex Map....... ";
+		State = "Generate Meshlet....... ";
 
 	return Success;
-	//if (Success) {
-	//	double Progress = 0.0;
-	//	while (true) {
-	//		std::cout << "Generate Adjacency Vertex Map....... " << Progress * 100.0 << " %                                                             \r";
-	//		std::cout.flush();
 
-	//		if (Progress >= 1.0) break;
-
-	//		Progress = Processer->GetProgress();
-	//	}
-	//	std::cout << std::endl;
-
-	//	while (true)
-	//	{
-	//		if (Processer->IsWorking())
-	//			Processer->GetProgress();
-	//		else
-	//			break;
-	//	}
-	//}
-
-	//std::string& ErrorString = Processer->GetErrorString();
-	//if (ErrorString.size() > 0) {
-	//	std::cout << LINE_STRING << std::endl;
-	//	std::cout << "Something get error, please see error4.log." << std::endl;
-	//	std::cout << LINE_STRING << std::endl;
-
-	//	Processer->DumpErrorString(4);
-	//}
-	//std::cout << "Generate Adjacency Vertex Map Completed." << std::endl;
-
-	//return Success;
 }
 
 
-bool PassSerializeAdjacencyVertexMap(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
+bool PassSerializeMeshLayer1Data(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
 {
 	bool Success = false;
 
-	std::cout << LINE_STRING << std::endl;
-	std::cout << "Begin Serialize Adjacency Vertex Map..." << std::endl;
-	Success = Processer->GetReady5();
-
+	std::filesystem::path TriangleFilePath = FilePath;
+	Success = Processer->GetReadyForSerializeMeshletLayer1();
 	std::cout << LINE_STRING << std::endl;
 	std::cout << Processer->GetMessageString() << std::endl;
 	std::cout << LINE_STRING << std::endl;
 
 	if (Success)
-		State = "Serialize Adjacency Vertex Map....... ";
+		State = "Serializing Meshlet Layer1....... ";
 
 	return Success;
 
-	//if (Success) {
-	//	double Progress = 0.0;
-	//	while (true) {
-	//		std::cout << "Serialize Adjacency Vertex Map....... " << Progress * 100.0 << " %                                                             \r";
-	//		std::cout.flush();
-
-	//		if (Progress >= 1.0) break;
-
-	//		Progress = Processer->GetProgress();
-	//	}
-	//	std::cout << std::endl;
-
-	//	while (true)
-	//	{
-	//		if (Processer->IsWorking())
-	//			Processer->GetProgress();
-	//		else
-	//			break;
-	//	}
-	//}
-
-	//std::string& ErrorString = Processer->GetErrorString();
-	//if (ErrorString.size() > 0) {
-	//	std::cout << LINE_STRING << std::endl;
-	//	std::cout << "Something get error, please see error5.log." << std::endl;
-	//	std::cout << LINE_STRING << std::endl;
-
-	//	Processer->DumpErrorString(5);
-	//}
-	//std::cout << "Serialize Adjacency Vertex Map Completed." << std::endl;
-
-	//return Success;
 }
+
 
 bool PassGenerateRenderData(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
 {
@@ -1645,6 +1195,18 @@ void Export(AdjacencyProcesser* Processer, std::string& FilePath, std::string& S
 
 	std::cout << Processer->GetMessageString() << std::endl;
 	std::cout << LINE_STRING << std::endl;
+
+	//        //DebugCheck
+//std::vector<SourceContext*> ContextList = Processer->GetTriangleContextList();
+//SourceContext* Context = ContextList[0];
+//ContextList[0]->DumpEdgeList();
+//ContextList[0]->DumpFaceList();
+//        //ContextList[0]->DumpEdgeFaceList();
+//        //ContextList[0]->DumpAdjacencyFaceListShrink();
+//        //ContextList[0]->DumpAdjacencyVertexList();
+//std::vector<VertexContext*> VContextList = Processer->GetVertexContextList();
+//        //VContextList[0]->DumpIndexMap();
+//VContextList[0]->DumpVertexList();
 
 	State = "Export Completed.";
 }
