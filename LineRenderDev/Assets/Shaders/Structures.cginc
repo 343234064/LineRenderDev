@@ -5,7 +5,10 @@
 
 cbuffer Constants
 {
-    uint TotalAdjacencyTrianglesNum;
+    uint TotalFacesNum;
+    uint TotalVerticesNum;
+    uint TotalMeshletsNum;
+
     uint SilhouetteEnable;
     uint CreaseEnable;
     uint BorderEnable;
@@ -142,3 +145,91 @@ struct LineMesh
     // id of this line
     uint Id;
 };
+
+
+
+
+
+
+
+
+
+
+
+//Mesh data////////////////////////////////////////////
+struct EXPORTVertex
+{
+    float3 Position;
+    uint UniqueIndex;
+};
+
+struct EXPORTFace
+{
+    uint v012;
+
+    uint edge01;
+    uint edge12;
+    uint edge20;
+
+    uint3 PackNormalData0;
+    uint3 PackNormalData1;
+
+};
+
+struct EXPORTMeshlet
+{
+    uint FaceOffset;
+    uint FaceNum;
+    uint VertexOffset;
+    uint VertexNum;
+};
+
+struct Face
+{
+    uint v0;
+    uint v1;
+    uint v2;
+
+    int adjFace01;
+    int adjFace12;
+    int adjFace20;
+
+    bool e01h;
+    bool e01u;
+
+    bool e12h;
+    bool e12u;
+
+    bool e20h;
+    bool e20u;
+
+    float3 Normal;
+    float3 V0Normal;
+    float3 V1Normal;
+    float3 V2Normal;
+};
+
+
+
+
+//Runtime data////////////////////////////////////////////
+struct ContourFace
+{
+    //the 31th bit sign for view test
+    uint v0;
+    uint v1;
+    uint v2;
+
+    float3 V0Normal;
+    float3 V1Normal;
+    float3 V2Normal;
+};
+
+
+struct Segment
+{
+    float4 NDCPosition[2];
+    float4 Color;
+};
+
+

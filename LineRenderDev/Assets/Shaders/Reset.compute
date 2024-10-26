@@ -9,7 +9,7 @@ RWStructuredBuffer<uint> SegmentArgBuffer;
 RWStructuredBuffer<uint> SliceArgBuffer;
 RWStructuredBuffer<uint> VisibleLineArgBuffer;
 RWStructuredBuffer<uint> LineMeshArgBuffer;
-
+RWStructuredBuffer<uint> ArgBuffer;
 
 void ResetRunTimeVertexBuffer(uint VertexIndex)
 {
@@ -21,7 +21,7 @@ void ResetRunTimeVertexBuffer(uint VertexIndex)
 
 }
 
-[numthreads(256, 1, 1)]
+[numthreads(1, 1, 1)]
 void Reset(uint3 id : SV_DispatchThreadID)
 {
 
@@ -38,19 +38,22 @@ void Reset(uint3 id : SV_DispatchThreadID)
             RenderCommands.CopyCounterValue(EmptyBuffer, Current.VisibleLineArgBuffer, Current.VisibleLineArgBufferDispatchOffset);
     */
 
-    ResetRunTimeVertexBuffer(id.x);
+    //ResetRunTimeVertexBuffer(id.x);
     //if (id.x == 0) {
-        SegmentArgBuffer[0] = 0;
-        SegmentArgBuffer[1] = 1;
-        SegmentArgBuffer[4] = 0;
-        SegmentArgBuffer[5] = 0;
+        //SegmentArgBuffer[0] = 0;
+        //SegmentArgBuffer[1] = 1;
+        //SegmentArgBuffer[4] = 0;
+        //SegmentArgBuffer[5] = 0;
 
-        SliceArgBuffer[0] = 0;
+        //SliceArgBuffer[0] = 0;
 
-        VisibleLineArgBuffer[0] = 0;
-        VisibleLineArgBuffer[1] = 1;
+        //VisibleLineArgBuffer[0] = 0;
+        //VisibleLineArgBuffer[1] = 1;
 
-        LineMeshArgBuffer[1] = 0;
+        //LineMeshArgBuffer[1] = 0;
    // }
 
+    ArgBuffer[INDIRECT_DRAW_TRIANGLE_COUNT] = 0;
+    ArgBuffer[CONTOURIZE_PASS_DISPATCH_COUNT] = 1;
+    ArgBuffer[CONTOURIZE_PASS_FACE_COUNT] = 0;
 }

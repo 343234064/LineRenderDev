@@ -7,52 +7,22 @@ using System.Collections.Generic;
 using UnityEngine;
 
 
-public struct AdjVertex
-{
-    public float x;
-    public float y;
-    public float z;
-    public uint adjSerializedId;
-    public uint adjNum;
 
-    //meshlet
-    public uint IsInMeshletBorder1;
-    public uint IsInMeshletBorder2;
-
-    public static int Size()
-    {
-        return sizeof(float) * 3 + sizeof(uint) * 2 + sizeof(uint) * 2;
-    }
-}
-
-public struct AdjFace
-{
-    public uint x;
-    public uint y;
-    public uint z;
-    public uint xy;
-    public uint yz;
-    public uint zx;
-
-    //meshlet
-    public uint xyLayer1;
-    public uint xyLayer2;
-    public uint yzLayer1;
-    public uint yzLayer2;
-    public uint zxLayer1;
-    public uint zxLayer2;
-
-    public static int Size()
-    {
-        return sizeof(uint) * 6 + sizeof(uint) * 6;
-    }
-}
 
 public class PackedLineData
 {
-    public AdjVertex[] VertexList;
-    public uint[] AdjacencyVertexList;
-    public AdjFace[] AdjacencyFaceList;
+    public uint VertexNum;
+    public uint VertexStructSize;
+    public uint FaceNum;
+    public uint FaceStructSize;
+    public uint EdgeNum;
+    public uint EdgeStructSize;
+    public uint MeshletNum;
+    public uint MeshletStructSize;
+
+    public Byte[] VertexList;
+    public Byte[] FaceList;
+    public Byte[] MeshletList;
 }
 
 
@@ -175,74 +145,39 @@ public class AdjacencyDataPool
         }
     }
 
-    private AdjVertex[] ImportVertexData(BinaryReader Reader, uint ByteSizeFloat, uint ByteSizeUInt)
+    private void ImportVertexData(PackedLineData LineData, BinaryReader Reader, uint ByteSizeFloat, uint ByteSizeUInt)
     {
-        uint TotalVertexNum = Reader.ReadUInt32();
-        uint PerStructSize = Reader.ReadUInt32();
-        Debug.Log("Total Vertex Num & Per Struct Size: " + TotalVertexNum + ", " + PerStructSize);
+        LineData.VertexNum = Reader.ReadUInt32();
+        LineData.VertexStructSize = Reader.ReadUInt32();
+        LineData.VertexList = Reader.ReadBytes((int)(LineData.VertexNum * LineData.VertexStructSize));
 
-        AdjVertex[] Vertices = new AdjVertex[TotalVertexNum];
-        for (int j = 0; j < TotalVertexNum; j++)
-        {
-            AdjVertex Vertex = new AdjVertex();
-            Vertex.x = Reader.ReadSingle();
-            Vertex.y = Reader.ReadSingle();
-            Vertex.z = Reader.ReadSingle();
-            Vertex.adjSerializedId = Reader.ReadUInt32();
-            Vertex.adjNum = Reader.ReadUInt32();
-
-            Vertex.IsInMeshletBorder1 = Reader.ReadUInt32();
-            Vertex.IsInMeshletBorder2 = Reader.ReadUInt32();
-
-            Vertices[j] = Vertex;
-        }
-
-        return Vertices;
+        Debug.Log("Total Vertex Num & Per Struct Size: " + LineData.VertexNum + ", " + LineData.VertexStructSize);
     }
 
-    private uint[] ImportAdjacencyVertexData(BinaryReader Reader, uint ByteSizeFloat, uint ByteSizeUInt)
+    private void ImportFaceData(PackedLineData LineData, BinaryReader Reader, uint ByteSizeFloat, uint ByteSizeUInt)
     {
-        uint TotalAdjVertexNum = Reader.ReadUInt32();
-        Debug.Log("Total AdjVertex Num: " + TotalAdjVertexNum);
+        LineData.FaceNum = Reader.ReadUInt32();
+        LineData.FaceStructSize = Reader.ReadUInt32();
+        LineData.FaceList = Reader.ReadBytes((int)(LineData.FaceNum * LineData.FaceStructSize));
 
-        uint[] AdjVertices = new uint[TotalAdjVertexNum];
-        for (int j = 0; j < TotalAdjVertexNum; j++)
-        {
-            AdjVertices[j] = Reader.ReadUInt32();
-        }
-
-        return AdjVertices;
+        Debug.Log("Total Face Num & Per Struct Size: " + LineData.FaceNum + ", " + LineData.FaceStructSize);
     }
 
-    private AdjFace[] ImportAdjacencyFaceData(BinaryReader Reader, uint ByteSizeFloat, uint ByteSizeUInt)
+    private void ImportEdgeData(PackedLineData LineData, BinaryReader Reader, uint ByteSizeFloat, uint ByteSizeUInt)
     {
-        uint TotalAdjFaceNum = Reader.ReadUInt32();
-        uint PerStructSize = Reader.ReadUInt32();
-        Debug.Log("Total AdjFace Num & Per Struct Size: " + TotalAdjFaceNum + ", " + PerStructSize);
+        LineData.EdgeNum = Reader.ReadUInt32();
+        LineData.EdgeStructSize = Reader.ReadUInt32();
 
-        AdjFace[] AdjacencyFaces = new AdjFace[TotalAdjFaceNum];
-        for (int j = 0; j < TotalAdjFaceNum; j++)
-        {
-            AdjFace Face = new AdjFace();
-            Face.x = Reader.ReadUInt32();
-            Face.y = Reader.ReadUInt32();
-            Face.z = Reader.ReadUInt32();
-            Face.xy = Reader.ReadUInt32();
-            Face.yz = Reader.ReadUInt32();
-            Face.zx = Reader.ReadUInt32();
+        Debug.Log("Total Edge Num & Per Struct Size: " + LineData.EdgeNum + ", " + LineData.EdgeStructSize);
+    }
 
-            Face.xyLayer1 = Reader.ReadUInt32();
-            Face.xyLayer2 = Reader.ReadUInt32();
-            Face.yzLayer1 = Reader.ReadUInt32();
-            Face.yzLayer2 = Reader.ReadUInt32();
-            Face.zxLayer1 = Reader.ReadUInt32();
-            Face.zxLayer2 = Reader.ReadUInt32();
+    private void ImportMeshletData(PackedLineData LineData, BinaryReader Reader, uint ByteSizeFloat, uint ByteSizeUInt)
+    {
+        LineData.MeshletNum = Reader.ReadUInt32();
+        LineData.MeshletStructSize = Reader.ReadUInt32();
+        LineData.MeshletList = Reader.ReadBytes((int)(LineData.MeshletNum * LineData.MeshletStructSize));
 
-
-            AdjacencyFaces[j] = Face;
-        }
-
-        return AdjacencyFaces;
+        Debug.Log("Total Meshlet Num & Per Struct Size: " + LineData.MeshletNum + ", " + LineData.MeshletStructSize);
     }
 
     private bool DoLoad(string Path, Guid ID)
@@ -286,9 +221,10 @@ public class AdjacencyDataPool
                         Debug.Log("Mesh " + i + ": " + Name);
 
                         PackedLineData LineData = new PackedLineData();
-                        LineData.VertexList = ImportVertexData(Reader, ByteSizeFloat, ByteSizeUInt);
-                        LineData.AdjacencyVertexList = ImportAdjacencyVertexData(Reader, ByteSizeFloat, ByteSizeUInt);
-                        LineData.AdjacencyFaceList = ImportAdjacencyFaceData(Reader, ByteSizeFloat, ByteSizeUInt);
+                        ImportVertexData(LineData, Reader, ByteSizeFloat, ByteSizeUInt);
+                        ImportFaceData(LineData, Reader, ByteSizeFloat, ByteSizeUInt);
+                        ImportEdgeData(LineData, Reader, ByteSizeFloat, ByteSizeUInt);
+                        ImportMeshletData(LineData, Reader, ByteSizeFloat, ByteSizeUInt);
 
                         Current.Data.Add(LineData);
 

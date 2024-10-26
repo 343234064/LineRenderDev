@@ -1,0 +1,206 @@
+
+#pragma kernel Contourize
+
+#include "Common.cginc"
+
+
+StructuredBuffer<ContourFace> ContourFaceBuffer;
+StructuredBuffer<EXPORTVertex> VertexBuffer;
+RWStructuredBuffer<uint> WArgBuffer;
+RWStructuredBuffer<Segment> SegmentBuffer;
+
+uniform float3 LocalSpaceViewPosition;
+
+#pragma multi_compile_local __ ENABLE_DEBUG_CLIPPING
+#include "Clipping.cginc"
+
+
+#define RANGE01(a) (a >= 0.0f && a <= 1.0f)
+bool VisibilityInterporlation(float3 PositionA, float3 NormalA, float3 PositionB, float3 NormalB, float3 ViewPosition, inout float T)
+{
+    float3 DeltaPosBA = PositionB - PositionA;
+    float3 DeltaNorBA = NormalB - NormalA;
+    float3 ViewA = ViewPosition - PositionA;
+
+    float a = -2.0f * dot(DeltaPosBA, DeltaNorBA);
+    float b = -(dot(DeltaPosBA, NormalA) - dot(DeltaNorBA, ViewA));
+    float c = dot(NormalA, ViewA);
+
+
+    float Delta = b * b - 2.0f * a * c;
+    bool Solved = false;
+
+    if (abs(a) <= 0.0001f) {
+        T = -c / b;
+        Solved = (b != 0.0f) && RANGE01(T);
+    }
+    else
+    {
+        float InvertA = 1.0f / a;
+        if (Delta > 0.0f)
+        {
+            float sDelta = sqrt(Delta);
+            float t1 = (-b + sDelta) * InvertA;
+            float t2 = (-b - sDelta) * InvertA;
+            bool t1In = RANGE01(t1);
+            bool t2In = RANGE01(t2);
+            if (t1In && !t2In)
+            {
+                T = t1;
+                Solved = true;
+            }
+            else if (!t1In && t2In)
+            {
+                T = t2;
+                Solved = true;
+            }
+            /*
+            else if (t1In && t2In)
+            {
+                T = -1.0f;
+                Solved = false;// (abs(t1In) <= 0.0001f && abs(t2In - 1.0f) <= 0.0001f) || (abs(t2In) <= 0.0001f && abs(t1In - 1.0f) <= 0.0001f);
+            }*/
+
+        }
+        else if (Delta == 0.0f)
+        {
+            T = (-b) * InvertA;
+            Solved = RANGE01(T);
+        }
+    }
+
+    return Solved;
+}
+
+
+void AddSegmentBuffer(Segment CurrentSegment)
+{
+    uint Original = 0;
+    InterlockedAdd(WArgBuffer[INDIRECT_DRAW_TRIANGLE_COUNT], 1, Original);
+    SegmentBuffer[Original] = CurrentSegment;
+
+}
+
+
+/*
+* 
+*/
+[numthreads(CONTOURIZE_PASS_PER_THREAD_ELEMENT_NUM,1,1)]
+void Contourize(uint3 id : SV_DispatchThreadID)
+{
+    uint FaceId = id.x;
+    if (FaceId >= WArgBuffer[CONTOURIZE_PASS_FACE_COUNT]) return;
+
+    ContourFace CurrentFace = ContourFaceBuffer[FaceId];
+
+    bool V0Vis = (CurrentFace.v0 >> 31) ? true : false;
+    bool V1Vis = (CurrentFace.v1 >> 31) ? true : false;
+    bool V2Vis = (CurrentFace.v2 >> 31) ? true : false;
+    CurrentFace.v0 = CurrentFace.v0 & 0x7fffffff;
+    CurrentFace.v1 = CurrentFace.v1 & 0x7fffffff;
+    CurrentFace.v2 = CurrentFace.v2 & 0x7fffffff;
+
+    uint VertexIndices[3] = { 0, 0, 0 };
+    float3 VANormal = float3(0.0f, 0.0f, 0.0f);
+    float3 VBNormal = float3(0.0f, 0.0f, 0.0f);
+    float3 VCNormal = float3(0.0f, 0.0f, 0.0f);
+    if ((V2Vis && !V0Vis && !V1Vis) || (!V2Vis && V0Vis && V1Vis))
+    {
+        VertexIndices[0] = CurrentFace.v2;
+        VertexIndices[1] = CurrentFace.v0;
+        VertexIndices[2] = CurrentFace.v1;
+        VANormal = CurrentFace.V2Normal.xyz;
+        VBNormal = CurrentFace.V0Normal.xyz;
+        VCNormal = CurrentFace.V1Normal.xyz;
+    }
+    else if ((V0Vis && !V1Vis && !V2Vis) || (!V0Vis && V1Vis && V2Vis))
+    {
+        VertexIndices[0] = CurrentFace.v0;
+        VertexIndices[1] = CurrentFace.v1;
+        VertexIndices[2] = CurrentFace.v2;
+        VANormal = CurrentFace.V0Normal.xyz;
+        VBNormal = CurrentFace.V1Normal.xyz;
+        VCNormal = CurrentFace.V2Normal.xyz;
+
+    }
+    else if ((V1Vis && !V0Vis && !V2Vis) || (!V1Vis && V0Vis && V2Vis))
+    {
+        VertexIndices[0] = CurrentFace.v1;
+        VertexIndices[1] = CurrentFace.v0;
+        VertexIndices[2] = CurrentFace.v2;
+        VANormal = CurrentFace.V1Normal.xyz;
+        VBNormal = CurrentFace.V0Normal.xyz;
+        VCNormal = CurrentFace.V2Normal.xyz;
+
+    }
+
+
+    EXPORTVertex VA = VertexBuffer[VertexIndices[0]];
+    EXPORTVertex VB = VertexBuffer[VertexIndices[1]];
+    EXPORTVertex VC = VertexBuffer[VertexIndices[2]];
+    
+
+    float EABT = 0.0f;
+    float EACT = 1.0f;
+    bool EAB = VisibilityInterporlation(VA.Position, VANormal, VB.Position, VBNormal, LocalSpaceViewPosition, EABT);
+    bool EAC = VisibilityInterporlation(VA.Position, VANormal, VC.Position, VCNormal, LocalSpaceViewPosition, EACT);
+
+
+    if (EAB && EAC)
+    {
+        //if (EABT != -1.0f && EACT != -1.0f);
+        //{
+            float3 LineVertex0 = VA.Position + EABT * (VB.Position - VA.Position);
+            float3 LineVertex1 = VA.Position + EACT * (VC.Position - VA.Position);
+
+            Segment NewLine = (Segment)0;
+            ToSegmentLine(LineVertex0, LineVertex1, NewLine);
+            NewLine.Color = float4(0.0, 1.0, 0.0f, 0.0f);
+
+            AddSegmentBuffer(NewLine);
+        //}
+        /*
+        if (EABT == -1.0f)
+        {
+            Segment NewLine = (Segment)0;
+            ToSegmentLine(VA.Position, VB.Position, NewLine);
+            NewLine.Color = float4(0.0f, 1.0f, 0.0f, 0.0f);
+
+            AddSegmentBuffer(NewLine);
+        }
+        if (EACT == -1.0f)
+        {
+            Segment NewLine = (Segment)0;
+            ToSegmentLine(VA.Position, VC.Position, NewLine);
+            NewLine.Color = float4(0.0f, 1.0f, 0.0f, 0.0f);
+
+            AddSegmentBuffer(NewLine);
+        }*/
+    }
+
+
+    
+    /*
+    Segment Line1 = (Segment)0;
+    EXPORTVertex V0 = VertexBuffer[CurrentFace.v0];
+    EXPORTVertex V1 = VertexBuffer[CurrentFace.v1];
+    ToSegmentLine(V0.Position, V1.Position, Line1);
+    Line1.Color = float4(1.0f, 0.0f, 0.0f, 0.0f);
+
+    V0 = VertexBuffer[CurrentFace.v1];
+    V1 = VertexBuffer[CurrentFace.v2];
+    Segment Line2 = (Segment)0;
+    ToSegmentLine(V0.Position, V1.Position, Line2);
+    Line2.Color = float4(1.0f, 0.0f, 0.0f, 0.0f);
+
+    V0 = VertexBuffer[CurrentFace.v2];
+    V1 = VertexBuffer[CurrentFace.v0];
+    Segment Line3 = (Segment)0;
+    ToSegmentLine(V0.Position, V1.Position, Line3);
+    Line3.Color = float4(1.0f, 0.0f, 0.0f, 0.0f);
+    
+    AddSegmentBuffer(Line1);
+    AddSegmentBuffer(Line2);
+    AddSegmentBuffer(Line3);
+    */
+}

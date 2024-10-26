@@ -2,7 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-
+using UnityEngine.Rendering;
 
 //[ExecuteInEditMode]
 public class LineMaterial : MonoBehaviour
@@ -22,6 +22,9 @@ public class LineMaterial : MonoBehaviour
     [Required("Line Material Is Required")]
     [Tooltip("Material to render line")]
     public Material LineRenderMaterial;
+    [HideInEditorMode]
+    public Material LineRenderMaterialForDebug;
+
 
     [Tooltip("The width of line")]
     [Range(0.0f, 10.0f)]
@@ -52,13 +55,13 @@ public class LineMaterial : MonoBehaviour
     [LabelWidth(200)]
     public bool LinkUnvisibleAndVisibleEdge = false;
 
-    [Tooltip("Edges whose angles to each other are below this threshold will be unlinked.")]
+    [Tooltip("Edges which angles to each other are below this threshold will be unlinked.")]
     [Range(0, 180)]
     [LabelWidth(200)]
     public float UnlinkedEdgeAngleThreshold = 90.0f;
 
     /// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    
+
     [TitleGroup("Silhouette Edge")]
     [InfoBox("Draw edges that base on the angle between view vector and surface normal.")]
 
@@ -68,18 +71,18 @@ public class LineMaterial : MonoBehaviour
     public bool OutineOnly = false;
 
     /// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    
+
     [TitleGroup("Crease Edge")]
     [InfoBox("Draw edges that base on the angle between adjacent faces.")]
 
     public bool CreaseEnable = true;
 
-    [Range(0, 180)]
+    [Range(0, 175)]
     [LabelWidth(200)]
     public float CreaseAngleDegreeThreshold = 45.0f;
 
     /// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    
+
     [TitleGroup("Border Edge")]
     [InfoBox("Draw edges that on open face border.")]
     public bool BorderEnable = true;
@@ -93,10 +96,25 @@ public class LineMaterial : MonoBehaviour
 
     /// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+    // Debug: show ground true contour line in material 
+    private Vector4 MainCameraPosition;
+    public void SetMainCameraPosition(Vector4 Value) { MainCameraPosition = Value; }
 
-
+    void Start()
+    {
+        LineRenderMaterialForDebug = new Material(LineRenderMaterial);
+    }
     void Awake()
     {
         
+    }
+    void Update()
+    {
+        Material TestMaterial = GetComponent<Renderer>().material;
+        if(TestMaterial != null)
+        {
+            TestMaterial.SetVector("CustomWorldCameraPosition", MainCameraPosition);
+        }
+
     }
 }

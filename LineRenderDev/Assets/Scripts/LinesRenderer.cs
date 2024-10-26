@@ -39,6 +39,10 @@ public class LinesRenderer : MonoBehaviour
     [Required("Extract Pass Shader Is Required")]
     public ComputeShader ExtractPassShader;
 
+    [AssetSelector(Filter = "Assets/")]
+    [Required("Contourize Pass Shader Is Required")]
+    public ComputeShader ContourizePassShader;
+
     [AssetSelector(Paths = "Assets/")]
     [Required("Slice Pass Shader Is Required")]
     public ComputeShader SlicePassShader;
@@ -60,11 +64,12 @@ public class LinesRenderer : MonoBehaviour
     [TitleGroup("Debug")]
     [Tooltip("This wii slow down the frame rate")]
     public bool ShowDebugStatistics = false;
+    public bool RenderAsDebugCamera = false;
+    [Tooltip("Set main camera here if enable RenderAsDebugCamera tag")]
+    public Camera MainViewCameraInDebugView;
 
     /// ////////////////////////////////////////////////////////
     private Camera RenderCamera;
-    private Camera SceneEditorCamera;
-    private Camera GamerCamera;
 
     private List<MeshInfo> MeshInfoListForRender;
     private RenderLayer Renderer;
@@ -109,20 +114,20 @@ public class LinesRenderer : MonoBehaviour
     {
         Debug.Log("Line Renderer Enabled.");
 
-        SceneView EditorSceneView = SceneView.lastActiveSceneView;
-        SceneEditorCamera = EditorSceneView.camera;
-        GamerCamera = GetComponent<Camera>();
-
-        RenderCamera = GamerCamera;
-        // Debug clipping
-        // RenderCamera = SceneEditorCamera;
-
-        if (GamerCamera == null)
+        RenderCamera = GetComponent<Camera>();
+        if (RenderCamera == null)
         {
             Debug.LogError("This (Line Renderer) script must be attached to a camera object.");
         }
         RenderCamera.depthTextureMode = DepthTextureMode.Depth;
         Camera.onPreRender += OnPreRender;
+
+        if(RenderAsDebugCamera && MainViewCameraInDebugView == null)
+        {
+            Debug.LogError("Please set main camera to DebugViewMainCamera if enable RenderAsDebugCamera");
+        }
+        if (!RenderAsDebugCamera)
+            MainViewCameraInDebugView = RenderCamera;
 
         InitMeshList();
 
@@ -131,6 +136,7 @@ public class LinesRenderer : MonoBehaviour
 
         InputShaders.ResetPassShader = ResetPassShader;
         InputShaders.ExtractPassShader = ExtractPassShader;
+        InputShaders.ContourizePassShader = ContourizePassShader;
         InputShaders.SlicePassShader = SlicePassShader;
         InputShaders.VisibilityPassShader = VisiblePassShader;
         InputShaders.GeneratePassShader = GeneratePassShader;
@@ -212,10 +218,21 @@ public class LinesRenderer : MonoBehaviour
     {
         Renderer.ClearCommandBuffer();
 
+        /*
+            main camera ->  clipping : main camera matrix
+				rendering : main camera matrix
+            debug camera -> clipping : main camera matrix
+				rendering : debug camera matrix
+         */
         Matrix4x4 ProjectionMatrix = GL.GetGPUProjectionMatrix(RenderCamera.projectionMatrix, true);
-        Matrix4x4 ProjectionMatrixForClipping = GL.GetGPUProjectionMatrix(GamerCamera.projectionMatrix, true);
         Matrix4x4 ViewProjectionMatrix = ProjectionMatrix * RenderCamera.worldToCameraMatrix;
-        Matrix4x4 ViewProjectionMatrixForClipping = ProjectionMatrixForClipping * GamerCamera.worldToCameraMatrix;
+        Matrix4x4 ProjectionMatrixForDebug = ProjectionMatrix;
+        Matrix4x4 ViewProjectionMatrixForDebug = ViewProjectionMatrix;
+        if (RenderAsDebugCamera)
+        {
+            ProjectionMatrixForDebug = GL.GetGPUProjectionMatrix(MainViewCameraInDebugView.projectionMatrix, true);
+            ViewProjectionMatrixForDebug = ProjectionMatrixForDebug * MainViewCameraInDebugView.worldToCameraMatrix;
+        }
 
         Matrix4x4 LineWidthScaleMatrix = ProjectionMatrix * Matrix4x4.LookAt(new Vector3(0.0f, 0.0f, 1.0f), new Vector3(0.0f, 0.0f, 0.0f), new Vector3(0.0f, 1.0f, 0.0f));
         Vector2 LineWidthScaleVec = new Vector2(
@@ -231,16 +248,17 @@ public class LinesRenderer : MonoBehaviour
                 //Debug.Log("Render: "+Current.Name);
                 Renderer.ClearFrame();
 
+                Renderer.EveryFrameParams.WorldCameraPosition = Camera.main.transform.position;
                 Renderer.EveryFrameParams.LocalCameraPosition = Current.Context.RumtimeTransform.InverseTransformPoint(Camera.main.transform.position);
                 Renderer.EveryFrameParams.CreaseAngleThreshold = (180.0f - Current.Context.LineMaterialSetting.CreaseAngleDegreeThreshold) * (0.017453292519943294f);
                 Renderer.EveryFrameParams.WorldViewProjectionMatrix = ViewProjectionMatrix * Current.Context.RumtimeTransform.localToWorldMatrix;
-                Renderer.EveryFrameParams.WorldViewProjectionMatrixForClipping = ViewProjectionMatrixForClipping * Current.Context.RumtimeTransform.localToWorldMatrix;
+                Renderer.EveryFrameParams.WorldViewProjectionMatrixForDebug = ViewProjectionMatrixForDebug * Current.Context.RumtimeTransform.localToWorldMatrix;
                 Renderer.EveryFrameParams.ScreenScaledResolution = new Vector4(camera.scaledPixelWidth, camera.scaledPixelHeight, 1.0f / camera.scaledPixelWidth, 1.0f / camera.scaledPixelHeight);
                 Renderer.EveryFrameParams.LineWidth = LineWidthScale * Current.Context.LineMaterialSetting.LineWidth;
                 Renderer.EveryFrameParams.LineCenterOffset = Current.Context.LineMaterialSetting.LineCenterOffset;
                 Renderer.EveryFrameParams.ObjectScale = Current.Context.RumtimeTransform.lossyScale;
 
-                Renderer.Render(Current.Context);
+                Renderer.Render(Current.Context, RenderAsDebugCamera);
             }
         }
     }
