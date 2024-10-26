@@ -79,7 +79,7 @@ void Editor::Render(ID3D12GraphicsCommandList* CommandList)
         ImGui::SetNextWindowPos(ImVec2(4, 6), ImGuiCond_FirstUseEver);
         //ImGui::Begin("Inspector", NULL, window_flags);
         ImGui::Begin("Inspector");
-        ImGui::SetWindowSize(ImVec2(750, 250), ImGuiCond_FirstUseEver);
+        ImGui::SetWindowSize(ImVec2(750, 300), ImGuiCond_FirstUseEver);
 
         ImGui::Text("FPS: %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
         ImGui::Separator();
@@ -97,16 +97,21 @@ void Editor::Render(ID3D12GraphicsCommandList* CommandList)
         ImGui::Text("");
         ImGui::Separator();
         ImGui::Separator();
-        ImGui::Text("");
+        ImGui::Text("Setting:");
 
         ImGui::BeginDisabled(Working);
+
+        ImGui::Checkbox("All Hard Edge", &Processer->AllHardEdge);
         ImGui::SetNextItemWidth(200.0f);
         ImGui::SliderFloat("Meshlet Normal Weight", &Processer->MeshletNormalWeight, 0.0f, 1.0f);
+        ImGui::Separator();
+        ImGui::Separator();
         if (ImGui::Button("Generate") || PreLoad)
         {
             if (PreLoad) PreLoad = false;
             OnGenerateButtonClicked();
         }
+
         ImGui::EndDisabled();
 
         ImGui::ProgressBar(GetProgress(), ImVec2(-1.0f, 0.0f));
@@ -305,7 +310,8 @@ bool Editor::KickGenerateMission()
         //PassPool.push(PassType(PassSerializeMeshletLayer2));
         //PassPool.push(PassType(PassSerializeMeshletLayer1));
         //PassPool.push(PassType(PassSerializeMeshletToEdge));
-
+        PassPool.push(PassType(PassSerializeExportData));
+        PassPool.push(PassType(PassSerializeExportData2));
         PassPool.push(PassType(PassGenerateRenderData));
     }
     else {
@@ -336,7 +342,7 @@ void Editor::RenderBackground(ID3D12GraphicsCommandList* CommandList)
 void MeshRenderer::ShowViewerSettingUI(bool ModelIsLoaded, bool GeneratorIsWorking)
 {
 
-    ImGui::SetNextWindowPos(ImVec2(4, 256), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(4, 306), ImGuiCond_FirstUseEver);
     ImGui::Begin("Debug Viewer");
     ImGui::SetWindowSize(ImVec2(255, 508), ImGuiCond_FirstUseEver);
     ImGui::Separator();
@@ -506,8 +512,8 @@ bool MeshRenderer::LoadMeshFromProcesser(AdjacencyProcesser* Processer)
         NewMesh.Triangle.VertexNum = SrcList[i]->FaceList.size() * 3;
         NewMesh.FaceNormal.IndexNum = SrcList[i]->FaceList.size() * 2;
         NewMesh.FaceNormal.VertexNum = SrcList[i]->FaceList.size() * 2;
-        NewMesh.VertexNormal.IndexNum = SrcList[i]->VertexData->VertexList.size() * 2;
-        NewMesh.VertexNormal.VertexNum = SrcList[i]->VertexData->VertexList.size() * 2;
+        NewMesh.VertexNormal.IndexNum = SrcList[i]->FaceList.size() * 3 * 2;
+        NewMesh.VertexNormal.VertexNum = SrcList[i]->FaceList.size() * 3 * 2;
         NewMesh.Bounding = SrcList[i]->VertexData->Bounding;
 
         std::cout << "Loading Mesh : " << NewMesh.Name << std::endl;

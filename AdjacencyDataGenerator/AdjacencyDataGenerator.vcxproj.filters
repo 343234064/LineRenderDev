@@ -16,6 +16,9 @@
     <Filter Include="Imgui">
       <UniqueIdentifier>{6b9120b9-0aad-449c-948e-f8f494386fa3}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Others">
+      <UniqueIdentifier>{7d6a6dcc-a18f-48a2-bc79-99b0ad739fda}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Adjacency.h">
@@ -56,6 +59,9 @@
     </ClInclude>
     <ClInclude Include="Utils.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="others\float16_t.hpp">
+      <Filter>Others</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

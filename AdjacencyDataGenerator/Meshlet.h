@@ -262,13 +262,19 @@ public:
 		index[0] = 0;
 		index[1] = 0;
 		index[2] = 0;
+		edge[0] = 0;
+		edge[1] = 0;
+		edge[2] = 0;
 	}
-	MeshOptTriangle(Float3& _Center, Float3& _Normal, float _Area, unsigned int index1, unsigned int index2, unsigned int index3) :
+	MeshOptTriangle(Float3& _Center, Float3& _Normal, float _Area, unsigned int index1, unsigned int index2, unsigned int index3, unsigned int edge1, unsigned int edge2, unsigned int edge3) :
 		Center(_Center), Normal(_Normal), Area(_Area)
 	{
 		index[0] = index1;
 		index[1] = index2;
 		index[2] = index3;
+		edge[0] = edge1;
+		edge[1] = edge2;
+		edge[2] = edge3;
 	}
 
 	Float3 Center;
@@ -276,6 +282,7 @@ public:
 	float Area;
 
 	unsigned int index[3];
+	unsigned int edge[3];
 };
 struct MeshOptVertex
 {
@@ -327,13 +334,14 @@ public:
 	/* number of vertices and triangles used in the meshlet; data is stored in consecutive range defined by offset and count */
 	unsigned int vertex_count;
 	unsigned int triangle_count;
+
 };
 
 class MeshOpt
 {
 
 public:
-	MeshOpt():
+	MeshOpt() :
 		mesh_area(0.0f),
 		meshlet_expected_radius(0.0),
 		cone_weight(0.0),
@@ -379,6 +387,7 @@ public:
 			delete[] nodes;
 		nodes = nullptr;
 
+
 		if (meshlets_list != nullptr)
 			delete[] meshlets_list;
 		meshlets_list = nullptr;
@@ -400,7 +409,7 @@ public:
 
 	}
 
-	void Init(unsigned int vertex_count, unsigned int face_count);
+	void Init(unsigned int vertex_count, unsigned int face_count, unsigned int edge_count);
 	void GetReady(size_t max_triangles_per_meshlet, unsigned int face_count, unsigned int vertex_count, float normal_weight);
 	bool RunStep(double* OutStep);
 
@@ -432,6 +441,7 @@ public:
 	unsigned int* live_triangles;
 	unsigned int* kdindices;
 	KDNode* nodes;
+	bool* used_edges;
 
 
 };

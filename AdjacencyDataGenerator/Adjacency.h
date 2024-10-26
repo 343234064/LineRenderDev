@@ -6,6 +6,7 @@
 #include <unordered_set>
 #include <queue>
 #include <set>
+#include <map>
 #include <fstream>
 #include <filesystem>
 
@@ -24,6 +25,8 @@ bool PassGenerateVertexNormal(AdjacencyProcesser* Processer, std::string& FilePa
 bool PassGenerateMeshletLayer1Data(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
 bool PassGenerateMeshlet(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State); 
 bool PassSerializeMeshLayer1Data(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
+bool PassSerializeExportData(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
+bool PassSerializeExportData2(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
 bool PassGenerateRenderData(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
 void Export(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
 
@@ -127,12 +130,8 @@ public:
 		return !(*this == other);
 	}
 
-	static uint ByteSize()
-	{
-		return 3 * sizeof(float);
-	}
 
-	Float3 Get()
+	const Float3 Get() const
 	{
 		return Float3(x, y, z);
 	}
@@ -143,7 +142,6 @@ public:
 	float z;
 	size_t hash;
 
-	Float3 normal;
 };
 
 class Index
@@ -192,6 +190,16 @@ public:
 	uint actual_value;
 };
 
+
+struct FaceNormal
+{
+	FaceNormal():normalvx(0.0f), normalvy(0.0f), normalvz(0.0f){}
+
+	Float3 normalvx;
+	Float3 normalvy;
+	Float3 normalvz;
+};
+
 class Face
 {
 public:
@@ -223,7 +231,7 @@ public:
 
 public:
 
-	Index GetOppositePoint(Index v1, Index  v2)
+	Index GetOppositePoint(Index v1, Index  v2) const
 	{
 		if (v1.value == x.value)
 		{
@@ -244,8 +252,42 @@ public:
 		return x;
 	}
 
+	void GetEdgesIndexByVertex(uint VertexId, uint* OutEdgeIndex1, uint* OutEdgeIndex2) const
+	{
+		if (VertexId == x.value)
+		{
+			*OutEdgeIndex1 = xy;
+			*OutEdgeIndex2 = zx;
+		}
+		else if (VertexId == y.value)
+		{
+			*OutEdgeIndex1 = xy;
+			*OutEdgeIndex2 = yz;
+		}
+		else if (VertexId == z.value)
+		{
+			*OutEdgeIndex1 = yz;
+			*OutEdgeIndex2 = zx;
+		}
+	}
 
+	uint GetOppositeEdge(uint VertexId, uint EdgeId)
+	{
+		if (VertexId == x.value)
+		{
+			return (xy == EdgeId) ? zx : xy;
+		}
+		else if (VertexId == y.value)
+		{
+			return (yz == EdgeId) ? xy : yz;
+		}
+		else if (VertexId == z.value)
+		{
+			return (zx == EdgeId) ? yz : zx;
+		}
 
+		return 0;
+	}
 
 };
 
@@ -258,6 +300,22 @@ struct FacePair
 	uint face2;
 	bool set1;
 	bool set2;
+
+	bool GetOppositeFace(uint FaceId, uint* OutFaceId)
+	{
+		if (FaceId == face1){
+			*OutFaceId = face2;
+			return set2;
+		}
+		else if(FaceId == face2)
+		{
+			*OutFaceId = face1;
+			return set1;
+		}
+
+		return false;
+	}
+
 };
 
 
@@ -266,30 +324,18 @@ class Edge
 {
 public:
 	Edge(uint _v1, uint _v2, uint _actual_v1, uint _actual_v2) :
-		v1(_v1, _actual_v1), v2(_v2, _actual_v2), id(0)
+		v1(_v1, _actual_v1), v2(_v2, _actual_v2), id(0), IsHardEdge(false)
 	{
 		hash = HashCombine(MIN(v1.value, v2.value), MAX(v1.value, v2.value));
-
-		MeshletIndex[0] = -1;
-		MeshletIndex[1] = -1;
-
 	}
 	Edge(Index _v1, Index _v2) :
-		v1(_v1), v2(_v2), id(0)
+		v1(_v1), v2(_v2), id(0), IsHardEdge(false)
 	{
 		hash = HashCombine(MIN(v1.value, v2.value), MAX(v1.value, v2.value));
-
-		MeshletIndex[0] = -1;
-		MeshletIndex[1] = -1;
-
 	}
 	Edge(const Edge& e):
-		v1(e.v1), v2(e.v2), hash(e.hash), id(e.id)
-	{
-		MeshletIndex[0] = -1;
-		MeshletIndex[1] = -1;
-
-	}
+		v1(e.v1), v2(e.v2), hash(e.hash), id(e.id), IsHardEdge(e.IsHardEdge)
+	{}
 
 	bool operator==(const Edge& other) const
 	{
@@ -309,13 +355,7 @@ public:
 
 	uint id;
 
-public:
-	static size_t ByteSizeOfMeshletData()
-	{
-		return sizeof(int) * 2;
-	}
-
-	int MeshletIndex[2];
+	bool IsHardEdge;
 };
 
 
@@ -351,6 +391,98 @@ namespace std {
 
 
 
+
+struct EXPORTVertex
+{
+	EXPORTVertex(Float3 _Position, uint _UniqueIndex) :
+		Position(_Position), UniqueIndex(_UniqueIndex)
+	{}
+	Float3 Position;
+	// unique index, repeated vertex will has a same index
+	uint UniqueIndex;
+
+	static uint ByteSize()
+	{
+		return 3 * sizeof(float) + 1 * sizeof(uint);
+	}
+};
+
+
+static uint EncodeVertexIndex(uint v0, uint v1, uint v2)
+{
+	uint Bytes0 = v0 & 0x3ff;
+	uint Bytes1 = v1 & 0x3ff;
+	uint Bytes2 = v2 & 0x3ff;
+
+	uint Result = Bytes0 | (Bytes1 << 10) | (Bytes2 << 20);
+	return Result;
+}
+
+static uint EncodeEdgeIndex(uint adjFace, bool IsHardEdge, bool IsUniqueEdge)
+{
+	uint Bytes0 = adjFace & 0x3fffffff;
+	uint Bytes1 = (IsHardEdge ? 1 : 0) << 30;
+	uint Bytes2 = (IsUniqueEdge ? 1 : 0) << 31;
+
+	uint Result = Bytes0 | Bytes1 | Bytes2;
+	return Result;
+}
+
+
+
+
+
+struct EXPORTFace
+{
+	EXPORTFace() :
+		v012(0), edge01(0), edge12(0), edge20(0)
+		, PackNormalData0(0), PackNormalData1(0)
+	{}
+	// every 10 bit for 1 vertex index in meshlet[range : 0 ~ 1023]
+	uint v012;
+	//uint v0;
+	//uint v1;
+	//uint v2;
+
+	// 1 ~ 30 bit[range : 1 ~ 1,073,741,823] : export face list index + 1,  ** SET TO 0 ** if adj face unexist 
+	// 31 bit : if this edge is hard edge or soft edge 
+	// 32 bit : if this edge is unique 
+	uint edge01;
+	uint edge12;
+	uint edge20;
+
+	// Packed Normal, V0Normal, V1Normal, V2Normal
+	// PackNormalData0.x -> Normal.x, Normal.y
+	// PackNormalData0.y -> Normal.z, V0Normal.x
+	// PackNormalData0.z -> V0Normal.y, V0Normal.z
+	// PackNormalData1.x -> V1Normal.x, V1Normal.y
+	// PackNormalData1.y -> V1Normal.z, V2Normal.x
+	// PackNormalData1.z -> V2Normal.y, V2Normal.z
+	Uint3 PackNormalData0;
+	Uint3 PackNormalData1;
+
+
+	static uint ByteSize()
+	{
+		return 1 * sizeof(uint) + 3 * sizeof(uint) + 2 * sizeof(Uint3);
+	}
+};
+
+struct EXPORTMeshlet
+{
+	EXPORTMeshlet(uint _FaceOffset, uint _FaceNum, uint _VertexOffset, uint _VertexNum):
+		FaceOffset(_FaceOffset), FaceNum(_FaceNum), VertexOffset(_VertexOffset), VertexNum(_VertexNum)
+	{}
+	uint FaceOffset; // offset in export face list
+	uint FaceNum;
+	uint VertexOffset; // offset in export vertex list
+	uint VertexNum;
+
+	static uint ByteSize()
+	{
+		return 4 * sizeof(uint);
+	}
+};
 
 
 
@@ -478,6 +610,9 @@ public:
 		DrawVertexNormalIndexList = nullptr;
 	}
 
+	bool GetAdjFaceByEdge(uint TargetFaceId, uint TargetEdgeId, bool IgnoreHardEdge, uint* OutFaceId);
+	Float3 CalculateVertexNormalOnFace(uint TargetFaceId, uint TargetVertexId);
+
 public:
 	std::string Name;
 	Byte* BytesData;
@@ -488,7 +623,8 @@ public:
 	std::vector<Edge> EdgeList;
 	std::unordered_map<Edge, FacePair> EdgeFaceList; // edge -> adjacency face
 	std::unordered_map<uint, std::set<uint>> AdjacencyVertexFaceMap; // vertex -> adjacency face
-	
+	std::vector<FaceNormal> FaceNormalMap; // face -> 3 normal for 3 vertex on face
+
 	//meshlet
 	MeshOpt MeshletLayer1Data;
 
@@ -504,13 +640,46 @@ public:
 	uint CurrentFacePos;
 	uint CurrentIndexPos;
 
+
 public:
-	uint GetVertexDataByteSize()
+	void ExportVertexData(Byte* Buffer, size_t* BytesOffset);
+	void ExportFaceData(Byte* Buffer, size_t* BytesOffset);
+	void ExportEdgeData(Byte* Buffer, size_t* BytesOffset);
+	void ExportMeshletData(Byte* Buffer, size_t* BytesOffset);
+	size_t GetExportVertexDataByteSize()
 	{
-		return (uint)(VertexData->VertexList.size() * Vertex3::ByteSize());
+		return EXPORTRepeatedVertexList.size() * EXPORTVertex::ByteSize();
+	}
+	size_t GetExportFaceDataByteSize()
+	{
+		return EXPORTFaceList.size() * EXPORTFace::ByteSize();
+	}
+	size_t GetExportMeshletDataByteSize()
+	{
+		return EXPORTMeshletList.size() * EXPORTMeshlet::ByteSize();
 	}
 
+	void ClearExportData()
+	{
+		EXPORTRepeatedVertexList.clear();
+		EXPORTFaceList.clear();
+		EXPORTMeshletList.clear();
+		MeshletVertexMap.clear();
+		MeshletFaceMap.clear();
+		EdgeUsedMap.clear();
+	}
+	//
+	std::vector<std::map<uint, uint>> MeshletVertexMap;
+	std::map<uint, uint> MeshletFaceMap; // face list index -> export face list index
+	std::map<uint, bool> EdgeUsedMap; 
+	//data for final export
+	std::vector<EXPORTVertex> EXPORTRepeatedVertexList; // vertex list sorted by meshlet order, with repeated vertices
+	std::vector<EXPORTFace> EXPORTFaceList; // face list sorted by meshlet order
+	std::vector<EXPORTMeshlet> EXPORTMeshletList; // meshlet list sorted by meshlet order
 
+	
+
+public:
 	void DumpFaceList()
 	{
 		std::ofstream OutFile(Name + "_FaceList.txt", std::ios::out);
@@ -556,6 +725,7 @@ public:
 		TotalTriangleBytesNum(0),
 		VertexBytesData(nullptr),
 		TotalVertexBytesNum(0),
+		AllHardEdge(false),
 		MeshletNormalWeight(0.1f)
 	{}
 	~AdjacencyProcesser()
@@ -614,6 +784,12 @@ public:
 	//Pass 5 Serialize Meshlet Layer1
 	bool GetReadyForSerializeMeshletLayer1();
 	void* RunFuncForSerializeMeshletLayer1(void* SourceData, double* OutProgressPerRun);
+
+	//Pass Generate Render Data
+	bool GetReadyForSerializeExportData();
+	void* RunFuncSerializeExportData(void* SourceData, double* OutProgressPerRun);
+	bool GetReadyForSerializeExportData2();
+	void* RunFuncSerializeExportData2(void* SourceData, double* OutProgressPerRun);
 
 	//Pass Generate Render Data
 	bool GetReadyGenerateRenderData();
@@ -708,11 +884,9 @@ public:
 	
 public:
 	//Parameters For Generation
+	bool AllHardEdge;
 	float MeshletNormalWeight;
 
-private:
-
-	void ExportVertexData(Byte* Buffer, uint* BytesOffset, const SourceContext* Context);
 
 private:
 	ThreadProcesser* AsyncProcesser;

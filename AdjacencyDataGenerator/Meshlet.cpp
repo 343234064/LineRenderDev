@@ -237,6 +237,13 @@ void kdtreeNearest(KDNode* nodes, unsigned int root, const std::vector<MeshOptTr
 	}
 }
 
+
+inline bool CheckCondition(meshopt_Meshlet& meshlet, size_t max_triangles)
+{
+	return meshlet.triangle_count >= max_triangles;
+}
+
+
 void finishMeshlet(meshopt_Meshlet& meshlet, unsigned int* meshlet_triangles)
 {
 	//size_t offset = meshlet.triangle_offset + meshlet.triangle_count * 3;
@@ -246,7 +253,10 @@ void finishMeshlet(meshopt_Meshlet& meshlet, unsigned int* meshlet_triangles)
 	//	meshlet_triangles[offset++] = 0;
 }
 
-bool appendMeshlet(meshopt_Meshlet& meshlet, unsigned int a, unsigned int b, unsigned int c, unsigned int best_triangle, unsigned char* used, meshopt_Meshlet* meshlets, unsigned int* meshlet_vertices, unsigned int* meshlet_triangles, size_t meshlet_offset, size_t max_triangles)
+bool appendMeshlet(meshopt_Meshlet& meshlet, unsigned int a, unsigned int b, unsigned int c, unsigned int best_triangle,
+	unsigned char* used, 
+	meshopt_Meshlet* meshlets, unsigned int* meshlet_vertices, unsigned int* meshlet_triangles, 
+	size_t meshlet_offset, size_t max_triangles)
 {
 	unsigned char& av = used[a];
 	unsigned char& bv = used[b];
@@ -254,9 +264,7 @@ bool appendMeshlet(meshopt_Meshlet& meshlet, unsigned int a, unsigned int b, uns
 
 	bool result = false;
 
-	unsigned int used_extra = (av == 0xff) + (bv == 0xff) + (cv == 0xff);
-
-	if (meshlet.triangle_count >= max_triangles)
+	if (CheckCondition(meshlet, max_triangles))
 	{
 		meshlets[meshlet_offset] = meshlet;
 
@@ -287,6 +295,7 @@ bool appendMeshlet(meshopt_Meshlet& meshlet, unsigned int a, unsigned int b, uns
 	{
 		meshlet_vertices[meshlet.vertex_offset + meshlet.vertex_count++] = c;
 	}
+
 
 	meshlet_triangles[meshlet.triangle_offset + meshlet.triangle_count] = best_triangle;
 	meshlet.triangle_count++;
@@ -328,6 +337,7 @@ unsigned int getNeighborTriangle(const meshopt_Meshlet& meshlet, const Cone* mes
 {
 	unsigned int best_triangle = ~0u;
 	unsigned int best_extra = 5;
+	unsigned int best_edge_to_add = 3;
 	float best_score = FLT_MAX;
 
 	for (size_t i = 0; i < meshlet.vertex_count; ++i)
@@ -396,7 +406,7 @@ unsigned int getNeighborTriangle(const meshopt_Meshlet& meshlet, const Cone* mes
 }
 
 
-void MeshOpt::Init(unsigned int vertex_count, unsigned int face_count)
+void MeshOpt::Init(unsigned int vertex_count, unsigned int face_count, unsigned int edge_count)
 {
 	Clear();
 
@@ -408,6 +418,9 @@ void MeshOpt::Init(unsigned int vertex_count, unsigned int face_count)
 
 	live_triangles = new unsigned int[vertex_count];
 	memset(live_triangles, 0, vertex_count * sizeof(unsigned int));
+
+	used_edges = new bool[edge_count];
+	memset(used_edges, 0, edge_count);
 
 	kdindices = new unsigned int[face_count];
 	nodes = new KDNode[size_t(face_count) * 2];
@@ -436,6 +449,7 @@ void MeshOpt::GetReady(size_t max_triangles_per_meshlet, unsigned int face_count
 	meshlet_triangles = new unsigned int[max_meshlets * max_triangles];
 	memset(meshlet_triangles, 0, max_meshlets * max_triangles * sizeof(unsigned int));
 
+
 	step_per_run = 1.0 / (face_count + 1.0);//+1 for the last empty run of RunStep()
 
 	std::cout << "Expected Max Meshlet Num : " << max_meshlets << std::endl;
@@ -454,7 +468,7 @@ bool MeshOpt::RunStep(double* OutStep)
 	unsigned int best_triangle = getNeighborTriangle(meshlet, &meshlet_cone, meshlet_vertices, &vertices, &triangles, live_triangles, used, meshlet_expected_radius, cone_weight, &best_extra);
 
 	// if the best triangle doesn't fit into current meshlet, the spatial scoring we've used is not very meaningful, so we re-select using topological scoring
-	if (best_triangle != ~0u && (meshlet.triangle_count >= max_triangles))
+	if (best_triangle != ~0u && (CheckCondition(meshlet, max_triangles)))
 	{
 		best_triangle = getNeighborTriangle(meshlet, NULL, meshlet_vertices, &vertices, &triangles, live_triangles, used, meshlet_expected_radius, 0.f, NULL);
 	}
@@ -486,7 +500,6 @@ bool MeshOpt::RunStep(double* OutStep)
 	}
 
 	unsigned int a = triangles[best_triangle].index[0], b = triangles[best_triangle].index[1], c = triangles[best_triangle].index[2];
-
 	// add meshlet to the output; when the current meshlet is full we reset the accumulated bounds
 	if (appendMeshlet(meshlet, a, b, c, best_triangle, used, meshlets_list, meshlet_vertices, meshlet_triangles, meshlet_offset, max_triangles))
 	{
