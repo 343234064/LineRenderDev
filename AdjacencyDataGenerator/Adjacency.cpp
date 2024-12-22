@@ -1104,6 +1104,13 @@ void* AdjacencyProcesser::RunFuncSerializeExportData2(void* SourceData, double* 
 			const Edge& E2 = Src->EdgeList[DestFace.yz];
 			const Edge& E3 = Src->EdgeList[DestFace.zx];
 			
+			DestExportFace.UniqueIndex01 = DestFace.xy;
+			DestExportFace.UniqueIndex12 = DestFace.yz;
+			DestExportFace.UniqueIndex20 = DestFace.zx;
+
+			DestExportFace.MeshletData[0] = DestFace.meshletId[0];
+			DestExportFace.MeshletData[1] = DestFace.meshletId[1];
+
 			bool IsE1Unique = true;
 			if (Src->EdgeUsedMap.find(DestFace.xy) != Src->EdgeUsedMap.end())
 			{
@@ -1368,6 +1375,7 @@ void AdjacencyProcesser::Export(std::filesystem::path& FilePath)
 
 		// vertex data begin
 		TotalBytesLength += sizeof(uint);// vertex num
+		TotalBytesLength += sizeof(uint);// repeated vertex num
 		TotalBytesLength += sizeof(uint);// struct size
 		TotalBytesLength += TriangleContextList[i]->GetExportVertexDataByteSize();
 
@@ -1404,6 +1412,8 @@ void AdjacencyProcesser::Export(std::filesystem::path& FilePath)
 		WriteUnsignedIntegerToBytesLittleEndian(Buffer, &BytesOffset, NameLength);
 		WriteASCIIStringToBytes(Buffer, &BytesOffset, TriangleContextList[i]->Name);
 
+
+		WRITE_MESSAGE_DIGIT("Export Vertex List Num : ", TriangleContextList[i]->VertexData->VertexList.size());
 		WRITE_MESSAGE_DIGIT("Export Repeated Vertex List Num : ", TriangleContextList[i]->EXPORTRepeatedVertexList.size());
 		WRITE_MESSAGE_DIGIT("Export Repeated Vertex Struct Size : ", EXPORTVertex::ByteSize());
 		TriangleContextList[i]->ExportVertexData(Buffer, &BytesOffset);
@@ -1426,6 +1436,7 @@ void AdjacencyProcesser::Export(std::filesystem::path& FilePath)
 
 void SourceContext::ExportVertexData(Byte* Buffer, size_t* BytesOffset)
 {
+	WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, VertexData->VertexList.size());
 	WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, EXPORTRepeatedVertexList.size());
 	WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, EXPORTVertex::ByteSize());
 
@@ -1452,13 +1463,17 @@ void SourceContext::ExportFaceData(Byte* Buffer, size_t* BytesOffset)
 		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.edge01);
 		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.edge12);
 		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.edge20);
+		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.UniqueIndex01);
+		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.UniqueIndex12);
+		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.UniqueIndex20);
 		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.PackNormalData0.x);
 		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.PackNormalData0.y);
 		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.PackNormalData0.z);
 		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.PackNormalData1.x);
 		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.PackNormalData1.y);
 		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.PackNormalData1.z);
-
+		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.MeshletData[0]);
+		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.MeshletData[1]);
 	}
 }
 

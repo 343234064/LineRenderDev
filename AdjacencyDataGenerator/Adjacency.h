@@ -436,20 +436,29 @@ struct EXPORTFace
 {
 	EXPORTFace() :
 		v012(0), edge01(0), edge12(0), edge20(0)
+		, UniqueIndex01(0), UniqueIndex12(0), UniqueIndex20(0)
 		, PackNormalData0(0), PackNormalData1(0)
-	{}
+	{
+		MeshletData[0] = 0;
+		MeshletData[1] = 0;
+	}
 	// every 10 bit for 1 vertex index in meshlet[range : 0 ~ 1023]
 	uint v012;
 	//uint v0;
 	//uint v1;
 	//uint v2;
 
-	// 1 ~ 30 bit[range : 1 ~ 1,073,741,823] : export face list index + 1,  ** SET TO 0 ** if adj face unexist 
+	// 1 ~ 30 bit[range : 1 ~ 1,073,741,824] : export face list index + 1,  ** SET TO 0 ** if adj face unexist 
 	// 31 bit : if this edge is hard edge or soft edge 
 	// 32 bit : if this edge is unique 
 	uint edge01;
 	uint edge12;
 	uint edge20;
+	
+	// Edge unique index
+	uint UniqueIndex01;
+	uint UniqueIndex12;
+	uint UniqueIndex20;
 
 	// Packed Normal, V0Normal, V1Normal, V2Normal
 	// PackNormalData0.x -> Normal.x, Normal.y
@@ -461,10 +470,13 @@ struct EXPORTFace
 	Uint3 PackNormalData0;
 	Uint3 PackNormalData1;
 
+	// 0: meshlet layer1 index
+	// 1: meshlet layer2 index
+	uint MeshletData[2];
 
 	static uint ByteSize()
 	{
-		return 1 * sizeof(uint) + 3 * sizeof(uint) + 2 * sizeof(Uint3);
+		return 1 * sizeof(uint) + 3 * sizeof(uint) + 3 * sizeof(uint) + 2 * sizeof(Uint3) + 2 * sizeof(uint);
 	}
 };
 
