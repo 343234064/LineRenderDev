@@ -7,120 +7,6 @@ using UnityEngine.Rendering;
 
 
 
-
-public struct LineSegment
-{
-    Vector4 NDCPosition1;
-    Vector4 NDCPosition2;
-
-    Vector2 Direction;
-
-    uint BackFacing;
-
-    int Id;
-
-    uint RunTimeVertexIndex1;
-    uint RunTimeVertexIndex2;
-
-    uint MeshletIndex1;
-    uint MeshletIndex2;
-
-    public override string ToString() => $"LineSegment(Id={Id}))";
-
-    public static int Size()
-    {
-        return sizeof(float) * 4 * 2 + sizeof(float) * 2 + sizeof(uint) + sizeof(int) + sizeof(uint) * 2 + sizeof(uint) * 2;
-    }
-}
-public struct VisibleLineSegment
-{
-    int Id;
-    uint PixelLength;
-    uint PixelLengthShrink;
-    uint PixelLengthShrinkTotal;
-    uint ClippedPositionOffset;
-    float InvPixelLengthBeforeClipped;
-
-    public static int Size()
-    {
-        return sizeof(int) + sizeof(uint) * 4 + sizeof(float);
-    }
-}
-
-public struct Slice
-{
-    uint Id;
-    uint BeginSegmentIndex;
-    uint BeginPixel;
-
-    public override string ToString() => $"Slice({Id}, {BeginSegmentIndex}, {BeginPixel})";
-
-    public static int Size()
-    {
-        return sizeof(uint) * 3;
-    }
-}
-
-public struct PlainLine
-{
-    Vector2 NDCPosition1;
-    Vector2 NDCPosition2;
-
-    float PixelPosition1;
-    float PixelPosition2;
-
-    uint Id1;
-    int Id2;
-
-    uint RunTimeVertexIndex1;
-    uint RunTimeVertexIndex2;
-
-    int LinkState1;
-    int LinkState2;
-
-    uint Visibility;
-
-    uint MeshletIndex1;
-    uint MeshletIndex2;
-
-    public override string ToString() => $"PlainLine()";
-
-    public static int Size()
-    {
-        return sizeof(float) * 4 + sizeof(float) * 2 + sizeof(uint) + sizeof(int) + sizeof(uint) * 2 + sizeof(int) * 2 + sizeof(uint) + sizeof(uint) * 2;
-    }
-}
-
-public struct RunTimeVertexState
-{
-
-    uint AdjNum;
-
-    int Left;
-    int Right;
-
-    public override string ToString() => $"R({AdjNum})";
-
-    public static int Size()
-    {
-        return sizeof(uint) + sizeof(int) * 2;
-    }
-}
-
-public struct LineMesh
-{
-
-    public static int Size()
-    {
-        return sizeof(float) * 2 * 4 + sizeof(float) * 2 * 4 + sizeof(float) * 2 + sizeof(uint);
-    }
-}
-
-
-
-
-
-
 public class LineShader
 {
     public ComputeShader ResetPassShader;
@@ -129,6 +15,7 @@ public class LineShader
     public ComputeShader SlicePassShader;
     public ComputeShader VisibilityPassShader;
     public ComputeShader GeneratePassShader;
+    public ComputeShader ChainningPassShader;
 
     public bool IsValid()
     {
@@ -144,6 +31,8 @@ public class LineShader
             return false;
         if (GeneratePassShader == null)
             return false;
+        if (ChainningPassShader == null)
+            return false;
 
         return true;
     }
@@ -154,22 +43,24 @@ public struct RenderParams
 {
     public Vector3 WorldCameraPosition;
     public Vector3 LocalCameraPosition;
+    public Vector3 LocalCameraForward;
+    public Matrix4x4 WorldViewProjectionMatrixForRenderCamera;
+    public Matrix4x4 WorldViewProjectionMatrixForDebugCamera;
+    public Matrix4x4 InvWorldViewProjectionMatrixForRenderCamera;
     public float CreaseAngleThreshold;
-    public Matrix4x4 WorldViewProjectionMatrix;
-    public Matrix4x4 WorldViewProjectionMatrixForDebug;
     public Vector4 ScreenScaledResolution;
-    public float LineWidth;
-    public float LineCenterOffset;
+    public float LineWidthScale;
     public Vector3 ObjectScale;
 }
 
 public struct RenderConstants
 {
+    public uint TotalVerticesNum; 
+    public uint TotalRepeatedVerticesNum;
     public uint TotalFacesNum;
-    public uint TotalVerticesNum;
     public uint TotalMeshletsNum;
 
-    public uint SilhouetteEnable;
+    public uint ContourEnable;
     public uint CreaseEnable;
     public uint BorderEnable;
     public uint HideVisibleEdge;
@@ -179,7 +70,7 @@ public struct RenderConstants
 
     public static int Size()
     {
-        return sizeof(uint) * 9;
+        return sizeof(uint) * 10;
     }
 }
 
@@ -200,9 +91,20 @@ public class LineRuntimeContext
 
     //runtime data
     public ArgBufferLayout ArgLayout;
+    //pingpong arg buffer
     public ComputeBuffer ArgBuffer1;
-    public ComputeBuffer SegmentBuffer;
-    public ComputeBuffer ContourFaceBuffer;
+    public ComputeBuffer ArgBuffer2;
+
+    public ComputeBuffer ContourBuffer;
+    public ComputeBuffer VisibleSegmentBuffer;
+    public ComputeBuffer AllSegmentBuffer;
+    public ComputeBuffer AnchorVertexBuffer;
+    public ComputeBuffer AnchorEdgeBuffer;
+    public ComputeBuffer AnchorSliceBuffer;
+    public ComputeBuffer BucketBuffer;
+    public ComputeBuffer SliceBuffer;
+    public ComputeBuffer LineMeshBuffer;
+    public ComputeBuffer LineHeadBuffer;
 
 
     public LineRuntimeContext(Transform transform, LineMaterial material)
@@ -216,25 +118,37 @@ public class LineRuntimeContext
         FaceBuffer = null;
         MeshletBuffer = null;
 
-        ArgLayout = new ArgBufferLayout();
+        ArgLayout = null;
         ArgBuffer1 = null;
-        SegmentBuffer = null;
+        ArgBuffer2 = null;
+        ContourBuffer = null;
+        VisibleSegmentBuffer = null;
+        AllSegmentBuffer = null;
+        AnchorVertexBuffer = null;
+        AnchorEdgeBuffer = null;
+        AnchorSliceBuffer = null;
+        BucketBuffer = null;
+        SliceBuffer = null;
+        LineMeshBuffer = null;
+        LineHeadBuffer = null;
     }
 
-    public bool Init(PackedLineData metaData)
+    public bool Init(PackedLineData metaData, bool EnableDebug)
     {
         if (metaData == null)
             return false;
         MetaData = metaData;
+        ArgLayout = new ArgBufferLayout(EnableDebug);
 
         if (ConstantsBuffer != null)
             ConstantsBuffer.Release();
         ConstantsBuffer = new ComputeBuffer(1, RenderConstants.Size(), ComputeBufferType.Constant);
         RenderConstants[] Constants = new RenderConstants[1];
-        Constants[0].TotalFacesNum = MetaData.FaceNum;
         Constants[0].TotalVerticesNum = MetaData.VertexNum;
+        Constants[0].TotalRepeatedVerticesNum = MetaData.RepeatedVertexNum;
+        Constants[0].TotalFacesNum = MetaData.FaceNum;
         Constants[0].TotalMeshletsNum = MetaData.MeshletNum;
-        Constants[0].SilhouetteEnable = (uint)(LineMaterialSetting.SilhouetteEnable ? 1 : 0);
+        Constants[0].ContourEnable = (uint)(LineMaterialSetting.ContourEnable ? 1 : 0);
         Constants[0].CreaseEnable = (uint)(LineMaterialSetting.CreaseEnable ? 1 : 0);
         Constants[0].BorderEnable = (uint)(LineMaterialSetting.BorderEnable ? 1 : 0);
         Constants[0].HideVisibleEdge = (uint)(LineMaterialSetting.HideVisibleEdge ? 1 : 0);
@@ -242,44 +156,100 @@ public class LineRuntimeContext
         Constants[0].HideOccludedEdge = (uint)(LineMaterialSetting.HideOccludedEdge ? 1 : 0);
 
         ConstantsBuffer.SetData(Constants);
+        ConstantsBuffer.name = "ConstantsBuffer";
 
         // mesh data
         if (VertexBuffer != null)
             VertexBuffer.Release();
-        VertexBuffer = new ComputeBuffer((int)MetaData.VertexNum, (int)MetaData.VertexStructSize);
-        VertexBuffer.SetData(MetaData.VertexList);
+        VertexBuffer = new ComputeBuffer((int)MetaData.RepeatedVertexNum, (int)MetaData.VertexStructSize);
+        VertexBuffer.SetData(MetaData.RepeatedVertexList);
+        VertexBuffer.name = "VertexBuffer";
 
         if (FaceBuffer != null)
             FaceBuffer.Release();
         FaceBuffer = new ComputeBuffer((int)MetaData.FaceNum, (int)MetaData.FaceStructSize);
         FaceBuffer.SetData(MetaData.FaceList);
+        FaceBuffer.name = "FaceBuffer";
 
         if (MeshletBuffer != null)
             MeshletBuffer.Release();
         MeshletBuffer = new ComputeBuffer((int)MetaData.MeshletNum, (int)MetaData.MeshletStructSize);
-        MeshletBuffer.SetData(MetaData.MeshletList);
+        Debug.Log("=====================" + MetaData.MeshletNum * MetaData.MeshletStructSize  + "," + MetaData.MeshletList.Length);
 
+        MeshletBuffer.SetData(MetaData.MeshletList);
+        MeshletBuffer.name = "MeshletBuffer";
 
         // runtime data
         if (ArgBuffer1 != null)
             ArgBuffer1.Release();
         ArgBuffer1 = new ComputeBuffer(ArgLayout.Count(), (int)ArgLayout.StrideSize(), ComputeBufferType.IndirectArguments);
         ArgBuffer1.SetData(ArgLayout.Buffer);
+        ArgBuffer1.name = "ArgBuffer1";
+        if (ArgBuffer2 != null)
+            ArgBuffer2.Release();
+        ArgBuffer2 = new ComputeBuffer(ArgLayout.Count(), (int)ArgLayout.StrideSize(), ComputeBufferType.IndirectArguments);
+        ArgBuffer2.SetData(ArgLayout.Buffer);
+        ArgBuffer2.name = "ArgBuffer2";
 
-        if (SegmentBuffer != null)
-            SegmentBuffer.Release();
         /*
          * In practice, for general man-made triangular meshes,McGuire (2004) measured empirically a trend closer to pow(faceNum, 0.8)
          * M. McGuire. 《Observations on silhouette sizes》
+         * 33554432^0.8 = 1024*1024 -> max 33554432 face per object
          */
-        
-        double SegmentSize = MetaData.EdgeNum + Math.Pow(MetaData.FaceNum, 0.8);
-        SegmentBuffer = new ComputeBuffer((int)SegmentSize, Segment.Size());
+        double ContourSize = Math.Pow(MetaData.FaceNum, 0.8);
+        double SegmentSize = MetaData.EdgeNum + ContourSize;
+        // It's not a accurate value, temp
+        int SliceNumPredict = Screen.currentResolution.width * Screen.currentResolution.height / 128;
 
-        if (ContourFaceBuffer != null)
-            ContourFaceBuffer.Release();
-        ContourFaceBuffer = new ComputeBuffer((int)MetaData.FaceNum, ContourFace.Size());
-   
+        if (ContourBuffer != null)
+            ContourBuffer.Release();
+        ContourBuffer = new ComputeBuffer((int)SegmentSize, Contour.Size());
+        ContourBuffer.name = "ContourBuffer";
+
+        if (VisibleSegmentBuffer != null)
+            VisibleSegmentBuffer.Release();
+        VisibleSegmentBuffer = new ComputeBuffer((int)SegmentSize, SegmentMetaData.Size(EnableDebug));
+        VisibleSegmentBuffer.name = "VisibleSegmentBuffer";
+
+        if (AllSegmentBuffer != null)
+            AllSegmentBuffer.Release();
+        AllSegmentBuffer = new ComputeBuffer((int)SliceNumPredict*32, Segment.Size(EnableDebug));
+        AllSegmentBuffer.name = "AllSegmentBuffer";
+
+        if (AnchorVertexBuffer != null)
+            AnchorVertexBuffer.Release();
+        AnchorVertexBuffer = new ComputeBuffer((int)MetaData.VertexNum, AnchorVertex.Size());
+        AnchorVertexBuffer.name = "AnchorVertexBuffer";
+
+        if (AnchorEdgeBuffer != null)
+            AnchorEdgeBuffer.Release();
+        AnchorEdgeBuffer = new ComputeBuffer((int)MetaData.EdgeNum, AnchorEdge.Size());
+        AnchorEdgeBuffer.name = "AnchorEdgeBuffer";
+
+        if (AnchorSliceBuffer != null)
+            AnchorSliceBuffer.Release();
+        AnchorSliceBuffer = new ComputeBuffer(SliceNumPredict, AnchorSlice.Size());
+        AnchorSliceBuffer.name = "AnchorSliceBuffer";
+
+        if (BucketBuffer != null)
+            BucketBuffer.Release();
+        BucketBuffer = new ComputeBuffer(1024, sizeof(uint));
+        BucketBuffer.name = "BucketBuffer";
+
+        if (SliceBuffer != null)
+            SliceBuffer.Release();
+        SliceBuffer = new ComputeBuffer(SliceNumPredict, Slice.Size());
+        SliceBuffer.name = "SliceBuffer";
+
+        if (LineMeshBuffer != null)
+            LineMeshBuffer.Release();
+        LineMeshBuffer = new ComputeBuffer((int)SliceNumPredict * 32, LineMesh.Size(EnableDebug));
+        LineMeshBuffer.name = "LineMeshBuffer";
+
+        if (LineHeadBuffer != null)
+            LineHeadBuffer.Release();
+        LineHeadBuffer = new ComputeBuffer((int)SliceNumPredict * 32, LineHead.Size());
+        LineHeadBuffer.name = "LineHeadBuffer";
 
         return true;
     }
@@ -301,11 +271,38 @@ public class LineRuntimeContext
         if (ArgBuffer1 != null)
             ArgBuffer1.Release();
 
-        if (SegmentBuffer != null)
-            SegmentBuffer.Release();
+        if (ArgBuffer2 != null)
+            ArgBuffer2.Release();
 
-        if (ContourFaceBuffer != null)
-            ContourFaceBuffer.Release();
+        if (ContourBuffer != null)
+            ContourBuffer.Release();
+
+        if (VisibleSegmentBuffer != null)
+            VisibleSegmentBuffer.Release();
+
+        if (AllSegmentBuffer != null)
+            AllSegmentBuffer.Release();
+
+        if (AnchorVertexBuffer != null)
+            AnchorVertexBuffer.Release();
+
+        if (AnchorEdgeBuffer != null)
+            AnchorEdgeBuffer.Release();
+
+        if (AnchorSliceBuffer != null)
+            AnchorSliceBuffer.Release();
+
+        if (BucketBuffer != null)
+            BucketBuffer.Release();
+
+        if (SliceBuffer != null)
+            SliceBuffer.Release();
+
+        if (LineMeshBuffer != null)
+            LineMeshBuffer.Release();
+
+        if (LineHeadBuffer != null)
+            LineHeadBuffer.Release();
     }
 
 }
@@ -327,11 +324,16 @@ public class RenderLayer
     private ComputePass SlicePassPart3;
     private ComputePass VisiblePass;
     private ComputePass GeneratePass;
+    private ComputePass ChainningPass;
 
     private CommandBuffer RenderCommands;
-    private ComputeBuffer EmptyBuffer;
 
-    private LocalKeyword DebugKeyword;
+    private GlobalKeyword DebugKeyword;
+    private RenderTargetIdentifier DepthTextureIdentifier;
+
+    //debug
+    public RenderTexture DepthTextureTemporary;
+    public RenderTargetIdentifier DepthTextureTemporaryIdentifier;
 
     public RenderLayer()
     {
@@ -347,8 +349,9 @@ public class RenderLayer
         SlicePassPart3 = new ComputePass();
         VisiblePass = new ComputePass();
         GeneratePass = new ComputePass();
+        ChainningPass = new ComputePass();
 
-        EmptyBuffer = null;
+        DepthTextureTemporary = null;
     }
 
     public bool Init(LineShader InputShaders)
@@ -375,14 +378,11 @@ public class RenderLayer
             return false;
         if (!GeneratePass.Init("GeneratePass", "Generate", InputShaders.GeneratePassShader))
             return false;
+        if (!ChainningPass.Init("ChainningPass", "Chainning", InputShaders.ChainningPassShader))
+            return false;
 
-        if (EmptyBuffer != null)
-            EmptyBuffer.Release();
-        EmptyBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Append);
-        EmptyBuffer.SetData(new int[1] { 0 });
-        EmptyBuffer.SetCounterValue(0);
-
-        DebugKeyword = new LocalKeyword(InputShaders.ExtractPassShader, "ENABLE_DEBUG_CLIPPING");
+        DebugKeyword = GlobalKeyword.Create("ENABLE_DEBUG_VIEW");
+        DepthTextureIdentifier = new RenderTargetIdentifier(BuiltinRenderTextureType.Depth);
 
         Available = true;
         Debug.Log("Render Layer Init");
@@ -402,12 +402,43 @@ public class RenderLayer
         SlicePassPart3.Destroy();
         VisiblePass.Destroy();
         GeneratePass.Destroy();
+        ChainningPass.Destroy();
 
-        if (EmptyBuffer != null)
-            EmptyBuffer.Release();
+        if (DepthTextureTemporary != null)
+            DepthTextureTemporary.Release();
 
         Available = false;
         Debug.Log("Render Layer Destroy");
+
+    }
+
+    public void PreRender(Camera MainCamera, GameObject PivotCameraObject, bool EnableDebug)
+    {
+
+        if (!EnableDebug && PivotCameraObject != null)
+        {
+            if ((DepthTextureTemporary == null)  ||  ((DepthTextureTemporary != null) && (DepthTextureTemporary.width != MainCamera.scaledPixelWidth || DepthTextureTemporary.height != MainCamera.scaledPixelHeight)))
+            {
+                if(DepthTextureTemporary != null)
+                    DepthTextureTemporary.Release();
+                DepthTextureTemporary = new RenderTexture(MainCamera.scaledPixelWidth, MainCamera.scaledPixelHeight, 24, RenderTextureFormat.Depth);
+                DepthTextureTemporary.name = "DepthTextureTemporary";
+                DepthTextureTemporaryIdentifier = new RenderTargetIdentifier(DepthTextureTemporary);
+                //Debug.Log("+++++++++++++++++++ Create : " + DepthTextureTemporary.name);
+            }
+            //Debug.Log("+++++++++++++++++++" + DepthTextureTemporary.name);
+            RenderCommands.CopyTexture(DepthTextureIdentifier, DepthTextureTemporaryIdentifier);
+        }
+
+        if(EnableDebug && PivotCameraObject != null)
+        {
+            LinesRenderer MainCameraRenderer = PivotCameraObject.GetComponent<LinesRenderer>();
+            if (MainCameraRenderer != null)
+            {
+                DepthTextureTemporaryIdentifier = MainCameraRenderer.GetDepthRenderTexture();
+                //Debug.Log("====================" + DepthTextureTemporaryIdentifier);
+            }
+        }
     }
 
     public void Render(LineRuntimeContext Current, bool EnableDebug)
@@ -415,9 +446,12 @@ public class RenderLayer
         if (!Available)
             return;
 
+        RenderCommands.SetKeyword(DebugKeyword, EnableDebug);
+
         //Reset
         //Temp, maybe do this in better way
-        RenderCommands.SetComputeBufferParam(ResetPass.CoreShader, ResetPass.CoreShaderKernelId, "ArgBuffer", Current.ArgBuffer1);
+        RenderCommands.SetComputeBufferParam(ResetPass.CoreShader, ResetPass.CoreShaderKernelId, "ArgBuffer1", Current.ArgBuffer1);
+        RenderCommands.SetComputeBufferParam(ResetPass.CoreShader, ResetPass.CoreShaderKernelId, "ArgBuffer2", Current.ArgBuffer2);
         RenderCommands.DispatchCompute(ResetPass.CoreShader, ResetPass.CoreShaderKernelId, 1, 1, 1);
 
         /*
@@ -431,24 +465,16 @@ public class RenderLayer
          */
         RenderCommands.SetComputeConstantBufferParam(ExtractPass.CoreShader, Shader.PropertyToID("Constants"), Current.ConstantsBuffer, 0, RenderConstants.Size());
         RenderCommands.SetComputeVectorParam(ExtractPass.CoreShader, "LocalSpaceViewPosition", EveryFrameParams.LocalCameraPosition);
-        //RenderCommands.SetComputeFloatParam(ExtractPass.CoreShader, "CreaseAngleThreshold", EveryFrameParams.CreaseAngleThreshold);
-        RenderCommands.SetComputeMatrixParam(ExtractPass.CoreShader, "WorldViewProjection", EveryFrameParams.WorldViewProjectionMatrix);
-        RenderCommands.SetComputeMatrixParam(ExtractPass.CoreShader, "WorldViewProjectionForClipping", EveryFrameParams.WorldViewProjectionMatrixForDebug);
-        //RenderCommands.SetComputeVectorParam(ExtractPass.CoreShader, "ScreenScaledResolution", EveryFrameParams.ScreenScaledResolution);
+        RenderCommands.SetComputeVectorParam(ExtractPass.CoreShader, "LocalSpaceViewForward", EveryFrameParams.LocalCameraForward);
+        RenderCommands.SetComputeFloatParam(ExtractPass.CoreShader, "CreaseAngleThreshold", EveryFrameParams.CreaseAngleThreshold); 
         RenderCommands.SetComputeBufferParam(ExtractPass.CoreShader, ExtractPass.CoreShaderKernelId, "VertexBuffer", Current.VertexBuffer);
         RenderCommands.SetComputeBufferParam(ExtractPass.CoreShader, ExtractPass.CoreShaderKernelId, "FaceBuffer", Current.FaceBuffer);
         RenderCommands.SetComputeBufferParam(ExtractPass.CoreShader, ExtractPass.CoreShaderKernelId, "MeshletBuffer", Current.MeshletBuffer);
         RenderCommands.SetComputeBufferParam(ExtractPass.CoreShader, ExtractPass.CoreShaderKernelId, "WArgBuffer", Current.ArgBuffer1);
-        RenderCommands.SetComputeBufferParam(ExtractPass.CoreShader, ExtractPass.CoreShaderKernelId, "ContourFaceBuffer", Current.ContourFaceBuffer);
-        RenderCommands.SetComputeBufferParam(ExtractPass.CoreShader, ExtractPass.CoreShaderKernelId, "SegmentBuffer", Current.SegmentBuffer);
-
-        //RenderCommands.SetComputeBufferParam(ExtractPass.CoreShader, ExtractPass.CoreShaderKernelId, "SegmentList", Current.SegmentBuffer);
-        //RenderCommands.SetKeyword(ExtractPass.CoreShader, DebugKeyword, EnableDebug);
-        //RenderCommands.SetBufferCounterValue(Current.SegmentBuffer, 0);
+        RenderCommands.SetComputeBufferParam(ExtractPass.CoreShader, ExtractPass.CoreShaderKernelId, "ContourBuffer", Current.ContourBuffer);
+        RenderCommands.SetComputeBufferParam(ExtractPass.CoreShader, ExtractPass.CoreShaderKernelId, "AnchorVertexBuffer", Current.AnchorVertexBuffer);
+        RenderCommands.SetComputeBufferParam(ExtractPass.CoreShader, ExtractPass.CoreShaderKernelId, "AnchorEdgeBuffer", Current.AnchorEdgeBuffer);
         RenderCommands.DispatchCompute(ExtractPass.CoreShader, ExtractPass.CoreShaderKernelId, (int)Current.MetaData.MeshletNum, 1, 1);
-        //Debug.Log(Current.MetaData.FaceNum);
-        //RenderCommands.DispatchCompute(ExtractPass.CoreShader, ExtractPass.CoreShaderKernelId, (int)(Current.MetaData.FaceNum / 256) + 1, 1, 1);
-        //RenderCommands.CopyCounterValue(Current.SegmentBuffer, Current.ArgBuffer1, Current.ArgLayout.SegmentCountOffset);
 
 
         /*
@@ -457,27 +483,110 @@ public class RenderLayer
          */
         RenderCommands.SetComputeConstantBufferParam(ContourizePass.CoreShader, Shader.PropertyToID("Constants"), Current.ConstantsBuffer, 0, RenderConstants.Size());
         RenderCommands.SetComputeVectorParam(ContourizePass.CoreShader, "LocalSpaceViewPosition", EveryFrameParams.LocalCameraPosition);
-        RenderCommands.SetComputeMatrixParam(ContourizePass.CoreShader, "WorldViewProjection", EveryFrameParams.WorldViewProjectionMatrix);
-        RenderCommands.SetComputeMatrixParam(ContourizePass.CoreShader, "WorldViewProjectionForClipping", EveryFrameParams.WorldViewProjectionMatrixForDebug);
+        RenderCommands.SetComputeVectorParam(ContourizePass.CoreShader, "ScreenScaledResolution", EveryFrameParams.ScreenScaledResolution);
+        RenderCommands.SetComputeMatrixParam(ContourizePass.CoreShader, "WorldViewProjection", EveryFrameParams.WorldViewProjectionMatrixForRenderCamera);
         RenderCommands.SetComputeBufferParam(ContourizePass.CoreShader, ContourizePass.CoreShaderKernelId, "VertexBuffer", Current.VertexBuffer);
-        RenderCommands.SetComputeBufferParam(ContourizePass.CoreShader, ContourizePass.CoreShaderKernelId, "ContourFaceBuffer", Current.ContourFaceBuffer);
-        RenderCommands.SetComputeBufferParam(ContourizePass.CoreShader, ContourizePass.CoreShaderKernelId, "WArgBuffer", Current.ArgBuffer1);
-        RenderCommands.SetComputeBufferParam(ContourizePass.CoreShader, ContourizePass.CoreShaderKernelId, "SegmentBuffer", Current.SegmentBuffer);
-        RenderCommands.SetKeyword(ContourizePass.CoreShader, DebugKeyword, EnableDebug);
+        RenderCommands.SetComputeBufferParam(ContourizePass.CoreShader, ContourizePass.CoreShaderKernelId, "ContourBuffer", Current.ContourBuffer);
+        RenderCommands.SetComputeBufferParam(ContourizePass.CoreShader, ContourizePass.CoreShaderKernelId, "RArgBuffer", Current.ArgBuffer1);
+        RenderCommands.SetComputeBufferParam(ContourizePass.CoreShader, ContourizePass.CoreShaderKernelId, "WArgBuffer", Current.ArgBuffer2);
+        RenderCommands.SetComputeBufferParam(ContourizePass.CoreShader, ContourizePass.CoreShaderKernelId, "AllSegmentBuffer", Current.AllSegmentBuffer);
+        RenderCommands.SetComputeBufferParam(ContourizePass.CoreShader, ContourizePass.CoreShaderKernelId, "VisibleSegmentBuffer", Current.VisibleSegmentBuffer);
+        RenderCommands.SetComputeBufferParam(ContourizePass.CoreShader, ContourizePass.CoreShaderKernelId, "AnchorVertexBuffer", Current.AnchorVertexBuffer);
+        RenderCommands.SetComputeBufferParam(ContourizePass.CoreShader, ContourizePass.CoreShaderKernelId, "AnchorEdgeBuffer", Current.AnchorEdgeBuffer);
         RenderCommands.DispatchCompute(ContourizePass.CoreShader, ContourizePass.CoreShaderKernelId, Current.ArgBuffer1, (uint)Current.ArgLayout.ContourizePassDispatchCount());
 
 
         /*
+        * Slice Pass
+        * Limited:
+        * Max 1024 * 1024 -> 1,048,576 extracted edges
+        */
+        RenderCommands.SetComputeBufferParam(SlicePassPart1.CoreShader, SlicePassPart1.CoreShaderKernelId, "InputArray", Current.VisibleSegmentBuffer);
+        RenderCommands.SetComputeBufferParam(SlicePassPart1.CoreShader, SlicePassPart1.CoreShaderKernelId, "RArgBuffer", Current.ArgBuffer2);
+        RenderCommands.DispatchCompute(SlicePassPart1.CoreShader, SlicePassPart1.CoreShaderKernelId, Current.ArgBuffer2, (uint)Current.ArgLayout.SlicePassDispatchCount());
+            
+        RenderCommands.SetComputeBufferParam(SlicePassPart2.CoreShader, SlicePassPart2.CoreShaderKernelId, "InputArray", Current.VisibleSegmentBuffer);
+        RenderCommands.SetComputeBufferParam(SlicePassPart2.CoreShader, SlicePassPart2.CoreShaderKernelId, "RArgBuffer", Current.ArgBuffer2);
+        RenderCommands.SetComputeBufferParam(SlicePassPart2.CoreShader, SlicePassPart2.CoreShaderKernelId, "BucketArray", Current.BucketBuffer);
+        RenderCommands.DispatchCompute(SlicePassPart2.CoreShader, SlicePassPart2.CoreShaderKernelId, 1, 1, 1); //Max 1024 * 1024 segments
+
+        RenderCommands.SetComputeBufferParam(SlicePassPart3.CoreShader, SlicePassPart3.CoreShaderKernelId, "InputArray", Current.VisibleSegmentBuffer);
+        RenderCommands.SetComputeBufferParam(SlicePassPart3.CoreShader, SlicePassPart3.CoreShaderKernelId, "BucketArray", Current.BucketBuffer);
+        RenderCommands.SetComputeBufferParam(SlicePassPart3.CoreShader, SlicePassPart3.CoreShaderKernelId, "RArgBuffer", Current.ArgBuffer2);
+        RenderCommands.SetComputeBufferParam(SlicePassPart3.CoreShader, SlicePassPart3.CoreShaderKernelId, "WArgBuffer", Current.ArgBuffer1);
+        RenderCommands.SetComputeBufferParam(SlicePassPart3.CoreShader, SlicePassPart3.CoreShaderKernelId, "SliceBuffer", Current.SliceBuffer);
+        RenderCommands.SetComputeBufferParam(SlicePassPart3.CoreShader, SlicePassPart3.CoreShaderKernelId, "AnchorSliceBuffer", Current.AnchorSliceBuffer);
+        RenderCommands.DispatchCompute(SlicePassPart3.CoreShader, SlicePassPart3.CoreShaderKernelId, Current.ArgBuffer2, (uint)Current.ArgLayout.SlicePassDispatchCount());
+
+        /*
+        *  Visibility Pass
+        *  Limited:
+        *  Direct3D 11 DirectCompute 5.0:
+        *  firstbithigh/firstbitlow, interlockedAnd, interlockedOr
+        */
+        RenderTargetIdentifier DepthRTIdentifier;
+        if (!EnableDebug)
+            DepthRTIdentifier = DepthTextureIdentifier;
+        else
+            DepthRTIdentifier = DepthTextureTemporaryIdentifier;
+        RenderCommands.SetComputeConstantBufferParam(VisiblePass.CoreShader, Shader.PropertyToID("Constants"), Current.ConstantsBuffer, 0, RenderConstants.Size());
+        RenderCommands.SetComputeVectorParam(VisiblePass.CoreShader, "ScreenScaledResolution", EveryFrameParams.ScreenScaledResolution);
+        RenderCommands.SetComputeTextureParam(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, "SceneDepthTexture", DepthRTIdentifier);
+        RenderCommands.SetComputeBufferParam(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, "VisibleSegmentBuffer", Current.VisibleSegmentBuffer);
+        RenderCommands.SetComputeBufferParam(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, "SliceBuffer", Current.SliceBuffer);
+        RenderCommands.SetComputeBufferParam(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, "RArgBuffer", Current.ArgBuffer1);
+        RenderCommands.SetComputeBufferParam(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, "WArgBuffer", Current.ArgBuffer2);
+        RenderCommands.SetComputeBufferParam(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, "AllSegmentBuffer", Current.AllSegmentBuffer);
+        RenderCommands.SetComputeBufferParam(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, "AnchorVertexBuffer", Current.AnchorVertexBuffer);
+        RenderCommands.SetComputeBufferParam(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, "AnchorEdgeBuffer", Current.AnchorEdgeBuffer);
+        RenderCommands.SetComputeBufferParam(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, "AnchorSliceBuffer", Current.AnchorSliceBuffer);
+        RenderCommands.DispatchCompute(VisiblePass.CoreShader, VisiblePass.CoreShaderKernelId, Current.ArgBuffer1, (uint)Current.ArgLayout.VisiblityPassDispatchCount());
+
+
+        /*
+        *  Generate Pass
+        */
+        RenderCommands.SetComputeBufferParam(GeneratePass.CoreShader, GeneratePass.CoreShaderKernelId, "RArgBuffer", Current.ArgBuffer2);
+        RenderCommands.SetComputeBufferParam(GeneratePass.CoreShader, GeneratePass.CoreShaderKernelId, "WArgBuffer", Current.ArgBuffer1);
+        RenderCommands.SetComputeBufferParam(GeneratePass.CoreShader, GeneratePass.CoreShaderKernelId, "SliceBuffer", Current.SliceBuffer);
+        RenderCommands.SetComputeBufferParam(GeneratePass.CoreShader, GeneratePass.CoreShaderKernelId, "AllSegmentBuffer", Current.AllSegmentBuffer);
+        RenderCommands.SetComputeBufferParam(GeneratePass.CoreShader, GeneratePass.CoreShaderKernelId, "AnchorVertexBuffer", Current.AnchorVertexBuffer);
+        RenderCommands.SetComputeBufferParam(GeneratePass.CoreShader, GeneratePass.CoreShaderKernelId, "AnchorEdgeBuffer", Current.AnchorEdgeBuffer);
+        RenderCommands.SetComputeBufferParam(GeneratePass.CoreShader, GeneratePass.CoreShaderKernelId, "AnchorSliceBuffer", Current.AnchorSliceBuffer);
+        RenderCommands.SetComputeBufferParam(GeneratePass.CoreShader, GeneratePass.CoreShaderKernelId, "LineMeshBuffer", Current.LineMeshBuffer);
+        RenderCommands.SetComputeBufferParam(GeneratePass.CoreShader, GeneratePass.CoreShaderKernelId, "LineHeadBuffer", Current.LineHeadBuffer);
+        RenderCommands.DispatchCompute(GeneratePass.CoreShader, GeneratePass.CoreShaderKernelId, Current.ArgBuffer2, (uint)Current.ArgLayout.GeneratePassDispatchCount());
+
+
+        if (!EnableDebug)
+        {
+            /*
+            *  Chainning Pass
+            */
+            RenderCommands.SetComputeBufferParam(ChainningPass.CoreShader, ChainningPass.CoreShaderKernelId, "RArgBuffer", Current.ArgBuffer1);
+            RenderCommands.SetComputeBufferParam(ChainningPass.CoreShader, ChainningPass.CoreShaderKernelId, "RArgBuffer2", Current.ArgBuffer2);
+            RenderCommands.SetComputeBufferParam(ChainningPass.CoreShader, ChainningPass.CoreShaderKernelId, "LineMeshBuffer", Current.LineMeshBuffer);
+            RenderCommands.SetComputeBufferParam(ChainningPass.CoreShader, ChainningPass.CoreShaderKernelId, "LineHeadBuffer", Current.LineHeadBuffer);
+            RenderCommands.DispatchCompute(ChainningPass.CoreShader, ChainningPass.CoreShaderKernelId, Current.ArgBuffer1, (uint)Current.ArgLayout.ChainningPassDispatchCount());
+
+        }
+
+        /*
          * Draw Mesh
          */
+        Shader.SetKeyword(DebugKeyword, EnableDebug);
         if (EnableDebug)
         {
-            Current.LineMaterialSetting.LineRenderMaterialForDebug.SetBuffer("SegmentList", Current.SegmentBuffer);
-            RenderCommands.DrawProceduralIndirect(Matrix4x4.identity, Current.LineMaterialSetting.LineRenderMaterialForDebug, -1, MeshTopology.Lines, Current.ArgBuffer1, Current.ArgLayout.IndirectDrawStart());
+            Current.LineMaterialSetting.LineRenderMaterialForDebug.SetBuffer("LineMeshBuffer", Current.LineMeshBuffer);
+            Current.LineMaterialSetting.LineRenderMaterialForDebug.SetMatrix("WorldViewProjectionForDebugCamera", EveryFrameParams.WorldViewProjectionMatrixForDebugCamera);
+            Current.LineMaterialSetting.LineRenderMaterialForDebug.SetMatrix("InvWorldViewProjectionForRenderCamera", EveryFrameParams.InvWorldViewProjectionMatrixForRenderCamera);
+            RenderCommands.DrawProceduralIndirect(Matrix4x4.identity, Current.LineMaterialSetting.LineRenderMaterialForDebug, -1, MeshTopology.Lines, Current.ArgBuffer2, (int)Current.ArgLayout.IndirectDrawStart());
         }
         else {
-            Current.LineMaterialSetting.LineRenderMaterial.SetBuffer("SegmentList", Current.SegmentBuffer);
-            RenderCommands.DrawProceduralIndirect(Matrix4x4.identity, Current.LineMaterialSetting.LineRenderMaterial, -1, MeshTopology.Lines, Current.ArgBuffer1, (int)Current.ArgLayout.IndirectDrawStart());
+            Current.LineMaterialSetting.LineRenderMaterial.SetBuffer("LineMeshBuffer", Current.LineMeshBuffer);
+            Current.LineMaterialSetting.LineRenderMaterial.SetVector("ScreenScaledResolution", EveryFrameParams.ScreenScaledResolution);
+            Current.LineMaterialSetting.LineRenderMaterial.SetFloat("LineWidthScale", EveryFrameParams.LineWidthScale);
+            RenderCommands.DrawProceduralIndirect(Matrix4x4.identity, Current.LineMaterialSetting.LineRenderMaterial, -1, MeshTopology.Triangles, Current.ArgBuffer2, (int)Current.ArgLayout.IndirectDrawStart());
         }
         Current.LineMaterialSetting.SetMainCameraPosition(EveryFrameParams.WorldCameraPosition);
 

@@ -1,44 +1,25 @@
 ﻿// Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel Extraction
 
+#pragma multi_compile __ ENABLE_DEBUG_VIEW
 #include "Common.cginc"
 
-StructuredBuffer<AdjVertex> Vertices;
-StructuredBuffer<AdjFace> AdjacencyTriangles;
 
-RWStructuredBuffer<uint> SegmentArgBuffer;
-RWStructuredBuffer<LineSegment> Segments;
-AppendStructuredBuffer<VisibleLineSegment> VisibleSegments;
-RWStructuredBuffer<RunTimeVertexState> RunTimeVertexBuffer;
+
+StructuredBuffer<EXPORTVertex> VertexBuffer;
+StructuredBuffer<EXPORTFace> FaceBuffer;
+StructuredBuffer<EXPORTMeshlet> MeshletBuffer;
+
+RWStructuredBuffer<uint> WArgBuffer;
+RWStructuredBuffer<Contour> ContourBuffer;
+RWStructuredBuffer<AnchorVertex> AnchorVertexBuffer;
+RWStructuredBuffer<AnchorEdge> AnchorEdgeBuffer;
 
 uniform float3 LocalSpaceViewPosition;
+uniform float3 LocalSpaceViewForward;
 uniform float CreaseAngleThreshold;
-uniform float4  ScreenScaledResolution;
-
-#pragma multi_compile_local __ ENABLE_DEBUG_CLIPPING
-#include "Clipping.cginc"
 
 
-#define DEBUG_CLIPPING 0
-
-
-float3 ComputeNormal(float3 p1, float3 p2, float3 p3)
-{
-    float3 U = p2 - p1;
-    float3 V = p3 - p1;
-
-    float3 Normal = float3(0.0f, 0.0f, 0.0f);
-    /*
-    Normal.x = U.y * V.z - U.z * V.y;
-    Normal.y = U.z * V.x - U.x * V.z;
-    Normal.z = U.x * V.y - U.y * V.x;
-    */
-    Normal = cross(U, V);
-    // No need to normalize
-    Normal = normalize(Normal);
-
-    return Normal;
-}
 
 
 #define BACK_FACE_THRESHOLD 0.000000001
@@ -50,238 +31,77 @@ inline bool IsSilhouette(float DotFactor1, float DotFactor2)
 inline bool IsCrease(float3 Face1Normal, float3 Face2Normal, float AngleThreshold)
 {
     /// a dot b / (|a| * |b|) <= cos(theta)
-    return step(dot(Face1Normal, Face2Normal) / length(Face2Normal), AngleThreshold);
+    return step(dot(Face1Normal, Face2Normal), AngleThreshold);
 
 }
 
 
-uint2 CalculatePixelLength(float2 UnifyNDCPosition1, float2 UnifyNDCPosition2)
+void ResetAnchorVertexBuffer(uint Index)
 {
-    float ScreenWidth = ScreenScaledResolution.x;
-    float ScreenHeight = ScreenScaledResolution.y;
+    AnchorVertex NewAnchor;
+    NewAnchor.CreaseType = uint3(0, 0xffffffff, 0xffffffff);
+    NewAnchor.ContourType = uint3(0, 0xffffffff, 0xffffffff);
 
-    float2 PixelPos1 = float2(UnifyNDCPosition1.x * ScreenWidth, UnifyNDCPosition1.y * ScreenHeight);
-    float2 PixelPos2 = float2(UnifyNDCPosition2.x * ScreenWidth, UnifyNDCPosition2.y * ScreenHeight);
-
-    float PixelLength = ceil(length(PixelPos2 - PixelPos1));
-    float ShrinkPixelLength = PixelLength > 2.0 ? (1.0 + floor(PixelLength * 0.5)) : PixelLength;
-
-    return uint2((uint)PixelLength, (uint)(ShrinkPixelLength));
+    AnchorVertexBuffer[Index] = NewAnchor;
 }
 
-
-int ArgBufferCounting(bool Visible)
+void ResetAnchorEdgeBuffer(uint Index)
 {
-    int Original = 0;
-    InterlockedAdd(SegmentArgBuffer[0], Visible ? 1 : 0, Original);
+    AnchorEdge NewAnchor;
+    NewAnchor.ContourType = uint3(0, 0xffffffff, 0xffffffff);
 
-    if((uint)(Original + 1) % SLICE_PASS_PER_THREAD_ELEMENT_NUM == 0)
-        InterlockedAdd(SegmentArgBuffer[1], Visible ? 1 : 0, Original);
-
-    InterlockedAdd(SegmentArgBuffer[4], 1, Original);
-    int Id = Original;
-    return Id;
+    AnchorEdgeBuffer[Index] = NewAnchor;
 }
 
 
 
-
-void SyncAdjacency(uint VertexIndex, int LineId)
-{
-    // Sync adjacency for chainning pass
-    uint RunTimeIndex = VertexIndex;
-
-    // Add adj num
-    uint Original = 0;
-    InterlockedAdd(RunTimeVertexBuffer[RunTimeIndex].AdjNum, 1, Original);
-
-    if (Original <= 2) {
-        Original = -1;
-        InterlockedCompareExchange(RunTimeVertexBuffer[RunTimeIndex].Left, -1, LineId, Original);
-        if (Original != -1)
-            InterlockedCompareExchange(RunTimeVertexBuffer[RunTimeIndex].Right, -1, LineId, Original);
-    }
-
-}
-
-
-void ExtractEdge(float3 V0, float3 V1, uint2 Index, 
-    uint2 MeshletIndex, 
-    float3 CurrentFaceNormal, float3 AdjFaceNormal, float3 LocalViewVector, float CreasePremultiplyAngleThreshold)
-{
-    bool Add = false;
-
-    bool NeedExtractSilhouette = SilhouetteEnable > 0;
-    bool NeedExtractCrease = CreaseEnable > 0;
-
-    float DotFactorCurrentFace = dot(CurrentFaceNormal, LocalViewVector);
-    float DotFactorAdjFace = dot(AdjFaceNormal, LocalViewVector);
-
-    Add = Add || (NeedExtractSilhouette && IsSilhouette(DotFactorCurrentFace, DotFactorAdjFace));
-    Add = Add || (NeedExtractCrease && IsCrease(CurrentFaceNormal, AdjFaceNormal, CreasePremultiplyAngleThreshold));
-
-    bool CurrentIsBackFace = step(DotFactorCurrentFace, BACK_FACE_THRESHOLD);
-    bool AdjIsBackFace = step(DotFactorAdjFace, BACK_FACE_THRESHOLD);
-    bool BackFacing = CurrentIsBackFace && AdjIsBackFace;
-
-    float4 ClipPos0BeforeClip = CalculateClipSpacePosition(V0);
-    float4 ClipPos1BeforeClip = CalculateClipSpacePosition(V1);
-    float4 Pos0ForClipping = ClipPos0BeforeClip;
-    float4 Pos1ForClipping = ClipPos1BeforeClip;
-#if DEBUG_CLIPPING
-    Pos0ForClipping = CalculateClipSpacePositionForClipping(V0);
-    Pos1ForClipping = CalculateClipSpacePositionForClipping(V1);
-#endif
-
-    float3 ClipState = PreClipping(Pos0ForClipping, Pos1ForClipping);
-    float4 ClipPos0 = ClampPosition(float4(ClipPos0BeforeClip + ClipState.y * (ClipPos1BeforeClip - ClipPos0BeforeClip)));
-    float4 ClipPos1 = ClampPosition(float4(ClipPos0BeforeClip + ClipState.z * (ClipPos1BeforeClip - ClipPos0BeforeClip)));
-
-    bool UnClipped = ClipState.x >= 0.0f;
-    if (Add)
-    {
-        float4 NDCPos0 = CalculateNDCPosition(ClipPos0);
-        float4 NDCPos1 = CalculateNDCPosition(ClipPos1);
-        NDCPos0 = UnifyNDCPosition(NDCPos0);
-        NDCPos1 = UnifyNDCPosition(NDCPos1);
-
-        LineSegment Line = (LineSegment)0;
-
-        Line.NDCPosition[0] = float4(NDCPos0.xy, ClipPos0.zw);
-        Line.NDCPosition[1] = float4(NDCPos1.xy, ClipPos1.zw);
-
-        Line.BackFacing = BackFacing ? 1 : 0;
-
-        //uint4 VertexIndex = CheckVertexIndex(uint2(V1, V2), ClipState);
-        Line.RunTimeVertexIndex[0] = Index.x;
-        Line.RunTimeVertexIndex[1] = Index.y;
-
-        Line.Direction = normalize(NDCPos1.xy - NDCPos0.xy);
-
-        Line.MeshletIndex[0] = MeshletIndex.x;
-        Line.MeshletIndex[1] = MeshletIndex.y;
-
-        Line.Id = ArgBufferCounting(UnClipped);
-        Segments[Line.Id] = Line;
-
-        if (UnClipped) {
-
-            VisibleLineSegment VisibleLine = (VisibleLineSegment)0;
-            uint2 PixelLength = CalculatePixelLength(Line.NDCPosition[0].xy, Line.NDCPosition[1].xy);
-            VisibleLine.PixelLength = PixelLength.x;
-            VisibleLine.PixelLengthShrink = PixelLength.y;
-            VisibleLine.PixelLengthShrinkTotal = 0;
-
-            float2 NDC0XYBeforeClip = UnifyNDCPositionXY(CalculateNDCPositionXY(ClipPos0BeforeClip));
-            float2 NDC1XYBeforeClip = UnifyNDCPositionXY(CalculateNDCPositionXY(ClipPos1BeforeClip));
-            VisibleLine.InvPixelLengthBeforeClippedMinusOne = 1.0f / float(CalculatePixelLength(NDC0XYBeforeClip, NDC1XYBeforeClip).x - 1.0f);
-            VisibleLine.ClippedPositionOffset = CalculatePixelLength(NDC0XYBeforeClip, Line.NDCPosition[0].xy).x;
-            VisibleLine.Id = Line.Id;
-            VisibleSegments.Append(VisibleLine);
-
-        }
-
-        SyncAdjacency(Index.x, Line.Id);
-        SyncAdjacency(Index.y, Line.Id);
-    }
-
-}
-
-
-//[numthreads(EXTRACT_PASS_PER_THREAD_ELEMENT_NUM, 1, 1)]
-//void Extraction (uint3 id : SV_DispatchThreadID)
-//{
-//    if (id.x >= TotalAdjacencyTrianglesNum) return;
-//
-//    AdjFace CurrentFace = AdjacencyTriangles[id.x];
-//
-//
-//    float3 VertexX = Vertices[CurrentFace.x].v;
-//    float3 VertexY = Vertices[CurrentFace.y].v;
-//    float3 VertexZ = Vertices[CurrentFace.z].v;
-//
-//    bool AddXY = false;
-//    bool AddYZ = false;
-//    bool AddZX = false;
-//
-//    float3 CurrentFaceNormal = ComputeNormal(VertexX, VertexY, VertexZ);
-//    float CreasePremultiplyAngleThreshold = length(CurrentFaceNormal) * (cos(CreaseAngleThreshold) + 0.000001f); //+1.0e-6 for Epsilon
-//
-//    if (CurrentFace.xy >= 1)
-//    {
-//        float3 AdjVertexXY = Vertices[CurrentFace.xy - 1].v;
-//        float3 AdjFaceXYNormal = ComputeNormal(VertexY, VertexX, AdjVertexXY);
-//        float3 LocalViewVector = normalize(LocalSpaceViewPosition.xyz - (VertexX + VertexY) * 0.5f);
-//
-//        ExtractEdge(VertexX, VertexY, uint2(CurrentFace.x, CurrentFace.y), 
-//            uint2(CurrentFace.xyLayer1, CurrentFace.xyLayer2), 
-//            CurrentFaceNormal, AdjFaceXYNormal, LocalViewVector, CreasePremultiplyAngleThreshold);
-//    }
-//
-//    if (CurrentFace.zx >= 1)
-//    {
-//        float3 AdjVertexZX = Vertices[CurrentFace.zx - 1].v;
-//        float3 AdjFaceZXNormal = ComputeNormal(VertexZ, AdjVertexZX, VertexX);
-//        float3 LocalViewVector = normalize(LocalSpaceViewPosition.xyz - (VertexX + VertexZ) * 0.5f);
-//
-//        ExtractEdge(VertexZ, VertexX, uint2(CurrentFace.z, CurrentFace.x),
-//            uint2(CurrentFace.zxLayer1, CurrentFace.zxLayer2), 
-//            CurrentFaceNormal, AdjFaceZXNormal, LocalViewVector, CreasePremultiplyAngleThreshold);
-//    }
-//
-//    if (CurrentFace.yz >= 1)
-//    {
-//        float3 AdjVertexYZ = Vertices[CurrentFace.yz - 1].v;
-//        float3 AdjFaceYZNormal = ComputeNormal(AdjVertexYZ, VertexZ, VertexY);
-//        float3 LocalViewVector = normalize(LocalSpaceViewPosition.xyz - (VertexY + VertexZ) * 0.5f);
-//
-//        ExtractEdge(VertexY, VertexZ, uint2(CurrentFace.y, CurrentFace.z),
-//            uint2(CurrentFace.yzLayer1, CurrentFace.yzLayer2), 
-//            CurrentFaceNormal, AdjFaceYZNormal, LocalViewVector, CreasePremultiplyAngleThreshold);
-//    }
-//
-//
-//}
-
-
-
-StructuredBuffer<EXPORTVertex> VertexBuffer;
-StructuredBuffer<EXPORTFace> FaceBuffer;
-StructuredBuffer<EXPORTMeshlet> MeshletBuffer;
-
-RWStructuredBuffer<uint> WArgBuffer;
-RWStructuredBuffer<ContourFace> ContourFaceBuffer;
-RWStructuredBuffer<Segment> SegmentBuffer;
-
-void AddSegmentBuffer(Segment CurrentSegment)
+uint AddContourBuffer(Contour Current)
 {
     uint Original = 0;
-    InterlockedAdd(WArgBuffer[INDIRECT_DRAW_TRIANGLE_COUNT], 1, Original);
-    SegmentBuffer[Original] = CurrentSegment;
-
-}
-
-void AddContourFaceBuffer(bool Add, Face CurrentFace, bool V0Test, bool V1Test, bool V2Test)
-{
-    uint Original = 0;
-    InterlockedAdd(WArgBuffer[CONTOURIZE_PASS_FACE_COUNT], Add ? 1 : 0, Original);
+    InterlockedAdd(WArgBuffer[CONTOURIZE_PASS_CONTOUR_COUNT], 1, Original);
     uint Original2 = 0;
     bool AddThreadCount = ((Original + 1) % CONTOURIZE_PASS_PER_THREAD_ELEMENT_NUM == 0);
-    InterlockedAdd(WArgBuffer[CONTOURIZE_PASS_START], AddThreadCount && Add ? 1 : 0, Original2);
+    InterlockedAdd(WArgBuffer[CONTOURIZE_PASS_DISPATCH_COUNT], AddThreadCount ? 1 : 0, Original2);
 
-    if (Add) {
-        ContourFace NewFace = (ContourFace)0;
+    ContourBuffer[Original] = Current;
 
-        NewFace.v0 = CurrentFace.v0 | (V0Test ? 0x80000000 : 0x0);
-        NewFace.v1 = CurrentFace.v1 | (V1Test ? 0x80000000 : 0x0);
-        NewFace.v2 = CurrentFace.v2 | (V2Test ? 0x80000000 : 0x0);
-        NewFace.V0Normal = CurrentFace.V0Normal;
-        NewFace.V1Normal = CurrentFace.V1Normal;
-        NewFace.V2Normal = CurrentFace.V2Normal;
-
-        ContourFaceBuffer[Original] = NewFace;
-    }
+    return Original;
 }
+
+
+struct ExtractResult
+{
+    bool ExtractContour;
+    bool ExtractCrease;
+    bool ExtractBorder;
+    bool BackFacing;
+};
+
+
+bool GetExtractResult(in uint AdjFaceIndex, in float3 CurrentFaceNormal, in float3 VA, in float3 VB, in float CreasePremultiplyAngleThreshold, 
+    in bool ExtractContour, in bool ExtractCrease, 
+    inout ExtractResult Result)
+{
+    EXPORTFace AdjFaceData = FaceBuffer[AdjFaceIndex];
+    float3 AdjFaceNormal = GetFaceNormal(AdjFaceData);
+    float3 LocalViewVector = (LocalSpaceViewPosition.xyz - (VA + VB) * 0.5f);/*no normalize*/
+    float DotFactorCurrentFace = dot(CurrentFaceNormal, LocalViewVector);
+    float DotFactorAdjFace = dot(AdjFaceNormal, LocalViewVector);
+    Result.BackFacing = DotFactorCurrentFace < 0.0f && DotFactorAdjFace < 0.0f;
+
+    if (ExtractContour) {
+        Result.ExtractContour = IsSilhouette(DotFactorCurrentFace, DotFactorAdjFace);
+    }
+
+    if (ExtractCrease) {
+        Result.ExtractCrease = IsCrease(CurrentFaceNormal, AdjFaceNormal, CreasePremultiplyAngleThreshold);
+    }
+
+    return Result.ExtractContour | Result.ExtractCrease | Result.ExtractBorder;
+}
+
+
+
 
 [numthreads(EXTRACT_PASS_PER_THREAD_ELEMENT_NUM, 1, 1)]
 void Extraction(uint3 gid : SV_GroupID, uint gindex : SV_GroupIndex, uint3 tid : SV_DispatchThreadID)
@@ -290,90 +110,181 @@ void Extraction(uint3 gid : SV_GroupID, uint gindex : SV_GroupIndex, uint3 tid :
     if (gid.x >= TotalMeshletsNum) return;
 
     uint FaceId = CurrentMeshlet.FaceOffset + gindex;
-    if (gindex >= CurrentMeshlet.FaceNum) return;
+    bool Valid = true;
+    if (gindex >= CurrentMeshlet.FaceNum) Valid = false;
 
     EXPORTFace CurrentFaceData = FaceBuffer[FaceId];
-    Face CurrentFace = DecodeFaceData(CurrentMeshlet, CurrentFaceData);
+    Face CurrentFace = DecodeFaceData(CurrentFaceData);
 
-    uint V0Id = CurrentFace.v0;
-    uint V1Id = CurrentFace.v1;
-    uint V2Id = CurrentFace.v2;
+    uint V0Id = CurrentMeshlet.VertexOffset + CurrentFace.v0Offset;
+    uint V1Id = CurrentMeshlet.VertexOffset + CurrentFace.v1Offset;
+    uint V2Id = CurrentMeshlet.VertexOffset + CurrentFace.v2Offset;
 
     EXPORTVertex V0 = VertexBuffer[V0Id];
     EXPORTVertex V1 = VertexBuffer[V1Id];
     EXPORTVertex V2 = VertexBuffer[V2Id];
 
-
     bool IsHardFace = ((CurrentFace.e01h ? 1 : 0) + (CurrentFace.e12h ? 1 : 0) + (CurrentFace.e20h ? 1 : 0)) >= 1;
-    if (IsHardFace)
+
+    bool CanExtractE01 = CurrentFace.e01u && CurrentFace.adjFace01 >= 0 && Valid;
+    bool CanExtractE12 = CurrentFace.e12u && CurrentFace.adjFace12 >= 0 && Valid;
+    bool CanExtractE20 = CurrentFace.e20u && CurrentFace.adjFace20 >= 0 && Valid;
+
+    bool NeedExtractContour = ContourEnable > 0;
+    bool NeedExtractCrease = CreaseEnable > 0;
+
+    float CreasePremultiplyAngleThreshold = (cos(CreaseAngleThreshold) + 0.00005f);//+5.0e-5 for Epsilon
+
+    bool ExtractAnchorV0 = false;
+    bool ExtractAnchorV1 = false;
+    bool ExtractAnchorV2 = false;
+
+
+    ExtractResult Result01 = (ExtractResult)0;
+    if (CanExtractE01)
     {
-        if (CurrentFace.e01h && CurrentFace.e01u && CurrentFace.adjFace01 >= 0)
+        if (GetExtractResult(CurrentFace.adjFace01, CurrentFace.Normal, V0.Position, V1.Position, CreasePremultiplyAngleThreshold, NeedExtractContour && IsHardFace && CurrentFace.e01h, NeedExtractCrease, Result01))
         {
-            EXPORTFace AdjFaceData = FaceBuffer[CurrentFace.adjFace01];
-            float3 AdjFaceNormal = GetFaceNormal(AdjFaceData);
-            float3 LocalViewVector = normalize(LocalSpaceViewPosition.xyz - (V0.Position + V1.Position) * 0.5f);
+            Contour NewEdge = (Contour)0;
+            NewEdge.V0Data = V0.Position;
+            NewEdge.V1Data = V1.Position;
+            NewEdge.Anchor[0] = V0.UniqueIndex;
+            NewEdge.Anchor[1] = V1.UniqueIndex;
+            // NewEdge must be unique edge
+            NewEdge.MeshletData[0] = CurrentFace.MeshletData.x;
+            NewEdge.MeshletData[1] = CurrentFace.MeshletData.y;
 
-            float DotFactorCurrentFace = dot(CurrentFace.Normal, LocalViewVector);
-            float DotFactorAdjFace = dot(AdjFaceNormal, LocalViewVector);
-
-            if (IsSilhouette(DotFactorCurrentFace, DotFactorAdjFace)) {
-                //temp
-                Segment NewLine = (Segment)0;
-                ToSegmentLine(V0.Position, V1.Position, NewLine);
-                NewLine.Color = float4(0.0, 0.0, 1.0f, 0.0f);
-
-                AddSegmentBuffer(NewLine);
+            if (Result01.ExtractContour)
+            {
+                NewEdge.Type = SET_LINE_TYPE(0, CONTOUR_EDGE_TYPE);
+                AddContourBuffer(NewEdge);
             }
-        }
-
-        if (CurrentFace.e12h && CurrentFace.e12u && CurrentFace.adjFace12 >= 0)
-        {
-            EXPORTFace AdjFaceData = FaceBuffer[CurrentFace.adjFace12];
-            float3 AdjFaceNormal = GetFaceNormal(AdjFaceData);
-            float3 LocalViewVector = normalize(LocalSpaceViewPosition.xyz - (V1.Position + V2.Position) * 0.5f);
-
-            float DotFactorCurrentFace = dot(CurrentFace.Normal, LocalViewVector);
-            float DotFactorAdjFace = dot(AdjFaceNormal, LocalViewVector);
-
-            if (IsSilhouette(DotFactorCurrentFace, DotFactorAdjFace)) {
-                //temp
-                Segment NewLine = (Segment)0;
-                ToSegmentLine(V1.Position, V2.Position, NewLine);
-                NewLine.Color = float4(0.0, 0.0, 1.0f, 0.0f);
-
-                AddSegmentBuffer(NewLine);
+            if (Result01.ExtractCrease)
+            {
+                NewEdge.Type = SET_LINE_TYPE(0, CREASE_EDGE_TYPE);
+                NewEdge.Type = SET_LINE_IS_BACKFACING(NewEdge.Type, Result01.BackFacing);
+                AddContourBuffer(NewEdge);
             }
-        }
 
-        if (CurrentFace.e20h && CurrentFace.e20u && CurrentFace.adjFace20 >= 0)
-        {
-            EXPORTFace AdjFaceData = FaceBuffer[CurrentFace.adjFace20];
-            float3 AdjFaceNormal = GetFaceNormal(AdjFaceData);
-            float3 LocalViewVector = normalize(LocalSpaceViewPosition.xyz - (V2.Position + V0.Position) * 0.5f);
-
-            float DotFactorCurrentFace = dot(CurrentFace.Normal, LocalViewVector);
-            float DotFactorAdjFace = dot(AdjFaceNormal, LocalViewVector);
-
-            if (IsSilhouette(DotFactorCurrentFace, DotFactorAdjFace)) {
-                //temp
-                Segment NewLine = (Segment)0;
-                ToSegmentLine(V2.Position, V0.Position, NewLine);
-                NewLine.Color = float4(0.0, 0.0, 1.0f, 0.0f);
-
-                AddSegmentBuffer(NewLine);
-            }
+            ExtractAnchorV0 = true;
+            ExtractAnchorV1 = true;
         }
     }
-    else {
+
+    ExtractResult Result12 = (ExtractResult)0;
+    if (CanExtractE12)
+    {
+        if (GetExtractResult(CurrentFace.adjFace12, CurrentFace.Normal, V1.Position, V2.Position, CreasePremultiplyAngleThreshold, NeedExtractContour && IsHardFace && CurrentFace.e12h, NeedExtractCrease, Result12))
+        {
+            Contour NewEdge = (Contour)0;
+            NewEdge.V0Data = V1.Position;
+            NewEdge.V1Data = V2.Position;
+            NewEdge.Anchor[0] = V1.UniqueIndex;
+            NewEdge.Anchor[1] = V2.UniqueIndex;
+            // NewEdge must be unique edge
+            NewEdge.MeshletData[0] = CurrentFace.MeshletData.x;
+            NewEdge.MeshletData[1] = CurrentFace.MeshletData.y;
+
+            if (Result12.ExtractContour)
+            {
+                NewEdge.Type = SET_LINE_TYPE(0, CONTOUR_EDGE_TYPE);;
+                AddContourBuffer(NewEdge);
+            }
+            if (Result12.ExtractCrease)
+            {
+                NewEdge.Type = SET_LINE_TYPE(0, CREASE_EDGE_TYPE); 
+                NewEdge.Type = SET_LINE_IS_BACKFACING(NewEdge.Type, Result12.BackFacing);
+                AddContourBuffer(NewEdge);
+            }
+
+            ExtractAnchorV1 = true;
+            ExtractAnchorV2 = true;
+        }
+    }
+
+    ExtractResult Result20 = (ExtractResult)0;
+    if (CanExtractE20)
+    {
+        if (GetExtractResult(CurrentFace.adjFace20, CurrentFace.Normal, V2.Position, V0.Position, CreasePremultiplyAngleThreshold, NeedExtractContour && IsHardFace && CurrentFace.e20h, NeedExtractCrease, Result20))
+        {
+            Contour NewEdge = (Contour)0;
+            NewEdge.V0Data = V2.Position;
+            NewEdge.V1Data = V0.Position;
+            NewEdge.Anchor[0] = V2.UniqueIndex;
+            NewEdge.Anchor[1] = V0.UniqueIndex;
+            // NewEdge must be unique edge
+            NewEdge.MeshletData[0] = CurrentFace.MeshletData.x;
+            NewEdge.MeshletData[1] = CurrentFace.MeshletData.y;
+
+            if (Result20.ExtractContour)
+            {
+                NewEdge.Type = SET_LINE_TYPE(0, CONTOUR_EDGE_TYPE);
+                AddContourBuffer(NewEdge);
+            }
+            if (Result20.ExtractCrease)
+            {
+                NewEdge.Type = SET_LINE_TYPE(0, CREASE_EDGE_TYPE);
+                NewEdge.Type = SET_LINE_IS_BACKFACING(NewEdge.Type, Result20.BackFacing);
+                AddContourBuffer(NewEdge);
+            }
+
+            ExtractAnchorV2 = true;
+            ExtractAnchorV0 = true;
+        }
+    }
+
+
+    if(!IsHardFace && NeedExtractContour && Valid)
+    {
         float ViewV0 = dot(CurrentFace.V0Normal, LocalSpaceViewPosition.xyz - V0.Position);
         float ViewV1 = dot(CurrentFace.V1Normal, LocalSpaceViewPosition.xyz - V1.Position);
         float ViewV2 = dot(CurrentFace.V2Normal, LocalSpaceViewPosition.xyz - V2.Position);
-
-        bool BackFace = ViewV0 < 0.0f && ViewV1 < 0.0f && ViewV2 < 0.0f;
-        bool FrontFace = ViewV0 > 0.0f && ViewV1 > 0.0f && ViewV2 > 0.0f;
+        bool V0Vis = ViewV0 > 0.0f;
+        bool V1Vis = ViewV1 > 0.0f;
+        bool V2Vis = ViewV2 > 0.0f;
+        bool BackFace = !V0Vis && !V1Vis && !V2Vis;
+        bool FrontFace = V0Vis && V1Vis && V2Vis;
         bool IsContourFace = !(BackFace || FrontFace);
 
-        AddContourFaceBuffer(IsContourFace, CurrentFace, ViewV0 < 0.0f, ViewV1 < 0.0f, ViewV2 < 0.0f);
+
+        if (IsContourFace) {
+            Contour NewFace = (Contour)0;
+            NewFace.Type = SET_LINE_TYPE(0, CONTOUR_FACE_TYPE);
+            NewFace.v0 = V0Id | (!V0Vis ? 0x80000000 : 0x0);
+            NewFace.v1 = V1Id | (!V1Vis ? 0x80000000 : 0x0);
+            NewFace.v2 = V2Id | (!V2Vis ? 0x80000000 : 0x0);
+            NewFace.V0Data = CurrentFace.V0Normal;
+            NewFace.V1Data = CurrentFace.V1Normal;
+            NewFace.V2Data = CurrentFace.V2Normal;
+            NewFace.MeshletData[0] = CurrentFace.MeshletData.x;
+            NewFace.MeshletData[1] = CurrentFace.MeshletData.y;
+
+            if ((V2Vis && !V0Vis && !V1Vis) || (!V2Vis && V0Vis && V1Vis)) {
+                ResetAnchorEdgeBuffer(CurrentFace.edge20);
+                ResetAnchorEdgeBuffer(CurrentFace.edge12);
+                NewFace.Anchor[0] = CurrentFace.edge20;
+                NewFace.Anchor[1] = CurrentFace.edge12;
+            }
+            else if ((V0Vis && !V1Vis && !V2Vis) || (!V0Vis && V1Vis && V2Vis)) {
+                ResetAnchorEdgeBuffer(CurrentFace.edge01);
+                ResetAnchorEdgeBuffer(CurrentFace.edge20);
+                NewFace.Anchor[0] = CurrentFace.edge01;
+                NewFace.Anchor[1] = CurrentFace.edge20;
+            }
+            else if ((V1Vis && !V0Vis && !V2Vis) || (!V1Vis && V0Vis && V2Vis)) {
+                ResetAnchorEdgeBuffer(CurrentFace.edge01);
+                ResetAnchorEdgeBuffer(CurrentFace.edge12);
+                NewFace.Anchor[0] = CurrentFace.edge01;
+                NewFace.Anchor[1] = CurrentFace.edge12;
+            }
+
+            AddContourBuffer(NewFace);
+
+        }
     }
+
+    if (ExtractAnchorV0) ResetAnchorVertexBuffer(V0.UniqueIndex);
+    if (ExtractAnchorV1) ResetAnchorVertexBuffer(V1.UniqueIndex);
+    if (ExtractAnchorV2) ResetAnchorVertexBuffer(V2.UniqueIndex);
 
 }

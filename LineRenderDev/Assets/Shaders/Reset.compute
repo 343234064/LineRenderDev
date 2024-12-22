@@ -4,56 +4,37 @@
 
 #include "Common.cginc"
 
-RWStructuredBuffer<RunTimeVertexState> RunTimeVertexBuffer;
-RWStructuredBuffer<uint> SegmentArgBuffer;
-RWStructuredBuffer<uint> SliceArgBuffer;
-RWStructuredBuffer<uint> VisibleLineArgBuffer;
-RWStructuredBuffer<uint> LineMeshArgBuffer;
-RWStructuredBuffer<uint> ArgBuffer;
 
-void ResetRunTimeVertexBuffer(uint VertexIndex)
-{
-    RunTimeVertexState New = (RunTimeVertexState)0;
-    New.Left = -1;
-    New.Right = -1;
+RWStructuredBuffer<uint> ArgBuffer1;
+RWStructuredBuffer<uint> ArgBuffer2;
 
-    RunTimeVertexBuffer[VertexIndex] = New;
-
-}
 
 [numthreads(1, 1, 1)]
 void Reset(uint3 id : SV_DispatchThreadID)
 {
 
-    /*
-            RenderCommands.SetBufferCounterValue(EmptyBuffer, 0);
-            RenderCommands.CopyCounterValue(EmptyBuffer, Current.SegmentArgBuffer, Current.SegmentArgBufferCounterOffset);
-            RenderCommands.CopyCounterValue(EmptyBuffer, Current.SegmentArgBuffer, Current.SegmentArgBufferRunTimeVertexNumOffset);
-            RenderCommands.CopyCounterValue(EmptyBuffer, Current.SegmentArgBuffer, Current.SegmentArgBufferVisibleSegmentNumOffset);
-            RenderCommands.CopyCounterValue(EmptyBuffer, Current.SliceArgBuffer, Current.SliceArgBufferDispatchOffset);
-            RenderCommands.CopyCounterValue(EmptyBuffer, Current.VisibleLineArgBuffer, Current.VisibleLineArgBufferCounterOffset);
-            RenderCommands.CopyCounterValue(EmptyBuffer, Current.LineMeshArgBuffer, Current.LineMeshArgBufferTriangleCounterOffset);
-            RenderCommands.SetBufferCounterValue(EmptyBuffer, 1);
-            RenderCommands.CopyCounterValue(EmptyBuffer, Current.SegmentArgBuffer, Current.SegmentArgBufferDispatchOffset);
-            RenderCommands.CopyCounterValue(EmptyBuffer, Current.VisibleLineArgBuffer, Current.VisibleLineArgBufferDispatchOffset);
-    */
+    ArgBuffer1[INDIRECT_DRAW_TRIANGLE_COUNT] = 0;
+    ArgBuffer1[CONTOURIZE_PASS_DISPATCH_COUNT] = 1;
+    ArgBuffer1[CONTOURIZE_PASS_CONTOUR_COUNT] = 0;
+    ArgBuffer1[SLICE_PASS_DISPATCH_COUNT] = 1;
+    ArgBuffer1[SLICE_PASS_CONTOUR_COUNT] = 0;
+    ArgBuffer1[VISIBILITY_PASS_DISPATCH_COUNT] = 1;
+    ArgBuffer1[VISIBILITY_PASS_SLICE_COUNT] = 0;
+    ArgBuffer1[GENERATE_PASS_DISPATCH_COUNT] = 1;
+    ArgBuffer1[GENERATE_PASS_SEGMENT_COUNT] = 0;
+    ArgBuffer1[CHAINNING_PASS_DISPATCH_COUNT] = 1;
+    ArgBuffer1[CHAINNING_PASS_LINEHEAD_COUNT] = 0;
 
-    //ResetRunTimeVertexBuffer(id.x);
-    //if (id.x == 0) {
-        //SegmentArgBuffer[0] = 0;
-        //SegmentArgBuffer[1] = 1;
-        //SegmentArgBuffer[4] = 0;
-        //SegmentArgBuffer[5] = 0;
+    ArgBuffer2[INDIRECT_DRAW_TRIANGLE_COUNT] = 0;
+    ArgBuffer2[CONTOURIZE_PASS_DISPATCH_COUNT] = 1;
+    ArgBuffer2[CONTOURIZE_PASS_CONTOUR_COUNT] = 0; 
+    ArgBuffer2[SLICE_PASS_DISPATCH_COUNT] = 1;
+    ArgBuffer2[SLICE_PASS_CONTOUR_COUNT] = 0;
+    ArgBuffer2[VISIBILITY_PASS_DISPATCH_COUNT] = 1;
+    ArgBuffer2[VISIBILITY_PASS_SLICE_COUNT] = 0;
+    ArgBuffer2[GENERATE_PASS_DISPATCH_COUNT] = 1;
+    ArgBuffer2[GENERATE_PASS_SEGMENT_COUNT] = 0;
+    ArgBuffer2[CHAINNING_PASS_DISPATCH_COUNT] = 1;
+    ArgBuffer2[CHAINNING_PASS_LINEHEAD_COUNT] = 0;
 
-        //SliceArgBuffer[0] = 0;
-
-        //VisibleLineArgBuffer[0] = 0;
-        //VisibleLineArgBuffer[1] = 1;
-
-        //LineMeshArgBuffer[1] = 0;
-   // }
-
-    ArgBuffer[INDIRECT_DRAW_TRIANGLE_COUNT] = 0;
-    ArgBuffer[CONTOURIZE_PASS_DISPATCH_COUNT] = 1;
-    ArgBuffer[CONTOURIZE_PASS_FACE_COUNT] = 0;
 }

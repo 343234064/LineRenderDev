@@ -1,21 +1,23 @@
 ﻿// Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel Visibility
 
+
+#pragma multi_compile __ ENABLE_DEBUG_VIEW
 #include "Common.cginc"
 
 
-#define SEGMENT_SIZE SegmentArgBuffer[0]
-#define SLICE_SIZE SliceArgBuffer[0]
 
-StructuredBuffer<LineSegment> Segments;
-StructuredBuffer<VisibleLineSegment> VisibleSegments;
-StructuredBuffer<Slice> Slices;
-StructuredBuffer<uint> SegmentArgBuffer;
-StructuredBuffer<uint> SliceArgBuffer;
+#define SEGMENT_SIZE RArgBuffer[SLICE_PASS_CONTOUR_COUNT]
+#define SLICE_SIZE RArgBuffer[VISIBILITY_PASS_SLICE_COUNT]
 
-RWStructuredBuffer<uint> VisibleLineArgBuffer;
-RWStructuredBuffer<PlainLine> VisibleLines;
-
+StructuredBuffer<uint> RArgBuffer;
+StructuredBuffer<SegmentMetaData> VisibleSegmentBuffer;
+StructuredBuffer<Slice> SliceBuffer;
+RWStructuredBuffer<uint> WArgBuffer;
+RWStructuredBuffer<Segment> AllSegmentBuffer;
+RWStructuredBuffer<AnchorVertex> AnchorVertexBuffer;
+RWStructuredBuffer<AnchorEdge> AnchorEdgeBuffer;
+RWStructuredBuffer<AnchorSlice> AnchorSliceBuffer;
 
 Texture2D<float> SceneDepthTexture;
 SamplerState LinearClampSampler;
@@ -31,7 +33,17 @@ groupshared float4 PointCache[VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM];
 groupshared uint4 ExtraCache[VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM];
 groupshared uint VisibilityCache[VISIBILITY_CACHE_NUM];
 
-
+#if ENABLE_DEBUG_VIEW
+groupshared float4 DebugPosCache[VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM];
+inline void SaveDebugPos(float4 DebugPos, uint Index)
+{
+    DebugPosCache[Index] = DebugPos;
+}
+inline float4 LoadDebugPos(uint Index)
+{
+    return DebugPosCache[Index];
+}
+#endif
 
 void SaveVisibility(bool Visibility, uint Index, bool Valid)
 {
@@ -63,7 +75,7 @@ bool LoadVisibility(uint Index)
 
 inline void SavePoint(float4 Point, uint Index, bool Valid)
 {
-    float4 ToSave = Valid ? Point : float4(-5.0f, 0.0f, 0.0f, 0.0f);//-5.0 is impossible in NDC Space
+    float4 ToSave = Valid ? Point : float4(-5.0f, -5.0f, -5.0f, -5.0f);//-5.0 is impossible in NDC Space
     PointCache[Index] = ToSave;
 }
 
@@ -173,28 +185,37 @@ int2 ExtractLatestOneBit(uint HeadIndex, uint MaxSearchLength)
 
 float SampleSceneDepth(float2 uv)
 {
+    
+#if 1
+
     float2 TexelSize = ScreenScaledResolution.zw;
-    /*
-    float2 Offset1 = float2(1.3846153846f, 0);
-    float2 Offset2 = float2(3.2307692308f, 0);
-    
-    float S0 = SceneDepthTexture.SampleLevel(LinearClampSampler, uv, 0).r * 0.2270270270f;
-    S0 += SceneDepthTexture.SampleLevel(LinearClampSampler, uv + (Offset1 * TexelSize), 0).r * 0.3162162162f;
-    S0 += SceneDepthTexture.SampleLevel(LinearClampSampler, uv - (Offset1 * TexelSize), 0).r * 0.3162162162f;
-    S0 += SceneDepthTexture.SampleLevel(LinearClampSampler, uv + (Offset2 * TexelSize), 0).r * 0.0702702703f;
-    S0 += SceneDepthTexture.SampleLevel(LinearClampSampler, uv - (Offset2 * TexelSize), 0).r * 0.0702702703f;
-    
-    return S0;
-    */
     float S0 = SceneDepthTexture.SampleLevel(LinearClampSampler, uv, 0).r;
     float S1 = SceneDepthTexture.SampleLevel(LinearClampSampler, uv + float2(TexelSize.x, 0.0f), 0).r;
     float S2 = SceneDepthTexture.SampleLevel(LinearClampSampler, uv + float2(0.0f, TexelSize.y), 0).r;
     float S3 = SceneDepthTexture.SampleLevel(LinearClampSampler, uv + float2(-TexelSize.x, 0.0f), 0).r;
     float S4 = SceneDepthTexture.SampleLevel(LinearClampSampler, uv + float2(0.0f, -TexelSize.y), 0).r;
-    return S0 * 0.5f + (S1 + S2 + S3 + S4) * 0.125f;
-    
-}
+    float S5 = SceneDepthTexture.SampleLevel(LinearClampSampler, uv + float2(TexelSize.x, TexelSize.y), 0).r;
+    float S6 = SceneDepthTexture.SampleLevel(LinearClampSampler, uv + float2(-TexelSize.x, -TexelSize.y), 0).r;
+    float S7 = SceneDepthTexture.SampleLevel(LinearClampSampler, uv + float2(-TexelSize.x, TexelSize.y), 0).r;
+    float S8 = SceneDepthTexture.SampleLevel(LinearClampSampler, uv + float2(TexelSize.x, -TexelSize.y), 0).r;
+    return (S0+ S1+ S2+ S3+ S4+ S5+ S6+ S7+ S8) * 0.111111111f;
 
+#else
+
+    const float offset = 1.5f;
+    float2 TexelPosition = (floor(ScreenScaledResolution.xy * uv) + 0.5f) * ScreenScaledResolution.zw;
+
+    float S0 = SceneDepthTexture.SampleLevel(LinearClampSampler, uv, 0).r;
+    float S1 = SceneDepthTexture.SampleLevel(LinearClampSampler, TexelPosition + float2(1.5f, 0.5f) * ScreenScaledResolution.zw, 0).r;
+    float S2 = SceneDepthTexture.SampleLevel(LinearClampSampler, TexelPosition + float2(-1.5f, -0.5f) * ScreenScaledResolution.zw, 0).r;
+    float S3 = SceneDepthTexture.SampleLevel(LinearClampSampler, TexelPosition + float2(0.5f, -1.5f) * ScreenScaledResolution.zw, 0).r;
+    float S4 = SceneDepthTexture.SampleLevel(LinearClampSampler, TexelPosition + float2(-0.5f, 1.5f) * ScreenScaledResolution.zw, 0).r;
+
+    return (S0 + S1 + S2 + S3 + S4) * 0.2f;
+
+#endif
+
+}
 
 
 uint2 CalculatePixelPosition(uint PixelLength, uint CurrentSegmentLengthShrinkTotalInSlice, uint CurrentSegmentLengthShrink, uint BeginIndexInCurrentSegmentShrink, uint CurrentGroupIndex)
@@ -211,18 +232,60 @@ uint2 CalculatePixelPosition(uint PixelLength, uint CurrentSegmentLengthShrinkTo
 }
 
 
-uint ArgBufferCounting()
+
+
+uint AddAllSegmentBuffer(Segment CurrentSegment)
 {
     uint Original = 0;
-    InterlockedAdd(VisibleLineArgBuffer[0], 1, Original);
-    uint Id = Original;
 
-    if ((Original + 1) % GENERATE_PASS_PER_THREAD_ELEMENT_NUM == 0)
-        InterlockedAdd(VisibleLineArgBuffer[1], 1, Original);
+#if ENABLE_DEBUG_VIEW
+    InterlockedAdd(WArgBuffer[INDIRECT_DRAW_TRIANGLE_COUNT], 1, Original);
+#else
+    InterlockedAdd(WArgBuffer[INDIRECT_DRAW_TRIANGLE_COUNT], 2, Original);
+    Original *= 0.5;
+#endif 
 
-    return Id;
+    AllSegmentBuffer[Original] = CurrentSegment;
+
+    uint Original2 = 0;
+    bool AddThreadCount = ((Original + 1) % GENERATE_PASS_PER_THREAD_ELEMENT_NUM == 0);
+    InterlockedAdd(WArgBuffer[GENERATE_PASS_DISPATCH_COUNT], AddThreadCount ? 1 : 0, Original2);
+
+    return Original;
 }
 
+
+
+void WriteSegmentIndexToAnchorCache(uint AnchorType, uint AnchorIndex, uint LineType, uint SegmentId)
+{
+    uint Original = 0xffffffff;
+    if (AnchorType == 2)
+    {
+        InterlockedCompareExchange(AnchorSliceBuffer[AnchorIndex].AllType.x, 0xffffffff, SegmentId, Original);
+        if (Original != 0xffffffff)
+            InterlockedCompareExchange(AnchorSliceBuffer[AnchorIndex].AllType.y, 0xffffffff, SegmentId, Original);
+    }
+    else if (AnchorType == 1)
+    {
+        if (LineType == CONTOUR_FACE_TYPE) {
+            InterlockedCompareExchange(AnchorEdgeBuffer[AnchorIndex].ContourType.y, 0xffffffff, SegmentId, Original);
+            if (Original != 0xffffffff)
+                InterlockedCompareExchange(AnchorEdgeBuffer[AnchorIndex].ContourType.z, 0xffffffff, SegmentId, Original);
+        }
+        else if (LineType == CONTOUR_EDGE_TYPE)
+        {
+            InterlockedCompareExchange(AnchorVertexBuffer[AnchorIndex].ContourType.y, 0xffffffff, SegmentId, Original);
+            if (Original != 0xffffffff)
+                InterlockedCompareExchange(AnchorVertexBuffer[AnchorIndex].ContourType.z, 0xffffffff, SegmentId, Original);
+        }
+        else if (LineType == CREASE_EDGE_TYPE)
+        {
+            InterlockedCompareExchange(AnchorVertexBuffer[AnchorIndex].CreaseType.y, 0xffffffff, SegmentId, Original);
+            if (Original != 0xffffffff)
+                InterlockedCompareExchange(AnchorVertexBuffer[AnchorIndex].CreaseType.z, 0xffffffff, SegmentId, Original);
+        }
+    }
+}
 
 
 /*
@@ -260,8 +323,8 @@ void Visibility(uint3 gid : SV_GroupID, uint gi : SV_GroupIndex)
     
     if (CurrentSliceIndex >= SLICE_SIZE) return;
 
-    Slice CurrentSlice = Slices[CurrentSliceIndex];
-    VisibleLineSegment BeginSegment = VisibleSegments[CurrentSlice.BeginSegmentIndex];
+    Slice CurrentSlice = SliceBuffer[CurrentSliceIndex];
+    SegmentMetaData BeginSegment = VisibleSegmentBuffer[CurrentSlice.BeginSegmentIndex];
     uint BeginPixelShrink = CurrentSlice.BeginPixel;
     uint BeginSegmentID = CurrentSlice.BeginSegmentIndex;
     uint SegmentBufferSize = SEGMENT_SIZE;
@@ -284,21 +347,20 @@ void Visibility(uint3 gid : SV_GroupID, uint gi : SV_GroupIndex)
             BeginSegmentID -= 1;
             break;
         }         
-        RemainingSegmentLength = VisibleSegments[BeginSegmentID].PixelLengthShrink;
+        RemainingSegmentLength = VisibleSegmentBuffer[BeginSegmentID].PixelLengthShrink;
         BeginPixelShrink = 1;//BeginPixelShrink start from 1
     }
 
-    VisibleLineSegment TargetSegment = VisibleSegments[BeginSegmentID];
-    LineSegment SegmentData = Segments[TargetSegment.Id];
+    SegmentMetaData TargetSegment = VisibleSegmentBuffer[BeginSegmentID];
 
     uint2 PixelPosition = CalculatePixelPosition(TargetSegment.PixelLength, LengthFromBegin, RemainingSegmentLength, BeginPixelShrink, CurrentGroupPixelPosition);
     uint TargetPixelPosition = PixelPosition.x; //Range : [1 ~ PixelLength]
     uint TargetPixelPositionShrink = PixelPosition.y;
 
-    float4 ClipPosition1 = SegmentData.NDCPosition[0];// zw = ClipPosition.zw
-    float4 ClipPosition2 = SegmentData.NDCPosition[1];// zw = ClipPosition.zw
-    float2 NDCPosition1 = SegmentData.NDCPosition[0].xy;
-    float2 NDCPosition2 = SegmentData.NDCPosition[1].xy;
+    float4 ClipPosition1 = TargetSegment.NDCPosition[0];// zw = ClipPosition.zw
+    float4 ClipPosition2 = TargetSegment.NDCPosition[1];// zw = ClipPosition.zw
+    float2 NDCPosition1 = TargetSegment.NDCPosition[0].xy;
+    float2 NDCPosition2 = TargetSegment.NDCPosition[1].xy;
 
     float InvPixelLength = 1.0f / (float)TargetSegment.PixelLength;
     float TProjectedCenter = saturate(((float)TargetPixelPosition - 0.5f) * InvPixelLength);
@@ -312,25 +374,33 @@ void Visibility(uint3 gid : SV_GroupID, uint gi : SV_GroupIndex)
     float2 SamplePositionProjected = NDCPosition1 + (NDCPosition2 - NDCPosition1) * TProjectedCenter;
     float4 SamplePositionUnProject = ClipPosition1 + (ClipPosition2 - ClipPosition1) * TUnProject; //Clip space before perspective division
 
-    float SamplePositionProjectedZ = GetUnifyNDCZ(SamplePositionUnProject.z / SamplePositionUnProject.w);
+    float InvertW = 1.0f / SamplePositionUnProject.w;
+    float SamplePositionProjectedZ = GetUnifyNDCZ(SamplePositionUnProject.z * InvertW);
     float SceneDepth = SampleSceneDepth(SamplePositionProjected.xy);
 
     bool NeedShowVisible = HideVisibleEdge == 0;
     bool NeedHideOccludedEdge = HideOccludedEdge > 0;
     bool NeedHideBackFace = HideBackFaceEdge > 0;
-    bool IsBackFacing = SegmentData.BackFacing > 0;
-    bool NotOccluded = ZTest(SamplePositionProjectedZ, SceneDepth);
-
+    
+    bool NotOccluded = ZTest(SamplePositionProjectedZ, InvertW, SceneDepth);
+    bool IsVisible = NotOccluded;// && !IsBackFacing;
+    TargetSegment.Type = IsVisible ? (SET_LINE_IS_BACKFACING(TargetSegment.Type, false)) : TargetSegment.Type;//if ztest is true, this should not be backfacing
+    
+    bool IsBackFacing = GET_LINE_IS_BACKFACING(TargetSegment.Type);
     bool NeedShowUnvisible = (NeedHideOccludedEdge ^ NeedHideBackFace) ?
        ((NeedHideOccludedEdge && !NeedHideBackFace) ? (IsBackFacing ? true : false) : (IsBackFacing ? false : true))
         :
        (NeedHideOccludedEdge ? false : true);
-    bool IsVisible = true;// !IsBackFacing && NotOccluded;
 
     float2 SamplePositionProjectedStart = NDCPosition1 + (NDCPosition2 - NDCPosition1) * TProjectedStart;
     float2 SamplePositionProjectedEnd = NDCPosition1 + (NDCPosition2 - NDCPosition1) * TProjectedEnd;
     float4 CurrentPoint = float4(SamplePositionProjectedStart, SamplePositionProjectedEnd);
 
+#if ENABLE_DEBUG_VIEW
+    float4 DebugPosStart = TargetSegment.NDCPositionForDebug[0] + (TargetSegment.NDCPositionForDebug[1] - TargetSegment.NDCPositionForDebug[0]) * TProjectedStart;
+    float4 DebugPosEnd = TargetSegment.NDCPositionForDebug[0] + (TargetSegment.NDCPositionForDebug[1] - TargetSegment.NDCPositionForDebug[0]) * TProjectedEnd;
+    SaveDebugPos(DebugPosEnd, CurrentGroupPixelPosition);
+#endif
 
     SavePoint(CurrentPoint, CurrentGroupPixelPosition, ValidPoint);
     SaveExtra(uint4(TargetPixelPosition, CurrentGroupPixelPosition, 0, 0), CurrentGroupPixelPosition, ValidPoint);
@@ -350,104 +420,123 @@ void Visibility(uint3 gid : SV_GroupID, uint gi : SV_GroupIndex)
     bool ShowUnvisible = !IsVisible && IsHeadUnvisible && NeedShowUnvisible;
 
     bool Show = ShowVisible || ShowUnvisible;
-    if (Show && ValidPoint)
+    if (ValidPoint)
     {
         uint MaxSearchLength = max(0, TargetSegment.PixelLengthShrink - TargetPixelPositionShrink);//计算shrink后的剩余像素，保证最近的可见点在TargetSegment范围内
         int2 BitIndex = IsVisible ? ExtractLatestZeroBit(CurrentGroupPixelPosition, MaxSearchLength) : ExtractLatestOneBit(CurrentGroupPixelPosition, MaxSearchLength);
         int TailIndex = BitIndex.x - BitIndex.y;
 
-        float4 Head = CurrentPoint;
+        float2 Head = CurrentPoint.xy;
         float4 Tail = LoadPoint(TailIndex);
         uint4 ExtraData = LoadExtra(TailIndex);
         uint TailTargetPixelPosition = ExtraData.x;
         uint TailGroupPixelPosition = ExtraData.y;
+        bool TailIsValidPoint = Tail.x >= -1.0f;
 
-        bool HeadIsSliceHead = (CurrentGroupPixelPosition == 0 || CurrentGroupPixelPosition == (VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM - 1));
-        bool TailIsSliceTail = (TailGroupPixelPosition == 0 || TailGroupPixelPosition == (VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM - 1));
+        //bool HeadIsSliceHead = CurrentGroupPixelPosition == 0;
+        //bool TailIsSliceTail = TailGroupPixelPosition == (VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM - 1);
+        //bool HeadIsSliceHeadButNotSegmentHead = CurrentGroupPixelPosition == 0 && TargetPixelPosition > 1;
+        //bool TailIsSliceTailButNotSegmentTail = TailGroupPixelPosition == (VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM - 1) && TailTargetPixelPosition < TargetSegment.PixelLength;
 
-        bool HeadIsLinkToVertex = (TargetPixelPosition == 1);
-        bool TailIsLinkToVertex = (TailTargetPixelPosition == TargetSegment.PixelLength);
+        if (Show && TailIsValidPoint) {
+            ///////////////////////////////////////////
+            Segment NewLine = (Segment)0;
 
-        if (Tail.x >= -1.0f) {
-            uint PlainLineId = ArgBufferCounting();
-
-            PlainLine NewLine;
             NewLine.NDCPosition[0] = Head.xy;
             NewLine.NDCPosition[1] = Tail.zw;
-            
-            NewLine.PixelPosition[0] = float(TargetPixelPosition + TargetSegment.ClippedPositionOffset - 1) * TargetSegment.InvPixelLengthBeforeClippedMinusOne;
-            NewLine.PixelPosition[1] = float(TailTargetPixelPosition + TargetSegment.ClippedPositionOffset - 1) * TargetSegment.InvPixelLengthBeforeClippedMinusOne;
 
-            NewLine.Id = PlainLineId;
-            NewLine.LineSegmentId = TargetSegment.Id;
+#if ENABLE_DEBUG_VIEW
+            float4 TailDebugPosEnd = LoadDebugPos(TailIndex);
+            NewLine.NDCPositionForDebug[0] = DebugPosStart;
+            NewLine.NDCPositionForDebug[1] = TailDebugPosEnd;
+#endif
 
-            NewLine.RunTimeVertexIndex[0] = SegmentData.RunTimeVertexIndex[0];
-            NewLine.RunTimeVertexIndex[1] = SegmentData.RunTimeVertexIndex[1];
+            NewLine.PixelPosition[0] = float(TargetPixelPosition + TargetSegment.ClippedPositionOffset - 1)* TargetSegment.InvPixelLengthBeforeClippedMinusOne;
+            NewLine.PixelPosition[1] = float(TailTargetPixelPosition + TargetSegment.ClippedPositionOffset - 1)* TargetSegment.InvPixelLengthBeforeClippedMinusOne;
 
-            NewLine.LinkState[0] = HeadIsLinkToVertex ? 0 : (HeadIsSliceHead ? CurrentSliceIndex + 1 :  -1);
-            NewLine.LinkState[1] = TailIsLinkToVertex ? 0 : (TailIsSliceTail ? CurrentSliceIndex + 1 :  -1);
-        
-            NewLine.Visibility = ShowVisible;
-            
-            NewLine.MeshletIndex[0] = SegmentData.MeshletIndex[0];
-            NewLine.MeshletIndex[1] = SegmentData.MeshletIndex[1];
+            NewLine.Type = SET_LINE_IS_VISIBLE(TargetSegment.Type, IsVisible);
 
-            VisibleLines[PlainLineId] = NewLine;
+            NewLine.SliceId = CurrentSliceIndex;
+            /*
+            NewLine.SliceId = SET_IS_SLICE_HEAD(NewLine.SliceId, HeadIsSliceHeadButNotSegmentHead);
+            NewLine.SliceId = SET_IS_SLICE_TAIL(NewLine.SliceId, TailIsSliceTailButNotSegmentTail);
+            */
+
+            NewLine.SegmentMetaDataId = BeginSegmentID;
+
+            uint AnchorType0 = (TargetPixelPosition <= 1) ? 1 : (CurrentGroupPixelPosition == 0 ? 2 : 0);
+            uint AnchorType1 = (TailTargetPixelPosition >= TargetSegment.PixelLength) ? 1 : (TailGroupPixelPosition == (VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM - 1) ? 2 : 0);
+
+            NewLine.Anchor[0] = SET_ANCHOR_INDEX(0, TargetSegment.Anchor[0]);
+            NewLine.Anchor[1] = SET_ANCHOR_INDEX(0, TargetSegment.Anchor[1]);
+            NewLine.Anchor[0] = SET_ANCHOR_TYPE(NewLine.Anchor[0], AnchorType0);
+            NewLine.Anchor[1] = SET_ANCHOR_TYPE(NewLine.Anchor[1], AnchorType1);
 
 
+            NewLine.MeshletData = TargetSegment.MeshletData;
+            //////////////////////////////////////////
+
+            uint Id = AddAllSegmentBuffer(NewLine);
+
+#if !ENABLE_DEBUG_VIEW
+
+            uint SegmentID = SET_ADJACENT_INDEX(0, Id);
+            uint LineType = GET_LINE_TYPE(TargetSegment.Type);
+            uint Anchor0 = (AnchorType0 == 1) ? TargetSegment.Anchor[0] : (AnchorType0 == 2 ? CurrentSliceIndex : 0xffffffff);
+            uint Anchor1 = (AnchorType1 == 1) ? TargetSegment.Anchor[1] : (AnchorType1 == 2 ? (CurrentSliceIndex + 1) : 0xffffffff);
+            //if (TargetPixelPosition <= 1) {
+                SegmentID = SET_ADJACENT_DIRECTION(SegmentID, 0);
+                WriteSegmentIndexToAnchorCache(AnchorType0, Anchor0, LineType, SegmentID);
+            //}
+            //if (TailTargetPixelPosition >= TargetSegment.PixelLength) {
+                SegmentID = SET_ADJACENT_DIRECTION(SegmentID, 1);
+                WriteSegmentIndexToAnchorCache(AnchorType1, Anchor1, LineType, SegmentID);
+            //}
+
+#endif
+            /*
+            SliceMetaData NewSliceMeta = (SliceMetaData)0;
+            NewSliceMeta.Type = NewLine.Type;
+            NewSliceMeta.SegmentMetaDataId = NewLine.SegmentMetaDataId;
+            NewSliceMeta.Anchor = NewLine.Anchor[1];
+            NewSliceMeta.SegmentId = Id;
+            NewSliceMeta.SliceId = NewLine.SliceId;
+            NewSliceMeta.NDCPosition = NewLine.NDCPosition[1].xy;
+            NewSliceMeta.PixelPosition = NewLine.PixelPosition[1];
+#if ENABLE_DEBUG_VIEW
+            NewSliceMeta.DebugPosition = NewLine.NDCPositionForDebug[1];
+#endif
+            if (HeadIsSliceHeadButNotSegmentHead) {
+                SliceBuffer[CurrentSliceIndex].HeadTailSegment[0] = NewSliceMeta;
+            }
+            if (TailIsSliceTailButNotSegmentTail) {
+                SliceBuffer[CurrentSliceIndex].HeadTailSegment[1] = NewSliceMeta;
+            }*/
         }
-
     }
 
 
-    //bool vis = LoadVisibility(CurrentGroupPixelPosition);
-    //float4 p = LoadPoint(CurrentGroupPixelPosition);
-    //if (p.x >= -1.0f ) {
-    //    PlainLine NewLine;
-    //    NewLine.NDCPosition[0] = p.xy;
-    //    NewLine.NDCPosition[0] = p.xy;
-    //    NewLine.NDCPosition[1] = p.zw;// float2(p.xy + normalize(NDCPosition2 - NDCPosition1) * 0.001);
-    //    // if (IsTail) NewLine.NDCPosition[1] = float3(p.xy + normalize(NDCPosition1 - NDCPosition2) * 0.011, p.z);
-    //    // else if (IsHead) NewLine.NDCPosition[1] = float3(p.xy + normalize(NDCPosition2 - NDCPosition1) * 0.011, p.z);
-    //    NewLine.BackFacing = CurrentSlice.BeginPixel;
-    //    NewLine.debug = CurrentSlice.BeginSegmentIndex;
-    //    NewLine.debug2 = TargetSegment.PixelLength;
-    //    NewLine.SliceIndex = CurrentSliceIndex;// CurrentGroupPixelPosition;//gid.x;
-    //    //if (CurrentGroupPixelPosition % 2 == 0 && IsVisible)
 
-    //    VisibleLines.Append(NewLine);
-    //}
 
+
+    /*
+    bool vis = LoadVisibility(CurrentGroupPixelPosition);
+    float4 p = LoadPoint(CurrentGroupPixelPosition);
+    if (p.x > -1.0f) {
+        Segment NewLine = (Segment)0;
+        NewLine.NDCPosition[0] = NDCPosition1;// p.xy;
+        NewLine.NDCPosition[1] = NDCPosition2;// float2(p.xy + normalize(NDCPosition2 - NDCPosition1) * 0.001);
+        // if (IsTail) NewLine.NDCPosition[1] = float3(p.xy + normalize(NDCPosition1 - NDCPosition2) * 0.011, p.z);
+        // else if (IsHead) NewLine.NDCPosition[1] = float3(p.xy + normalize(NDCPosition2 - NDCPosition1) * 0.011, p.z);
+        //NewLine.BackFacing = CurrentSlice.BeginPixel;
+        //NewLine.debug = CurrentSlice.BeginSegmentIndex;
+        //NewLine.debug2 = TargetSegment.PixelLength;
+        //NewLine.SliceIndex = CurrentSliceIndex;// CurrentGroupPixelPosition;//gid.x;
+        //if (CurrentGroupPixelPosition % 2 == 0 && IsVisible)
+        NewLine.PixelLength = CalculatePixelLength(NewLine.NDCPosition[0], NewLine.NDCPosition[1], ScreenScaledResolution.xy).x;
+
+       // if (NewLine.PixelLength < 5)
+            AddAllSegmentBuffer(NewLine);
+    }*/
+    
 }
-
-/*
-[numthreads(1, 1, 1)]
-void Visibility(uint3 gid : SV_GroupID, uint gi : SV_GroupIndex, uint3 id : SV_DispatchThreadID)
-{
-
-
-LineSegment InputLine = Segments[id.x];
-
-float4 ScreenPosition1 = (InputLine.NDCPosition[0]);
-float4 ScreenPosition2 = (InputLine.NDCPosition[1]);
-
-float Position1SceneDepth = (SceneDepthTexture.SampleLevel(LinearClampSampler, ScreenPosition1.xy, 0).r);
-float Position2SceneDepth = (SceneDepthTexture.SampleLevel(LinearClampSampler, ScreenPosition2.xy, 0).r);
-
-
-//if(ZTest(ScreenPosition1.z, Position1SceneDepth) && ZTest(ScreenPosition2.z, Position2SceneDepth))
-{
-    PlainLine NewLine;
-    NewLine.NDCPosition[0] = InputLine.NDCPosition[0];
-    NewLine.NDCPosition[1] = InputLine.NDCPosition[1];
-    NewLine.BackFacing = InputLine.BackFacing;
-    NewLine.SliceIndex = 1;
-    NewLine.debug = 0.0f;
-    NewLine.debug2 = 0.0f;
-    VisibleLines.Append(NewLine); 
-}
-
-
-
-}
-*/

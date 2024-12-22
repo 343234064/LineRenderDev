@@ -132,7 +132,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
       propertyPath: m_RootOrder
-      value: 6
+      value: 7
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
       propertyPath: m_LocalPosition.x
@@ -196,7 +196,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 2509802017764886665, guid: 8a5c707264e6be044b3351faf300af2f, type: 3}
       propertyPath: m_Materials.Array.data[0]
@@ -246,14 +246,12 @@ MonoBehaviour:
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 31067fb7262504c48bbbcef19a85fa60, type: 2}
   LineRenderMaterialForDebug: {fileID: 0}
-  LineWidth: 6
-  LineCenterOffset: 0
   HideVisibleEdge: 0
-  HideBackFaceEdge: 1
-  HideOccludedEdge: 0
+  HideBackFaceEdge: 0
+  HideOccludedEdge: 1
   LinkUnvisibleAndVisibleEdge: 0
   UnlinkedEdgeAngleThreshold: 90
-  SilhouetteEnable: 1
+  ContourEnable: 0
   OutineOnly: 1
   CreaseEnable: 1
   CreaseAngleDegreeThreshold: 91
@@ -268,7 +266,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: ff144ad86ff279b40b9dd5b958aca637, type: 3}
       propertyPath: m_RootOrder
-      value: 1
+      value: 2
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: ff144ad86ff279b40b9dd5b958aca637, type: 3}
       propertyPath: m_LocalScale.x
@@ -413,16 +411,14 @@ MonoBehaviour:
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: b9cb8e72e14004846a952bcb2a7254ef, type: 2}
   LineRenderMaterialForDebug: {fileID: 0}
-  LineWidth: 2.54
-  LineCenterOffset: 0
   HideVisibleEdge: 0
   HideBackFaceEdge: 1
   HideOccludedEdge: 1
   LinkUnvisibleAndVisibleEdge: 0
   UnlinkedEdgeAngleThreshold: 90
-  SilhouetteEnable: 1
+  ContourEnable: 1
   OutineOnly: 0
-  CreaseEnable: 1
+  CreaseEnable: 0
   CreaseAngleDegreeThreshold: 157
   BorderEnable: 1
   MarkedEdgeEnable: 1
@@ -447,14 +443,12 @@ MonoBehaviour:
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 8546376762de97c4da90c9ab15aeb1dc, type: 2}
   LineRenderMaterialForDebug: {fileID: 0}
-  LineWidth: 1
-  LineCenterOffset: 0
   HideVisibleEdge: 0
   HideBackFaceEdge: 1
   HideOccludedEdge: 1
   LinkUnvisibleAndVisibleEdge: 0
   UnlinkedEdgeAngleThreshold: 90
-  SilhouetteEnable: 1
+  ContourEnable: 1
   OutineOnly: 1
   CreaseEnable: 1
   CreaseAngleDegreeThreshold: 45
@@ -481,14 +475,12 @@ MonoBehaviour:
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 9e0cf27f061922a4a8d1dd3bd45df3aa, type: 2}
   LineRenderMaterialForDebug: {fileID: 0}
-  LineWidth: 1
-  LineCenterOffset: 0
   HideVisibleEdge: 0
   HideBackFaceEdge: 1
   HideOccludedEdge: 1
   LinkUnvisibleAndVisibleEdge: 0
   UnlinkedEdgeAngleThreshold: 90
-  SilhouetteEnable: 1
+  ContourEnable: 1
   OutineOnly: 0
   CreaseEnable: 1
   CreaseAngleDegreeThreshold: 139
@@ -515,14 +507,12 @@ MonoBehaviour:
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 0a0f98bd19c03e740aee68da8cd3427f, type: 2}
   LineRenderMaterialForDebug: {fileID: 0}
-  LineWidth: 1
-  LineCenterOffset: 0
   HideVisibleEdge: 1
   HideBackFaceEdge: 1
   HideOccludedEdge: 1
   LinkUnvisibleAndVisibleEdge: 0
   UnlinkedEdgeAngleThreshold: 90
-  SilhouetteEnable: 1
+  ContourEnable: 1
   OutineOnly: 1
   CreaseEnable: 1
   CreaseAngleDegreeThreshold: 60
@@ -549,14 +539,12 @@ MonoBehaviour:
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: f2a112cf87580d74f82bca5d68aabd39, type: 2}
   LineRenderMaterialForDebug: {fileID: 0}
-  LineWidth: 1
-  LineCenterOffset: 0
   HideVisibleEdge: 0
   HideBackFaceEdge: 1
   HideOccludedEdge: 1
   LinkUnvisibleAndVisibleEdge: 0
   UnlinkedEdgeAngleThreshold: 90
-  SilhouetteEnable: 1
+  ContourEnable: 0
   OutineOnly: 0
   CreaseEnable: 1
   CreaseAngleDegreeThreshold: 167
@@ -583,16 +571,14 @@ MonoBehaviour:
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 81a5711070871f0458f68ffb139d47c9, type: 2}
   LineRenderMaterialForDebug: {fileID: 0}
-  LineWidth: 8.13
-  LineCenterOffset: 0
-  HideVisibleEdge: 0
-  HideBackFaceEdge: 1
-  HideOccludedEdge: 1
+  HideVisibleEdge: 1
+  HideBackFaceEdge: 0
+  HideOccludedEdge: 0
   LinkUnvisibleAndVisibleEdge: 0
   UnlinkedEdgeAngleThreshold: 90
-  SilhouetteEnable: 1
+  ContourEnable: 1
   OutineOnly: 0
-  CreaseEnable: 0
+  CreaseEnable: 1
   CreaseAngleDegreeThreshold: 45
   BorderEnable: 1
   MarkedEdgeEnable: 1
@@ -617,14 +603,12 @@ MonoBehaviour:
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 72573a12241edb447b73e548bb04a52e, type: 2}
   LineRenderMaterialForDebug: {fileID: 0}
-  LineWidth: 5.79
-  LineCenterOffset: 0
   HideVisibleEdge: 0
   HideBackFaceEdge: 1
   HideOccludedEdge: 1
   LinkUnvisibleAndVisibleEdge: 0
   UnlinkedEdgeAngleThreshold: 90
-  SilhouetteEnable: 1
+  ContourEnable: 1
   OutineOnly: 1
   CreaseEnable: 1
   CreaseAngleDegreeThreshold: 60
@@ -651,14 +635,12 @@ MonoBehaviour:
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 92e9153264e7971439a727f014d15963, type: 2}
   LineRenderMaterialForDebug: {fileID: 0}
-  LineWidth: 1
-  LineCenterOffset: 0
   HideVisibleEdge: 0
   HideBackFaceEdge: 1
   HideOccludedEdge: 1
   LinkUnvisibleAndVisibleEdge: 0
   UnlinkedEdgeAngleThreshold: 90
-  SilhouetteEnable: 1
+  ContourEnable: 1
   OutineOnly: 1
   CreaseEnable: 1
   CreaseAngleDegreeThreshold: 45
@@ -673,7 +655,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: 83104b43760a6264f9dff5a76ad932f7, type: 3}
       propertyPath: m_RootOrder
-      value: 2
+      value: 3
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 83104b43760a6264f9dff5a76ad932f7, type: 3}
       propertyPath: m_LocalScale.x
@@ -774,14 +756,12 @@ MonoBehaviour:
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 8f4fe6523476d464189d348ab2870c49, type: 2}
   LineRenderMaterialForDebug: {fileID: 0}
-  LineWidth: 1
-  LineCenterOffset: 0
   HideVisibleEdge: 1
   HideBackFaceEdge: 1
   HideOccludedEdge: 1
   LinkUnvisibleAndVisibleEdge: 0
   UnlinkedEdgeAngleThreshold: 90
-  SilhouetteEnable: 1
+  ContourEnable: 1
   OutineOnly: 0
   CreaseEnable: 1
   CreaseAngleDegreeThreshold: 152
@@ -842,14 +822,12 @@ MonoBehaviour:
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 4ae47286a704f9c4883267ef3e2b4273, type: 2}
   LineRenderMaterialForDebug: {fileID: 0}
-  LineWidth: 1
-  LineCenterOffset: 0
   HideVisibleEdge: 0
   HideBackFaceEdge: 1
   HideOccludedEdge: 1
   LinkUnvisibleAndVisibleEdge: 0
   UnlinkedEdgeAngleThreshold: 90
-  SilhouetteEnable: 1
+  ContourEnable: 1
   OutineOnly: 0
   CreaseEnable: 1
   CreaseAngleDegreeThreshold: 45
@@ -876,14 +854,12 @@ MonoBehaviour:
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 4f937e0df3cc82d419e44a4ac75a895a, type: 2}
   LineRenderMaterialForDebug: {fileID: 0}
-  LineWidth: 1
-  LineCenterOffset: 0
   HideVisibleEdge: 1
   HideBackFaceEdge: 1
   HideOccludedEdge: 1
   LinkUnvisibleAndVisibleEdge: 0
   UnlinkedEdgeAngleThreshold: 90
-  SilhouetteEnable: 1
+  ContourEnable: 1
   OutineOnly: 1
   CreaseEnable: 1
   CreaseAngleDegreeThreshold: 160
@@ -910,14 +886,12 @@ MonoBehaviour:
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: e66b108cc851a9d4097f51ddc5db72f1, type: 2}
   LineRenderMaterialForDebug: {fileID: 0}
-  LineWidth: 1
-  LineCenterOffset: 0
   HideVisibleEdge: 0
   HideBackFaceEdge: 1
   HideOccludedEdge: 1
   LinkUnvisibleAndVisibleEdge: 0
   UnlinkedEdgeAngleThreshold: 90
-  SilhouetteEnable: 1
+  ContourEnable: 1
   OutineOnly: 1
   CreaseEnable: 1
   CreaseAngleDegreeThreshold: 45
@@ -1017,14 +991,14 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 723381315}
-  m_LocalRotation: {x: 0.09934038, y: -0.120512836, z: 0.020330435, w: 0.98751956}
-  m_LocalPosition: {x: -0.94, y: 6.72, z: -23.76}
+  m_LocalRotation: {x: 0.2662164, y: 0.14131773, z: -0.032044597, w: 0.95295924}
+  m_LocalPosition: {x: -5.04358, y: 2.008724, z: -4.635514}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
   m_RootOrder: 0
-  m_LocalEulerAnglesHint: {x: 11.601, y: -13.819, z: 0.948}
+  m_LocalEulerAnglesHint: {x: 31.094, y: 17.134, z: 0.948}
 --- !u!114 &723381320
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1037,7 +1011,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be76e5f14cfee674cb30b491fb72b09b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  boost: 3.5
+  boost: 1.55
   positionLerpTime: 0.2
   mouseSensitivityCurve:
     serializedVersion: 2
@@ -1084,7 +1058,7 @@ MonoBehaviour:
     m_Bits: 4294967295
   stopNaNPropagation: 1
   finalBlitToCameraTarget: 0
-  antialiasingMode: 3
+  antialiasingMode: 0
   temporalAntialiasing:
     jitterSpread: 0.75
     sharpness: 0.25
@@ -1144,8 +1118,9 @@ MonoBehaviour:
   SlicePassShader: {fileID: 7200000, guid: f3ebbb45789caa344b208929d4c23059, type: 3}
   VisiblePassShader: {fileID: 7200000, guid: 2fbc58ccd536cc64287e0069b75f7de1, type: 3}
   GeneratePassShader: {fileID: 7200000, guid: 0ce63d1a4e14d944497386fdc01334d8, type: 3}
+  ChainningPassShader: {fileID: 7200000, guid: f3562be55319bb741b08adc1d5d18962, type: 3}
+  TestPassShader: {fileID: 7200000, guid: 78abcf0e8c764ae48834bb64b1d1ff51, type: 3}
   MeshInfoListForOnlyDisplay: []
-  ShowDebugStatistics: 0
   RenderAsDebugCamera: 0
   MainViewCameraInDebugView: {fileID: 0}
 --- !u!114 &723381323
@@ -1253,7 +1228,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_RootOrder: 10
+  m_RootOrder: 11
   m_LocalEulerAnglesHint: {x: 50, y: -30, z: 0}
 --- !u!1001 &798713059
 PrefabInstance:
@@ -1264,7 +1239,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: eda86403a45261b41b5eb6c0c0cdbad6, type: 3}
       propertyPath: m_RootOrder
-      value: 7
+      value: 8
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: eda86403a45261b41b5eb6c0c0cdbad6, type: 3}
       propertyPath: m_LocalScale.x
@@ -1393,7 +1368,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: f54c79e26b1ebb24b9758a10609c1121, type: 3}
       propertyPath: m_RootOrder
-      value: 8
+      value: 9
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: f54c79e26b1ebb24b9758a10609c1121, type: 3}
       propertyPath: m_LocalScale.x
@@ -1538,7 +1513,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: b7cd0f82d67026a458d782fa44abf5e4, type: 3}
       propertyPath: m_RootOrder
-      value: 3
+      value: 4
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: b7cd0f82d67026a458d782fa44abf5e4, type: 3}
       propertyPath: m_LocalScale.x
@@ -1703,14 +1678,12 @@ MonoBehaviour:
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 7db85e0202e1faa4bb660c14e690461f, type: 2}
   LineRenderMaterialForDebug: {fileID: 0}
-  LineWidth: 1
-  LineCenterOffset: 0
   HideVisibleEdge: 1
   HideBackFaceEdge: 1
   HideOccludedEdge: 1
   LinkUnvisibleAndVisibleEdge: 0
   UnlinkedEdgeAngleThreshold: 90
-  SilhouetteEnable: 1
+  ContourEnable: 1
   OutineOnly: 0
   CreaseEnable: 1
   CreaseAngleDegreeThreshold: 140
@@ -1737,14 +1710,12 @@ MonoBehaviour:
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 1444b3bab0a1db8428c12433c8f10792, type: 2}
   LineRenderMaterialForDebug: {fileID: 0}
-  LineWidth: 3.72
-  LineCenterOffset: 0
   HideVisibleEdge: 0
   HideBackFaceEdge: 0
   HideOccludedEdge: 0
   LinkUnvisibleAndVisibleEdge: 0
   UnlinkedEdgeAngleThreshold: 90
-  SilhouetteEnable: 1
+  ContourEnable: 1
   OutineOnly: 1
   CreaseEnable: 1
   CreaseAngleDegreeThreshold: 60
@@ -1776,7 +1747,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: 70ea82f66ec7b7c47975d7a64b92dd86, type: 3}
       propertyPath: m_RootOrder
-      value: 5
+      value: 6
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 70ea82f66ec7b7c47975d7a64b92dd86, type: 3}
       propertyPath: m_LocalScale.x
@@ -1865,14 +1836,12 @@ MonoBehaviour:
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: c25d2d292b924624293b5399ea113d39, type: 2}
   LineRenderMaterialForDebug: {fileID: 0}
-  LineWidth: 1
-  LineCenterOffset: 0
   HideVisibleEdge: 1
   HideBackFaceEdge: 1
   HideOccludedEdge: 1
   LinkUnvisibleAndVisibleEdge: 0
   UnlinkedEdgeAngleThreshold: 90
-  SilhouetteEnable: 1
+  ContourEnable: 1
   OutineOnly: 1
   CreaseEnable: 1
   CreaseAngleDegreeThreshold: 161
@@ -1902,7 +1871,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: d3225e1bf00327942bb9801169f9a8ec, type: 3}
       propertyPath: m_RootOrder
-      value: 9
+      value: 10
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: d3225e1bf00327942bb9801169f9a8ec, type: 3}
       propertyPath: m_LocalPosition.x
@@ -2009,7 +1978,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_RootOrder: 11
+  m_RootOrder: 12
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1633505976 stripped
 GameObject:
@@ -2032,16 +2001,14 @@ MonoBehaviour:
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 27029fe0085574a4593b3b97c75f92b4, type: 2}
   LineRenderMaterialForDebug: {fileID: 0}
-  LineWidth: 1
-  LineCenterOffset: 0
   HideVisibleEdge: 0
-  HideBackFaceEdge: 1
-  HideOccludedEdge: 0
+  HideBackFaceEdge: 0
+  HideOccludedEdge: 1
   LinkUnvisibleAndVisibleEdge: 0
   UnlinkedEdgeAngleThreshold: 89
-  SilhouetteEnable: 1
+  ContourEnable: 1
   OutineOnly: 1
-  CreaseEnable: 1
+  CreaseEnable: 0
   CreaseAngleDegreeThreshold: 91
   BorderEnable: 1
   MarkedEdgeEnable: 1
@@ -2063,7 +2030,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!20 &1836175426
 Camera:
   m_ObjectHideFlags: 0
@@ -2087,7 +2054,7 @@ Camera:
     y: 0.5
     width: 0.5
     height: 0.5
-  near clip plane: 0.3
+  near clip plane: 0.1
   far clip plane: 1000
   field of view: 30
   orthographic: 0
@@ -2120,7 +2087,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_RootOrder: 12
+  m_RootOrder: 1
   m_LocalEulerAnglesHint: {x: 23.952, y: 45.454, z: 4.355}
 --- !u!114 &1836175428
 MonoBehaviour:
@@ -2140,8 +2107,9 @@ MonoBehaviour:
   SlicePassShader: {fileID: 7200000, guid: f3ebbb45789caa344b208929d4c23059, type: 3}
   VisiblePassShader: {fileID: 7200000, guid: 2fbc58ccd536cc64287e0069b75f7de1, type: 3}
   GeneratePassShader: {fileID: 7200000, guid: 0ce63d1a4e14d944497386fdc01334d8, type: 3}
+  ChainningPassShader: {fileID: 7200000, guid: f3562be55319bb741b08adc1d5d18962, type: 3}
+  TestPassShader: {fileID: 0}
   MeshInfoListForOnlyDisplay: []
-  ShowDebugStatistics: 0
   RenderAsDebugCamera: 1
   MainViewCameraInDebugView: {fileID: 723381318}
 --- !u!114 &1836175429
@@ -2214,7 +2182,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: c85fac795e22b984096c291961adffa8, type: 3}
       propertyPath: m_RootOrder
-      value: 4
+      value: 5
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: c85fac795e22b984096c291961adffa8, type: 3}
       propertyPath: m_LocalScale.x
@@ -2311,16 +2279,14 @@ MonoBehaviour:
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: ed6b1d523d2b44c40aa14137e6c14f14, type: 2}
   LineRenderMaterialForDebug: {fileID: 0}
-  LineWidth: 1
-  LineCenterOffset: 0
   HideVisibleEdge: 0
   HideBackFaceEdge: 1
   HideOccludedEdge: 1
   LinkUnvisibleAndVisibleEdge: 0
   UnlinkedEdgeAngleThreshold: 90
-  SilhouetteEnable: 1
+  ContourEnable: 1
   OutineOnly: 0
-  CreaseEnable: 1
+  CreaseEnable: 0
   CreaseAngleDegreeThreshold: 45
   BorderEnable: 1
   MarkedEdgeEnable: 1
@@ -2345,14 +2311,12 @@ MonoBehaviour:
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 8b66644375b4d324a830437b1627bdf8, type: 2}
   LineRenderMaterialForDebug: {fileID: 0}
-  LineWidth: 1
-  LineCenterOffset: 0
   HideVisibleEdge: 1
   HideBackFaceEdge: 1
   HideOccludedEdge: 1
   LinkUnvisibleAndVisibleEdge: 0
   UnlinkedEdgeAngleThreshold: 90
-  SilhouetteEnable: 1
+  ContourEnable: 1
   OutineOnly: 0
   CreaseEnable: 1
   CreaseAngleDegreeThreshold: 165

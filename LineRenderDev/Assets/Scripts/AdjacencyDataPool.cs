@@ -12,6 +12,7 @@ using UnityEngine;
 public class PackedLineData
 {
     public uint VertexNum;
+    public uint RepeatedVertexNum;
     public uint VertexStructSize;
     public uint FaceNum;
     public uint FaceStructSize;
@@ -20,7 +21,7 @@ public class PackedLineData
     public uint MeshletNum;
     public uint MeshletStructSize;
 
-    public Byte[] VertexList;
+    public Byte[] RepeatedVertexList;
     public Byte[] FaceList;
     public Byte[] MeshletList;
 }
@@ -148,10 +149,11 @@ public class AdjacencyDataPool
     private void ImportVertexData(PackedLineData LineData, BinaryReader Reader, uint ByteSizeFloat, uint ByteSizeUInt)
     {
         LineData.VertexNum = Reader.ReadUInt32();
+        LineData.RepeatedVertexNum = Reader.ReadUInt32();
         LineData.VertexStructSize = Reader.ReadUInt32();
-        LineData.VertexList = Reader.ReadBytes((int)(LineData.VertexNum * LineData.VertexStructSize));
+        LineData.RepeatedVertexList = Reader.ReadBytes((int)(LineData.RepeatedVertexNum * LineData.VertexStructSize));
 
-        Debug.Log("Total Vertex Num & Per Struct Size: " + LineData.VertexNum + ", " + LineData.VertexStructSize);
+        Debug.Log("Total Vertex Num & Repeated Vertex Num & Per Struct Size: " + LineData.VertexNum  + "," + LineData.RepeatedVertexNum + ", " + LineData.VertexStructSize);
     }
 
     private void ImportFaceData(PackedLineData LineData, BinaryReader Reader, uint ByteSizeFloat, uint ByteSizeUInt)

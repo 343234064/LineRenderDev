@@ -3,12 +3,7 @@
 // 
 /////////////////////////
 
-#ifndef ENABLE_DEBUG_CLIPPING
-#define ENABLE_DEBUG_CLIPPING 0
-#endif
 
-uniform float4x4 WorldViewProjection;
-uniform float4x4 WorldViewProjectionForClipping;
 
 #define CLIPLEFT(p) -p.w
 #define CLIPRIGHT(p) p.w
@@ -136,35 +131,11 @@ float3 PreClipping(float4 ClipPosition1, float4 ClipPosition2)
     return Result;
 }
 
-inline float4 ClampPosition(float4 P)
-{
-    //return float4(min(CLIPRIGHT(P), max(CLIPLEFT(P), P.x)), min(CLIPTOP(P), max(CLIPBOTTOM(P), P.y)), min(CLIPFAR(P), max(CLIPNEAR(P), P.z)), P.w);
-    return P;
-}
 
 
-float4 CalculateClipSpacePosition(float3 LocalPosition)
-{
-    float4 Transformed = mul(WorldViewProjection, float4(LocalPosition, 1.0));
-    //Transformed.xyz = Transformed.xyz / Transformed.w;
 
-    return Transformed;
-}
-
-float4 CalculateClipSpacePositionForClipping(float3 LocalPosition)
-{
-    float4 Transformed = mul(WorldViewProjectionForClipping, float4(LocalPosition, 1.0));
-
-    return Transformed;
-}
-
-uint4 CheckVertexIndex(uint2 VertexIndex, float3 ClipState)
-{
-    return uint4(VertexIndex, ClipState.y <= 0.0000001f ? 0 : 1, ClipState.z >= 0.9999999f ? 0 : 1);
-}
-
-
-void ToSegmentLine(float3 V0, float3 V1, inout Segment OutSegment)
+/*
+float3 ToSegmentLine(float3 V0, float3 V1, inout Segment OutSegment)
 {
     float4 Pos0BeforeClip = CalculateClipSpacePosition(V0);
     float4 Pos1BeforeClip = CalculateClipSpacePosition(V1);
@@ -176,10 +147,16 @@ void ToSegmentLine(float3 V0, float3 V1, inout Segment OutSegment)
     ClipPos1BeforeClip = CalculateClipSpacePositionForClipping(V1);
 #endif
 
-    float3 ClipState = PreClipping(ClipPos0BeforeClip, ClipPos1BeforeClip);
-    float4 ClipPos0 = ClampPosition(float4(Pos0BeforeClip + ClipState.y * (Pos1BeforeClip - Pos0BeforeClip)));
-    float4 ClipPos1 = ClampPosition(float4(Pos0BeforeClip + ClipState.z * (Pos1BeforeClip - Pos0BeforeClip)));
-
+    float3 ClipState = float3(1.0f, 0.0f, 1.0f);
+#if ENABLE_CLIPPING
+    ClipState = PreClipping(ClipPos0BeforeClip, ClipPos1BeforeClip);
+    if (ClipState.x >= 0.0f) {
+        float4 ClipPos0 = Pos0BeforeClip;// ClampPosition(float4(Pos0BeforeClip + ClipState.y * (Pos1BeforeClip - Pos0BeforeClip)));
+        float4 ClipPos1 = Pos1BeforeClip;// ClampPosition(float4(Pos0BeforeClip + ClipState.z * (Pos1BeforeClip - Pos0BeforeClip)));
+#else
+    float4 ClipPos0 = Pos0BeforeClip;
+    float4 ClipPos1 = Pos1BeforeClip;
+#endif
     float4 NDCPos0 = CalculateNDCPosition(ClipPos0);
     float4 NDCPos1 = CalculateNDCPosition(ClipPos1);
     NDCPos0 = UnifyNDCPosition(NDCPos0);
@@ -187,5 +164,11 @@ void ToSegmentLine(float3 V0, float3 V1, inout Segment OutSegment)
 
     OutSegment.NDCPosition[0] = NDCPos0;
     OutSegment.NDCPosition[1] = NDCPos1;
+#if ENABLE_CLIPPING
+    }
+#endif
 
-}
+return  ClipState;
+
+
+}*/

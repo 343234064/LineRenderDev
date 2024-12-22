@@ -17,24 +17,24 @@
 #define NEGATIVE_CLIP_Z_VALUE 1
 #endif
 
-
+/*
+* Dispatch arguments
+* 
+*/
 #define EXTRACT_PASS_PER_THREAD_ELEMENT_NUM 256
-
+//
 #define CONTOURIZE_PASS_PER_THREAD_ELEMENT_NUM 256
-
-
 // Must be power of 2
 // Slice pass max handle num : BUCKET_ELEMENT_NUM * BUCKET_ELEMENT_NUM
 #define SLICE_PASS_PER_THREAD_ELEMENT_NUM 1024
-
-// 
 #define SLICE_PIXEL_SIZE 64
+//
 #define VISIBILITY_PASS_PER_THREAD_ELEMENT_NUM 64
 #define VISIBILITY_CACHE_NUM 2 // 64/32
-
-
+//
 #define GENERATE_PASS_PER_THREAD_ELEMENT_NUM 256
-
+//
+#define CHAINNING_PASS_PER_THREAD_ELEMENT_NUM 256
 
 
 /*
@@ -42,12 +42,23 @@
 * 
 */
 #define INDIRECT_DRAW_START 0
-#define INDIRECT_DRAW_VERTEX_COUNT INDIRECT_DRAW_START
-#define INDIRECT_DRAW_TRIANGLE_COUNT INDIRECT_DRAW_START+1
+#define INDIRECT_DRAW_VERTEX_COUNT  INDIRECT_DRAW_START
+#define INDIRECT_DRAW_TRIANGLE_COUNT  INDIRECT_DRAW_START+1
 #define CONTOURIZE_PASS_START 4
-#define CONTOURIZE_PASS_DISPATCH_COUNT CONTOURIZE_PASS_START
-#define CONTOURIZE_PASS_FACE_COUNT CONTOURIZE_PASS_START+3
-
+#define CONTOURIZE_PASS_DISPATCH_COUNT  CONTOURIZE_PASS_START
+#define CONTOURIZE_PASS_CONTOUR_COUNT  CONTOURIZE_PASS_START+3
+#define SLICE_PASS_START 8
+#define SLICE_PASS_DISPATCH_COUNT  SLICE_PASS_START
+#define SLICE_PASS_CONTOUR_COUNT  SLICE_PASS_START+3
+#define VISIBILITY_PASS_START 12
+#define VISIBILITY_PASS_DISPATCH_COUNT  VISIBILITY_PASS_START
+#define VISIBILITY_PASS_SLICE_COUNT  VISIBILITY_PASS_START
+#define GENERATE_PASS_START 16
+#define GENERATE_PASS_DISPATCH_COUNT  GENERATE_PASS_START
+#define GENERATE_PASS_SEGMENT_COUNT  GENERATE_PASS_START+3
+#define CHAINNING_PASS_START 20
+#define CHAINNING_PASS_DISPATCH_COUNT  CHAINNING_PASS_START
+#define CHAINNING_PASS_LINEHEAD_COUNT  CHAINNING_PASS_START+3
 
 #include "Structures.cginc"
 
@@ -117,12 +128,13 @@ inline float GetUnifyNDCZ(float NDCZ)
     return Z;
 }
 
-inline bool ZTest(float PositionDepth, float SceneDepth)
+inline bool ZTest(float PositionDepth, float DepthScale, float SceneDepth)
 {
+    const float DepthOffset = 0.0005f * DepthScale;
 #if REVERSED_Z
-    return (PositionDepth > SceneDepth) ? true : false;
+    return ((PositionDepth + DepthOffset) > SceneDepth) ? true : false;
 #else
-    return (PositionDepth < SceneDepth) ? true : false;
+    return ((PositionDepth - DepthOffset) < SceneDepth) ? true : false;
 #endif
 }
 
@@ -181,32 +193,82 @@ float3 GetFaceNormal(EXPORTFace InData)
 
 }
 
-Face DecodeFaceData(EXPORTMeshlet InMeshlet, EXPORTFace InData)
+Face DecodeFaceData(EXPORTFace InData)
 {
     Face Result = (Face)0;
 
-    Result.v0 = InMeshlet.VertexOffset + (InData.v012 & 0x3ff);
-    Result.v1 = InMeshlet.VertexOffset + ((InData.v012 >> 10) & 0x3ff);
-    Result.v2 = InMeshlet.VertexOffset + ((InData.v012 >> 20) & 0x3ff);
+    Result.v0Offset = (InData.v012 & 0x3ff);
+    Result.v1Offset = ((InData.v012 >> 10) & 0x3ff);
+    Result.v2Offset = ((InData.v012 >> 20) & 0x3ff);
 
-    uint adjFace01 = InData.edge01 & 0x3fffffff;
+    uint adjFace01 = InData.edge01 & 0x0fffffff;
     Result.adjFace01 = (int)adjFace01 - 1;
     Result.e01h = ((InData.edge01 >> 30) & 0x1) == 1 ? true : false;
     Result.e01u = ((InData.edge01 >> 31) & 0x1) == 1 ? true : false;
 
-    uint adjFace12 = InData.edge12 & 0x3fffffff;
+    uint adjFace12 = InData.edge12 & 0x0fffffff;
     Result.adjFace12 = (int)adjFace12 - 1;
     Result.e12h = ((InData.edge12 >> 30) & 0x1) == 1 ? true : false;
     Result.e12u = ((InData.edge12 >> 31) & 0x1) == 1 ? true : false;
 
-    uint adjFace20 = InData.edge20 & 0x3fffffff;
+    uint adjFace20 = InData.edge20 & 0x0fffffff;
     Result.adjFace20 = (int)adjFace20 - 1;
     Result.e20h = ((InData.edge20 >> 30) & 0x1) == 1 ? true : false;
     Result.e20u = ((InData.edge20 >> 31) & 0x1) == 1 ? true : false;
 
-   UnpackUint3ToNormals(InData.PackNormalData0, Result.Normal, Result.V0Normal);
+    Result.edge01 = InData.UniqueIndex01;
+    Result.edge12 = InData.UniqueIndex12;
+    Result.edge20 = InData.UniqueIndex20;
+
+    UnpackUint3ToNormals(InData.PackNormalData0, Result.Normal, Result.V0Normal);
     UnpackUint3ToNormals(InData.PackNormalData1, Result.V1Normal, Result.V2Normal);
 
+    Result.MeshletData = InData.MeshletData;
 
     return Result;
+}
+
+
+float3 ComputeNormal(float3 p1, float3 p2, float3 p3)
+{
+    float3 U = p2 - p1;
+    float3 V = p3 - p1;
+
+    float3 Normal = float3(0.0f, 0.0f, 0.0f);
+    /*
+    Normal.x = U.y * V.z - U.z * V.y;
+    Normal.y = U.z * V.x - U.x * V.z;
+    Normal.z = U.x * V.y - U.y * V.x;
+    */
+    Normal = cross(U, V);
+    // No need to normalize
+    Normal = normalize(Normal);
+
+    return Normal;
+}
+
+
+
+uint2 CalculatePixelLength(float2 UnifyNDCPosition1, float2 UnifyNDCPosition2, float2 ScreenResolution)
+{
+    float ScreenWidth = ScreenResolution.x;
+    float ScreenHeight = ScreenResolution.y;
+
+    float2 PixelPos1 = float2(UnifyNDCPosition1.x * ScreenWidth, UnifyNDCPosition1.y * ScreenHeight);
+    float2 PixelPos2 = float2(UnifyNDCPosition2.x * ScreenWidth, UnifyNDCPosition2.y * ScreenHeight);
+
+    float PixelLength = ceil(length(PixelPos2 - PixelPos1));
+    float ShrinkPixelLength = PixelLength > 2.0 ? (1.0 + floor(PixelLength * 0.5)) : PixelLength;
+
+    return uint2((uint)PixelLength, (uint)(ShrinkPixelLength));
+}
+
+
+
+float4 GetNormalOfLine(float2 a, float2 b)
+{
+    float dx = b.x - a.x;
+    float dy = b.y - a.y;
+
+    return float4(normalize(float2(-dy, dx)), normalize(float2(dy, -dx)));
 }

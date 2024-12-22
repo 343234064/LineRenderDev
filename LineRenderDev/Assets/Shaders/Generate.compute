@@ -1,0 +1,336 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel Generate
+
+#pragma multi_compile __ ENABLE_DEBUG_VIEW
+#include "Common.cginc"
+
+/*
+#define VISIBLE_LINE_SIZE VisibleLineArgBuffer[0]
+StructuredBuffer<uint> VisibleLineArgBuffer;
+StructuredBuffer<PlainLine> VisibleLines;
+StructuredBuffer<LineSegment> Segments;
+
+RWStructuredBuffer<RunTimeVertexState> RunTimeVertexBuffer;
+RWStructuredBuffer<uint> LineMeshArgBuffer;
+RWStructuredBuffer<LineMesh> LineMeshBuffer;
+
+uniform float LineExtractWidth;
+uniform float LineCenterOffset;
+uniform float3 ObjectScale;
+uniform float4  ScreenScaledResolution;
+
+
+struct LineAttributes
+{
+    float Curvature[2];
+    uint MeshletId;
+};
+
+
+float GetCurvature(float2 a, float2 b)
+{
+    return dot(a, b) * 0.5f + 0.5f;
+}
+
+
+
+*/
+
+
+StructuredBuffer<uint> RArgBuffer;
+StructuredBuffer<Slice> SliceBuffer;
+StructuredBuffer<Segment> AllSegmentBuffer;
+StructuredBuffer<AnchorVertex> AnchorVertexBuffer;
+StructuredBuffer<AnchorEdge> AnchorEdgeBuffer;
+StructuredBuffer<AnchorSlice> AnchorSliceBuffer;
+RWStructuredBuffer<uint> WArgBuffer;
+RWStructuredBuffer<LineMesh> LineMeshBuffer;
+RWStructuredBuffer<LineHead> LineHeadBuffer;
+
+#define SEGMENT_SIZE RArgBuffer[INDIRECT_DRAW_TRIANGLE_COUNT]*0.5 // !! TRIANGLE_COUNT = 2 * SEGMENT_COUNT
+#define SLICE_SIZE WArgBuffer[VISIBILITY_PASS_SLICE_COUNT]
+
+
+uint AddLineMeshBuffer(uint Index, LineMesh CurrentSegment)
+{
+//    uint Original = 0;
+//    
+//#if ENABLE_DEBUG_VIEW
+//    InterlockedAdd(WArgBuffer[INDIRECT_DRAW_TRIANGLE_COUNT], 1, Original);
+//#else
+//    InterlockedAdd(WArgBuffer[INDIRECT_DRAW_TRIANGLE_COUNT], 2, Original);
+//    Original *= 0.5;
+//#endif
+
+    LineMeshBuffer[Index] = CurrentSegment;
+    //return Original;
+    return Index;
+}
+
+uint AddLineHeadBuffer(uint LineMeshId, uint StartPoint)
+{
+
+    LineHead NewHead = (LineHead)0;
+    NewHead.Data = SET_LINEHEAD_INDEX(0, LineMeshId);
+    NewHead.Data = SET_LINEHEAD_DIRECTION(NewHead.Data, StartPoint);
+
+    uint Original = 0;
+    InterlockedAdd(WArgBuffer[CHAINNING_PASS_LINEHEAD_COUNT], 1, Original);
+
+    uint Original2 = 0;
+    bool AddThreadCount = ((Original + 1) % CHAINNING_PASS_PER_THREAD_ELEMENT_NUM == 0);
+    InterlockedAdd(WArgBuffer[CHAINNING_PASS_DISPATCH_COUNT], AddThreadCount ? 1 : 0, Original2);
+
+    LineHeadBuffer[Original] = NewHead;
+
+    return Original;
+
+}
+
+
+
+
+uint3 ReadAnchorCache(uint AnchorType, uint AnchorIndex, uint LineType)
+{
+    uint3 Result = uint3(0xffffffff, 0xffffffff, 0xffffffff);
+    if (AnchorType == 1) {
+        if (LineType == CONTOUR_FACE_TYPE) {
+            Result = AnchorEdgeBuffer[AnchorIndex].ContourType;
+        }
+        else if (LineType == CONTOUR_EDGE_TYPE) {
+            Result = AnchorVertexBuffer[AnchorIndex].ContourType;
+        }
+        else if (LineType == CREASE_EDGE_TYPE) {
+            Result = AnchorVertexBuffer[AnchorIndex].CreaseType;
+        }
+    }
+    else if (AnchorType == 2) {
+        Result.x = 2;
+        Result.yz = AnchorSliceBuffer[AnchorIndex].AllType;
+    }
+    return Result;
+}
+
+
+
+uint GetLinkId(uint CurrentIndex, uint3 LinkData)
+{
+    uint V = 0xffffffff;
+    if (LinkData.x == 2)
+    {
+        uint VyIndex = GET_LINEHEAD_INDEX(LinkData.y);
+        uint VzIndex = GET_LINEHEAD_INDEX(LinkData.z);
+        if ((VyIndex == CurrentIndex) && (VzIndex != CurrentIndex))
+            V = LinkData.z;
+        else if ((VyIndex != CurrentIndex) && (VzIndex == CurrentIndex))
+            V = LinkData.y;
+        else
+            V = 0x00ffffff;
+    }
+    //uint V1 = (LinkV1.x == 2) ? (((LinkV1.y & 0x7fffffff == CurrentIndex) ? LinkV1.z : ((LinkV1.z & 0x7fffffff == CurrentIndex) ? LinkV1.y : (0xffffffff))) : 0xffffffff);
+
+    return V;
+}
+
+
+uint ExtractTriangleMesh(uint SegmentId, uint V0LinkId, uint V1LinkId, Segment CurrentSegment, uint2 test)
+{
+    /*
+    float ExtractWidth = LineExtractWidth;
+    float InnerSideWidth = ExtractWidth * (LineCenterOffset + 0.5f);
+    float OuterSideWidth = ExtractWidth * (0.5f - LineCenterOffset);
+
+    float ScreenScaledFactor = ScreenScaledResolution.x * ScreenScaledResolution.w;
+    float4 CurrentNormal = GetNormalOfLine(Current.NDCPosition[0].xy, Current.NDCPosition[1].xy);
+    CurrentNormal.y *= ScreenScaledFactor;
+    CurrentNormal.w *= ScreenScaledFactor;
+    
+    
+    float4 CurrentNormal = GetNormalOfLine(CurrentSegment.NDCPosition[0].xy, CurrentSegment.NDCPosition[1].xy);
+    float InnerSideWidth = 0.01;
+    float OuterSideWidth = 0.01;
+
+    float2 ExtractedV0_1 = CurrentSegment.NDCPosition[0].xy + CurrentNormal.xy * InnerSideWidth;
+    float2 ExtractedV0_2 = CurrentSegment.NDCPosition[0].xy + CurrentNormal.zw * OuterSideWidth;
+    float2 ExtractedV1_1 = CurrentSegment.NDCPosition[1].xy + CurrentNormal.xy * InnerSideWidth;
+    float2 ExtractedV1_2 = CurrentSegment.NDCPosition[1].xy + CurrentNormal.zw * OuterSideWidth;
+
+    NewMesh.UV[0] = float2(0.0f, 0.0f);
+    NewMesh.UV[1] = float2(0.0f, 0.0f);
+    NewMesh.UV[2] = float2(0.0f, 0.0f);
+    NewMesh.UV[3] = float2(0.0f, 0.0f);
+    NewMesh.Curvature[0] = Interpolate(Attributes.Curvature[0], Attributes.Curvature[1], Current.PixelPosition[0]);
+    NewMesh.Curvature[1] = Interpolate(Attributes.Curvature[0], Attributes.Curvature[1], Current.PixelPosition[1]);
+    NewMesh.Id = Attributes.MeshletId;
+    */
+
+    LineMesh NewMesh = (LineMesh)0;
+
+    NewMesh.NDCPosition[0] = CurrentSegment.NDCPosition[0].xy;
+    NewMesh.NDCPosition[1] = CurrentSegment.NDCPosition[1].xy;
+
+    NewMesh.Type = CurrentSegment.Type;
+
+    NewMesh.LinkId[0] = V0LinkId;
+    NewMesh.LinkId[1] = V1LinkId;
+
+    NewMesh.Anchor = CurrentSegment.Anchor;
+
+    NewMesh.MeshletData = CurrentSegment.MeshletData;
+
+    NewMesh.PixelPosition = CurrentSegment.PixelPosition;
+
+    NewMesh.GroupId[0] = test.x;// Interpolate(test.x, test.y, CurrentSegment.PixelPosition[0]);
+    NewMesh.GroupId[1] = test.y;// Interpolate(test.x, test.y, CurrentSegment.PixelPosition[1]);
+
+#if ENABLE_DEBUG_VIEW
+    NewMesh.NDCPositionForDebug[0] = CurrentSegment.NDCPositionForDebug[0];
+    NewMesh.NDCPositionForDebug[1] = CurrentSegment.NDCPositionForDebug[1];
+    NewMesh.SliceId = CurrentSegment.SliceId;
+#endif
+
+    return AddLineMeshBuffer(SegmentId, NewMesh);
+
+}
+
+
+
+
+[numthreads(GENERATE_PASS_PER_THREAD_ELEMENT_NUM,1,1)]
+void Generate(uint3 id : SV_DispatchThreadID)
+{
+#if ENABLE_DEBUG_VIEW
+    if (id.x >= SEGMENT_SIZE*2) return;
+#else
+    if (id.x >= SEGMENT_SIZE) return;
+#endif
+
+    uint SegmentId = id.x;
+    Segment CurrentSegment = AllSegmentBuffer[SegmentId];
+
+    uint2 test = uint2(0, 0);
+    uint LinkId[2] = { 0xffffffff, 0xffffffff };
+    uint3 LinkCacheV0 = uint3(0xffffffff, 0xffffffff, 0xffffffff);
+    uint3 LinkCacheV1 = uint3(0xffffffff, 0xffffffff, 0xffffffff);
+
+    uint Type = GET_LINE_TYPE(CurrentSegment.Type);
+    uint V0AnchorIndex = GET_ANCHOR_INDEX(CurrentSegment.Anchor[0]);
+    uint V1AnchorIndex = GET_ANCHOR_INDEX(CurrentSegment.Anchor[1]);
+    uint V0AnchorType = GET_ANCHOR_TYPE(CurrentSegment.Anchor[0]);
+    uint V1AnchorType = GET_ANCHOR_TYPE(CurrentSegment.Anchor[1]);
+
+    V0AnchorIndex = (V0AnchorType == 2) ? CurrentSegment.SliceId : V0AnchorIndex;
+    V1AnchorIndex = (V1AnchorType == 2) ? (CurrentSegment.SliceId+1) : V1AnchorIndex;
+
+    if (V0AnchorType != 0)
+    {
+        LinkCacheV0 = ReadAnchorCache(V0AnchorType, V0AnchorIndex, Type);
+        LinkId[0] = GetLinkId(SegmentId, LinkCacheV0);
+    }
+    if (V1AnchorType != 0)
+    {
+        LinkCacheV1 = ReadAnchorCache(V1AnchorType, V1AnchorIndex, Type);
+        LinkId[1] = GetLinkId(SegmentId, LinkCacheV1);
+    }
+    
+    
+    bool V0IsMeshletBorderLayer1 = false;
+    if (LinkId[0] != 0xffffffff)
+    {
+        uint AdjSegmentId = GET_ADJACENT_INDEX(LinkId[0]);
+        Segment AdjSegment = AllSegmentBuffer[AdjSegmentId];
+        V0IsMeshletBorderLayer1 = (CurrentSegment.MeshletData[0] != AdjSegment.MeshletData[0]);
+        if (AdjSegment.Type != CurrentSegment.Type) LinkId[0] == 0xffffffff;
+    }
+
+    bool V1IsMeshletBorderLayer1 = false;
+    if (LinkId[1] != 0xffffffff)
+    {
+        uint AdjSegmentId = GET_ADJACENT_INDEX(LinkId[1]);
+        Segment AdjSegment = AllSegmentBuffer[AdjSegmentId];
+        V1IsMeshletBorderLayer1 = (CurrentSegment.MeshletData[0] != AdjSegment.MeshletData[0]);
+        if (AdjSegment.Type != CurrentSegment.Type) LinkId[1] == 0xffffffff;
+    }
+
+
+    if (LinkId[0] == 0xffffffff)// || V0IsMeshletBorderLayer1)
+    {
+        AddLineHeadBuffer(SegmentId, 0);
+        
+    }
+    if (LinkId[1] == 0xffffffff)// || V1IsMeshletBorderLayer1)
+    {
+        AddLineHeadBuffer(SegmentId, 1);
+       
+    }
+    test.y = 1;
+
+    ExtractTriangleMesh(SegmentId, LinkId[0], LinkId[1], CurrentSegment, test);
+}
+
+/*
+
+
+    bool Valid = false;
+    uint SliceId = GET_SLICE_ID(CurrentSegment.SliceId);
+    bool SegmentIsSliceHead = GET_IS_SLICE_HEAD(CurrentSegment.SliceId);
+    bool SegmentIsSliceTail = GET_IS_SLICE_TAIL(CurrentSegment.SliceId);
+
+    if (SegmentIsSliceTail || SegmentIsSliceHead)
+    {
+        bool NeedExtend = SegmentIsSliceTail;
+        if (SegmentIsSliceHead && SliceId - 1 >= 0)
+        {
+            Slice PrevSlice = SliceBuffer[SliceId - 1];
+            SliceMetaData PrevSliceLastSegment = PrevSlice.HeadTailSegment[1];
+            if (CurrentSegment.Type == PrevSliceLastSegment.Type && CurrentSegment.SegmentMetaDataId == PrevSliceLastSegment.SegmentMetaDataId) {
+                Valid = false; NeedExtend = false;
+            }
+            else
+                Valid = true;
+        }
+
+        if (NeedExtend)
+        {
+            float2 TailPosition = float2(-5.0f, -5.0f);
+            float TailPixelPosition = -5.0f;
+            uint TailAnchor = 0xffffffff;
+#if ENABLE_DEBUG_VIEW
+            float4 TailDebugPosition = float4(-5.0f, 0.0f, 0.0f, 0.0f);
+#endif
+
+            uint SliceSize = SLICE_SIZE;
+            SliceId += 1;
+            while (SliceId < SliceSize) {
+                Slice NextSlice = SliceBuffer[SliceId];
+
+                SliceMetaData NextSliceFirstSegment = NextSlice.HeadTailSegment[0];
+                if (CurrentSegment.Type == NextSliceFirstSegment.Type && CurrentSegment.SegmentMetaDataId == NextSliceFirstSegment.SegmentMetaDataId) {
+                    TailPosition = NextSliceFirstSegment.NDCPosition;
+                    TailPixelPosition = NextSliceFirstSegment.PixelPosition;
+                    TailAnchor = NextSliceFirstSegment.Anchor;
+#if ENABLE_DEBUG_VIEW
+                    TailDebugPosition = NextSliceFirstSegment.DebugPosition;
+#endif
+                    TailSegmentId = NextSliceFirstSegment.SegmentId;
+                }
+                if (!GET_IS_SLICE_TAIL(NextSliceFirstSegment.SliceId))
+                    break;
+                SliceId++;
+            }
+            if (TailPosition.x != -5.0f) {
+                CurrentSegment.NDCPosition[1].xy = TailPosition;
+                CurrentSegment.PixelPosition[1] = TailPixelPosition;
+                CurrentSegment.Anchor[1] = TailAnchor;
+#if ENABLE_DEBUG_VIEW
+                CurrentSegment.NDCPositionForDebug[1] = TailDebugPosition;
+#endif
+            }
+            Valid = true;
+        }
+    }
+    else
+        Valid = true;
+
+
+*/

@@ -4,7 +4,7 @@
 #pragma kernel SumTotal
 #pragma kernel SumTotalAndSlice
 
-
+#pragma multi_compile __ ENABLE_DEBUG_VIEW
 #include "Common.cginc"
 
 
@@ -29,16 +29,17 @@ RWStructuredBuffer<uint> OutputArray;
 
 #define ELEMENT_TYPE uint
 
-StructuredBuffer<uint> SegmentArgBuffer;
-RWStructuredBuffer<VisibleLineSegment> InputArray;
+StructuredBuffer<uint> RArgBuffer;
+RWStructuredBuffer<uint> WArgBuffer;
+RWStructuredBuffer<SegmentMetaData> InputArray;
+RWStructuredBuffer<Slice> SliceBuffer;
+RWStructuredBuffer<AnchorSlice> AnchorSliceBuffer;
+
 #define GET_INPUT_ELEMENT_PASS1(idx) InputArray[idx].PixelLengthShrink
 #define GET_INPUT_ELEMENT_PASS2(idx) InputArray[idx].PixelLengthShrinkTotal  
 #define GET_OUTPUT_ELEMENT(idx) InputArray[idx].PixelLengthShrinkTotal  
-#define INPUT_SIZE SegmentArgBuffer[0]
-#define OUTPUT_SIZE SegmentArgBuffer[0]
-
-RWStructuredBuffer<uint> SliceArgBuffer; 
-RWStructuredBuffer<Slice> Slices;
+#define INPUT_SIZE RArgBuffer[SLICE_PASS_CONTOUR_COUNT]
+#define OUTPUT_SIZE RArgBuffer[SLICE_PASS_CONTOUR_COUNT]
 
 #endif
 
@@ -48,14 +49,36 @@ RWStructuredBuffer<ELEMENT_TYPE> BucketArray;
 groupshared ELEMENT_TYPE##2 Bucket[SLICE_PASS_PER_THREAD_ELEMENT_NUM];
 
 
+
+void ResetAnchorSliceBuffer(uint Index)
+{
+	AnchorSlice NewAnchor;
+	NewAnchor.AllType = uint2(0xffffffff, 0xffffffff);
+
+	AnchorSliceBuffer[Index] = NewAnchor;
+}
+
 inline void AppendToBuffer(uint Id, in Slice ToAdd)
 {
-	Slices[Id].Id = Id;
-	Slices[Id].BeginSegmentIndex = ToAdd.BeginSegmentIndex;
-	Slices[Id].BeginPixel = ToAdd.BeginPixel;
+	ResetAnchorSliceBuffer(Id);
+	ResetAnchorSliceBuffer(Id + 1);;
+
+	ToAdd.Id = Id;
+	//ToAdd.HeadTailSegment[0] = (SliceMetaData)0;
+	//ToAdd.HeadTailSegment[1] = (SliceMetaData)0;
+	//ToAdd.HeadTailSegment[0].SegmentMetaDataId = 0xffffffff;
+	//ToAdd.HeadTailSegment[1].SegmentMetaDataId = 0xffffffff;
+
+	SliceBuffer[Id] = ToAdd;
 
 	int Original = 0;
-	InterlockedAdd(SliceArgBuffer[0], 1, Original);
+	InterlockedAdd(WArgBuffer[VISIBILITY_PASS_SLICE_COUNT], 1, Original);
+}
+
+void AddSegmentCount()
+{
+	int Original = 0;
+	InterlockedAdd(WArgBuffer[SLICE_PASS_CONTOUR_COUNT], 1, Original);
 }
 
 
@@ -138,11 +161,11 @@ ELEMENT_TYPE SumElements(uint GroupIndex, ELEMENT_TYPE Element)
 void SumSingleBucketInclusive(uint3 id : SV_DispatchThreadID, uint gi : SV_GroupIndex)
 {
 	ELEMENT_TYPE Element = 0;
-	if (id.x < (uint)INPUT_SIZE)
+	if (id.x < INPUT_SIZE)
 		Element = GET_INPUT_ELEMENT_PASS1(id.x);
 	ELEMENT_TYPE Result = SumElements(gi, Element);
 
-	GET_OUTPUT_ELEMENT(id.x) = (id.x < (uint)OUTPUT_SIZE) ? Result : 0;
+	GET_OUTPUT_ELEMENT(id.x) = (id.x < OUTPUT_SIZE) ? Result : 0;
 }
 
 
@@ -182,8 +205,9 @@ void SumTotalAndSlice(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID)
 		ELEMENT_TYPE CurrentSum = GET_OUTPUT_ELEMENT(id.x) + BucketArray[gid.x];
 		ELEMENT_TYPE CurrentSumPrev = CurrentSum - Current;
 		GET_OUTPUT_ELEMENT(id.x) = CurrentSum;
+		AddSegmentCount();
 
-		Slice Output;
+		Slice Output = (Slice)0;
 		uint BeginSegmentIndex = id.x;
 
 		ELEMENT_TYPE Delta = CurrentSum % SLICE_PIXEL_SIZE;
@@ -194,7 +218,7 @@ void SumTotalAndSlice(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID)
 
 		if (id.x == 0)
 		{
-			Slice FirstSlice;
+			Slice FirstSlice = (Slice)0;
 			FirstSlice.BeginSegmentIndex = 0;
 			FirstSlice.BeginPixel = 1;
 			AppendToBuffer(0, FirstSlice);

@@ -1,18 +1,62 @@
 
 #pragma kernel Contourize
 
+#pragma multi_compile __ ENABLE_DEBUG_VIEW
 #include "Common.cginc"
 
 
-StructuredBuffer<ContourFace> ContourFaceBuffer;
+
+
+
+StructuredBuffer<Contour> ContourBuffer;
 StructuredBuffer<EXPORTVertex> VertexBuffer;
+StructuredBuffer<uint> RArgBuffer;
+
 RWStructuredBuffer<uint> WArgBuffer;
-RWStructuredBuffer<Segment> SegmentBuffer;
+RWStructuredBuffer<Segment> AllSegmentBuffer;
+RWStructuredBuffer<SegmentMetaData> VisibleSegmentBuffer; 
+RWStructuredBuffer<AnchorVertex> AnchorVertexBuffer;
+RWStructuredBuffer<AnchorEdge> AnchorEdgeBuffer;
 
 uniform float3 LocalSpaceViewPosition;
+uniform float4  ScreenScaledResolution;
 
-#pragma multi_compile_local __ ENABLE_DEBUG_CLIPPING
+uniform float4x4 WorldViewProjection;
+uniform float4x4 WorldViewProjectionForClipping;
+
+
 #include "Clipping.cginc"
+
+#define CONTOUR_SIZE RArgBuffer[CONTOURIZE_PASS_CONTOUR_COUNT]
+
+
+
+float4 CalculateClipSpacePosition(float3 LocalPosition)
+{
+    float4 Transformed = mul(WorldViewProjection, float4(LocalPosition, 1.0));
+    //Transformed.xyz = Transformed.xyz / Transformed.w;
+
+    return Transformed;
+}
+
+float4 ToClipSpace(float3 LocalPosition)
+{
+    float4 Pos = CalculateClipSpacePosition(LocalPosition);
+    return Pos;
+}
+
+float4 ToNDCSpace(float4 ClipSpacePosition)
+{
+    float4 NDCPos = CalculateNDCPosition(ClipSpacePosition);
+    return  UnifyNDCPosition(NDCPos);
+}
+
+float4 WorldToNDCSpace(float3 LocalPosition)
+{
+    float4 Pos = CalculateClipSpacePosition(LocalPosition);
+    float4 NDCPos = CalculateNDCPosition(Pos);
+    return  UnifyNDCPosition(NDCPos);
+}
 
 
 #define RANGE01(a) (a >= 0.0f && a <= 1.0f)
@@ -73,11 +117,90 @@ bool VisibilityInterporlation(float3 PositionA, float3 NormalA, float3 PositionB
 }
 
 
-void AddSegmentBuffer(Segment CurrentSegment)
+uint AddAllSegmentBuffer(Segment CurrentSegment)
 {
     uint Original = 0;
     InterlockedAdd(WArgBuffer[INDIRECT_DRAW_TRIANGLE_COUNT], 1, Original);
-    SegmentBuffer[Original] = CurrentSegment;
+    AllSegmentBuffer[Original] = CurrentSegment;
+
+    uint Original2 = 0;
+    bool AddThreadCount = ((Original + 1) % GENERATE_PASS_PER_THREAD_ELEMENT_NUM == 0);
+    InterlockedAdd(WArgBuffer[GENERATE_PASS_DISPATCH_COUNT], AddThreadCount ? 1 : 0, Original2);
+
+    return Original;
+}
+
+
+void AddVisibleSegmentBuffer(SegmentMetaData CurrentSegment)
+{
+    uint Original = 0;
+    InterlockedAdd(WArgBuffer[SLICE_PASS_CONTOUR_COUNT], 1, Original);
+    uint Original2 = 0;
+    bool AddThreadCount = ((Original + 1) % SLICE_PASS_PER_THREAD_ELEMENT_NUM == 0);
+    InterlockedAdd(WArgBuffer[SLICE_PASS_DISPATCH_COUNT], AddThreadCount ? 1 : 0, Original2);
+
+    VisibleSegmentBuffer[Original] = CurrentSegment;
+}
+
+
+inline void WriteAnchorEdgeContourCache(uint CacheIndex)
+{
+    uint Original = 0;
+    InterlockedAdd(AnchorEdgeBuffer[CacheIndex].ContourType.x, 1, Original);
+}
+inline void WriteAnchorVertexContourCache(uint CacheIndex)
+{
+    uint Original = 0;
+    InterlockedAdd(AnchorVertexBuffer[CacheIndex].ContourType.x, 1, Original);
+}
+inline void WriteAnchorVertexCreaseCache(uint CacheIndex)
+{
+    uint Original = 0;
+    InterlockedAdd(AnchorVertexBuffer[CacheIndex].CreaseType.x, 1, Original);
+}
+
+
+
+uint AddAllSegmentBuffer2(Segment CurrentSegment)
+{
+    uint Original = 0;
+
+#if ENABLE_DEBUG_VIEW
+    InterlockedAdd(WArgBuffer[INDIRECT_DRAW_TRIANGLE_COUNT], 1, Original);
+#else
+    InterlockedAdd(WArgBuffer[INDIRECT_DRAW_TRIANGLE_COUNT], 2, Original);
+    Original *= 0.5;
+#endif 
+
+    AllSegmentBuffer[Original] = CurrentSegment;
+
+    uint Original2 = 0;
+    bool AddThreadCount = ((Original + 1) % GENERATE_PASS_PER_THREAD_ELEMENT_NUM == 0);
+    InterlockedAdd(WArgBuffer[GENERATE_PASS_DISPATCH_COUNT], AddThreadCount ? 1 : 0, Original2);
+
+    return Original;
+}
+
+void WriteSegmentIndexToAnchorCache(uint CacheIndex, uint LineType, uint SegmentId)
+{
+    uint Original = 0xffffffff;
+    if (LineType == CONTOUR_FACE_TYPE) {
+        InterlockedCompareExchange(AnchorEdgeBuffer[CacheIndex].ContourType.y, 0xffffffff, SegmentId, Original);
+        if (Original != 0xffffffff)
+            InterlockedCompareExchange(AnchorEdgeBuffer[CacheIndex].ContourType.z, 0xffffffff, SegmentId, Original);
+    }
+    else if (LineType == CONTOUR_EDGE_TYPE)
+    {
+        InterlockedCompareExchange(AnchorVertexBuffer[CacheIndex].ContourType.y, 0xffffffff, SegmentId, Original);
+        if (Original != 0xffffffff)
+            InterlockedCompareExchange(AnchorVertexBuffer[CacheIndex].ContourType.z, 0xffffffff, SegmentId, Original);
+    }
+    else if (LineType == CREASE_EDGE_TYPE)
+    {
+        InterlockedCompareExchange(AnchorVertexBuffer[CacheIndex].CreaseType.y, 0xffffffff, SegmentId, Original);
+        if (Original != 0xffffffff)
+            InterlockedCompareExchange(AnchorVertexBuffer[CacheIndex].CreaseType.z, 0xffffffff, SegmentId, Original);
+    }
 
 }
 
@@ -88,119 +211,217 @@ void AddSegmentBuffer(Segment CurrentSegment)
 [numthreads(CONTOURIZE_PASS_PER_THREAD_ELEMENT_NUM,1,1)]
 void Contourize(uint3 id : SV_DispatchThreadID)
 {
-    uint FaceId = id.x;
-    if (FaceId >= WArgBuffer[CONTOURIZE_PASS_FACE_COUNT]) return;
+    uint ContourId = id.x;
+    if (ContourId >= CONTOUR_SIZE) return;
 
-    ContourFace CurrentFace = ContourFaceBuffer[FaceId];
+    Contour Current = ContourBuffer[ContourId];
 
-    bool V0Vis = (CurrentFace.v0 >> 31) ? true : false;
-    bool V1Vis = (CurrentFace.v1 >> 31) ? true : false;
-    bool V2Vis = (CurrentFace.v2 >> 31) ? true : false;
-    CurrentFace.v0 = CurrentFace.v0 & 0x7fffffff;
-    CurrentFace.v1 = CurrentFace.v1 & 0x7fffffff;
-    CurrentFace.v2 = CurrentFace.v2 & 0x7fffffff;
-
-    uint VertexIndices[3] = { 0, 0, 0 };
-    float3 VANormal = float3(0.0f, 0.0f, 0.0f);
-    float3 VBNormal = float3(0.0f, 0.0f, 0.0f);
-    float3 VCNormal = float3(0.0f, 0.0f, 0.0f);
-    if ((V2Vis && !V0Vis && !V1Vis) || (!V2Vis && V0Vis && V1Vis))
-    {
-        VertexIndices[0] = CurrentFace.v2;
-        VertexIndices[1] = CurrentFace.v0;
-        VertexIndices[2] = CurrentFace.v1;
-        VANormal = CurrentFace.V2Normal.xyz;
-        VBNormal = CurrentFace.V0Normal.xyz;
-        VCNormal = CurrentFace.V1Normal.xyz;
-    }
-    else if ((V0Vis && !V1Vis && !V2Vis) || (!V0Vis && V1Vis && V2Vis))
-    {
-        VertexIndices[0] = CurrentFace.v0;
-        VertexIndices[1] = CurrentFace.v1;
-        VertexIndices[2] = CurrentFace.v2;
-        VANormal = CurrentFace.V0Normal.xyz;
-        VBNormal = CurrentFace.V1Normal.xyz;
-        VCNormal = CurrentFace.V2Normal.xyz;
-
-    }
-    else if ((V1Vis && !V0Vis && !V2Vis) || (!V1Vis && V0Vis && V2Vis))
-    {
-        VertexIndices[0] = CurrentFace.v1;
-        VertexIndices[1] = CurrentFace.v0;
-        VertexIndices[2] = CurrentFace.v2;
-        VANormal = CurrentFace.V1Normal.xyz;
-        VBNormal = CurrentFace.V0Normal.xyz;
-        VCNormal = CurrentFace.V2Normal.xyz;
-
-    }
-
-
-    EXPORTVertex VA = VertexBuffer[VertexIndices[0]];
-    EXPORTVertex VB = VertexBuffer[VertexIndices[1]];
-    EXPORTVertex VC = VertexBuffer[VertexIndices[2]];
+    uint Type = GET_LINE_TYPE(Current.Type);
+    bool Add = Type > 0;
     
-
-    float EABT = 0.0f;
-    float EACT = 1.0f;
-    bool EAB = VisibilityInterporlation(VA.Position, VANormal, VB.Position, VBNormal, LocalSpaceViewPosition, EABT);
-    bool EAC = VisibilityInterporlation(VA.Position, VANormal, VC.Position, VCNormal, LocalSpaceViewPosition, EACT);
+    float3 LineVertex0 = Current.V0Data;
+    float3 LineVertex1 = Current.V1Data;
 
 
-    if (EAB && EAC)
+    if (Current.Type == 0)
     {
-        //if (EABT != -1.0f && EACT != -1.0f);
-        //{
-            float3 LineVertex0 = VA.Position + EABT * (VB.Position - VA.Position);
-            float3 LineVertex1 = VA.Position + EACT * (VC.Position - VA.Position);
+        bool V0Vis = (Current.v0 >> 31) ? false : true;
+        bool V1Vis = (Current.v1 >> 31) ? false : true;
+        bool V2Vis = (Current.v2 >> 31) ? false : true;
+        Current.v0 = Current.v0 & 0x7fffffff;
+        Current.v1 = Current.v1 & 0x7fffffff;
+        Current.v2 = Current.v2 & 0x7fffffff;
 
-            Segment NewLine = (Segment)0;
-            ToSegmentLine(LineVertex0, LineVertex1, NewLine);
-            NewLine.Color = float4(0.0, 1.0, 0.0f, 0.0f);
-
-            AddSegmentBuffer(NewLine);
-        //}
-        /*
-        if (EABT == -1.0f)
+        uint VertexIndices[3] = { 0, 0, 0 };
+        float3 VANormal = float3(0.0f, 0.0f, 0.0f);
+        float3 VBNormal = float3(0.0f, 0.0f, 0.0f);
+        float3 VCNormal = float3(0.0f, 0.0f, 0.0f);
+        if ((V2Vis && !V0Vis && !V1Vis) || (!V2Vis && V0Vis && V1Vis))
         {
-            Segment NewLine = (Segment)0;
-            ToSegmentLine(VA.Position, VB.Position, NewLine);
-            NewLine.Color = float4(0.0f, 1.0f, 0.0f, 0.0f);
-
-            AddSegmentBuffer(NewLine);
+            VertexIndices[0] = Current.v2;
+            VertexIndices[1] = Current.v0;
+            VertexIndices[2] = Current.v1;
+            VANormal = Current.V2Data.xyz;
+            VBNormal = Current.V0Data.xyz;
+            VCNormal = Current.V1Data.xyz;
         }
-        if (EACT == -1.0f)
+        else if ((V0Vis && !V1Vis && !V2Vis) || (!V0Vis && V1Vis && V2Vis))
         {
-            Segment NewLine = (Segment)0;
-            ToSegmentLine(VA.Position, VC.Position, NewLine);
-            NewLine.Color = float4(0.0f, 1.0f, 0.0f, 0.0f);
+            VertexIndices[0] = Current.v0;
+            VertexIndices[1] = Current.v1;
+            VertexIndices[2] = Current.v2;
+            VANormal = Current.V0Data.xyz;
+            VBNormal = Current.V1Data.xyz;
+            VCNormal = Current.V2Data.xyz;
 
-            AddSegmentBuffer(NewLine);
-        }*/
+        }
+        else if ((V1Vis && !V0Vis && !V2Vis) || (!V1Vis && V0Vis && V2Vis))
+        {
+            VertexIndices[0] = Current.v1;
+            VertexIndices[1] = Current.v0;
+            VertexIndices[2] = Current.v2;
+            VANormal = Current.V1Data.xyz;
+            VBNormal = Current.V0Data.xyz;
+            VCNormal = Current.V2Data.xyz;
+
+        }
+
+
+        EXPORTVertex VA = VertexBuffer[VertexIndices[0]];
+        EXPORTVertex VB = VertexBuffer[VertexIndices[1]];
+        EXPORTVertex VC = VertexBuffer[VertexIndices[2]];
+
+        float EABT = 0.0f;
+        float EACT = 1.0f;
+        bool EAB = VisibilityInterporlation(VA.Position, VANormal, VB.Position, VBNormal, LocalSpaceViewPosition, EABT);
+        bool EAC = VisibilityInterporlation(VA.Position, VANormal, VC.Position, VCNormal, LocalSpaceViewPosition, EACT);
+
+        if (EAB && EAC)
+        {
+            //if (EABT != -1.0f && EACT != -1.0f);
+            //{
+                LineVertex0 = VA.Position + EABT * (VB.Position - VA.Position);
+                LineVertex1 = VA.Position + EACT * (VC.Position - VA.Position);
+            //}
+
+            Add = true;
+        }
+    }
+    
+
+    if (Add) {
+        float4 ClipSpacePos0 = ToClipSpace(LineVertex0);
+        float4 ClipSpacePos1 = ToClipSpace(LineVertex1);
+        
+        float4 ClipSpacePos0ForClipping = ClipSpacePos0;
+        float4 ClipSpacePos1ForClipping = ClipSpacePos1;
+
+        float3 ClipState = PreClipping(ClipSpacePos0ForClipping, ClipSpacePos1ForClipping);
+
+        uint LineType = Type;
+        if (LineType == CONTOUR_FACE_TYPE) {
+            WriteAnchorEdgeContourCache(Current.Anchor[0]);
+            WriteAnchorEdgeContourCache(Current.Anchor[1]);
+        }
+        else if (LineType == CONTOUR_EDGE_TYPE)
+        {
+            WriteAnchorVertexContourCache(Current.Anchor[0]);
+            WriteAnchorVertexContourCache(Current.Anchor[1]);
+        }
+        else if (LineType == CREASE_EDGE_TYPE)
+        {
+            WriteAnchorVertexCreaseCache(Current.Anchor[0]);
+            WriteAnchorVertexCreaseCache(Current.Anchor[1]);
+        }
+
+        if(ClipState.x > 0.0f) {
+            SegmentMetaData VisibleLine = (SegmentMetaData)0;
+            
+            float4 ClippedPos0 = ClipSpacePos0 + ClipState.y * (ClipSpacePos1 - ClipSpacePos0);
+            float4 ClippedPos1 = ClipSpacePos0 + ClipState.z * (ClipSpacePos1 - ClipSpacePos0);
+            float4 ClippedNDC0 = ToNDCSpace(ClippedPos0);
+            float4 ClippedNDC1 = ToNDCSpace(ClippedPos1);
+
+            float4 UnclippedNDC0 = ToNDCSpace(ClipSpacePos0);
+            float4 UnclippedNDC1 = ToNDCSpace(ClipSpacePos1);
+
+            VisibleLine.NDCPosition[0] = float4(ClippedNDC0.xy, ClippedPos0.zw);
+            VisibleLine.NDCPosition[1] = float4(ClippedNDC1.xy, ClippedPos1.zw);
+#if ENABLE_DEBUG_VIEW
+            VisibleLine.NDCPositionForDebug[0] = ClippedNDC0;
+            VisibleLine.NDCPositionForDebug[1] = ClippedNDC1;
+#endif
+            uint2 PixelLengthAfterClip = CalculatePixelLength(ClippedNDC0.xy, ClippedNDC1.xy, ScreenScaledResolution.xy);
+            uint2 PixelLengthBeforeClip = CalculatePixelLength(UnclippedNDC0.xy, UnclippedNDC1.xy, ScreenScaledResolution.xy);
+
+            VisibleLine.PixelLength = PixelLengthAfterClip.x;
+            VisibleLine.PixelLengthShrink = PixelLengthAfterClip.y;
+            VisibleLine.PixelLengthShrinkTotal = 0;
+
+            VisibleLine.Type = Current.Type;
+            VisibleLine.Anchor = Current.Anchor;
+            VisibleLine.MeshletData = Current.MeshletData;
+
+            VisibleLine.InvPixelLengthBeforeClippedMinusOne = 1.0f / float(PixelLengthBeforeClip.x - 1);
+            VisibleLine.ClippedPositionOffset = CalculatePixelLength(VisibleLine.NDCPosition[0].xy, UnclippedNDC0.xy, ScreenScaledResolution.xy).x;
+
+            AddVisibleSegmentBuffer(VisibleLine); 
+
+
+            /*
+            ///////////////////////////////////////////
+            Segment NewLine = (Segment)0;
+
+            NewLine.NDCPosition[0] = ClippedNDC0.xy;
+            NewLine.NDCPosition[1] = ClippedNDC1.xy;
+
+            NewLine.PixelPosition[0] = 0.0;// float(TargetPixelPosition + TargetSegment.ClippedPositionOffset - 1) * TargetSegment.InvPixelLengthBeforeClippedMinusOne;
+            NewLine.PixelPosition[1] = 1.0;// float(TailTargetPixelPosition + TargetSegment.ClippedPositionOffset - 1) * TargetSegment.InvPixelLengthBeforeClippedMinusOne;
+
+            NewLine.Type = SET_LINE_IS_VISIBLE(VisibleLine.Type, true);
+            NewLine.Anchor[0] = SET_ANCHOR_INDEX(0, VisibleLine.Anchor[0]);
+            NewLine.Anchor[1] = SET_ANCHOR_INDEX(0, VisibleLine.Anchor[1]);
+            NewLine.Anchor[0] = SET_ANCHOR_IS_CONNECTED(NewLine.Anchor[0], true);
+            NewLine.Anchor[1] = SET_ANCHOR_IS_CONNECTED(NewLine.Anchor[1], true);
+
+            NewLine.SegmentMetaDataId = 0;
+
+            NewLine.MeshletData = VisibleLine.MeshletData;
+            //////////////////////////////////////////
+
+            uint Id = AddAllSegmentBuffer2(NewLine);
+
+            uint SegmentID = SET_ADJACENT_INDEX(0, Id);
+            uint LineType = GET_LINE_TYPE(NewLine.Type);
+            if (true) {
+                SegmentID = SET_ADJACENT_DIRECTION(SegmentID, 0);
+                WriteSegmentIndexToAnchorCache(NewLine.Anchor[0], LineType, SegmentID);
+            }
+            if (true) {
+                SegmentID = SET_ADJACENT_DIRECTION(SegmentID, 1);
+                WriteSegmentIndexToAnchorCache(NewLine.Anchor[1], LineType, SegmentID);
+            }
+            */
+
+
+        }
     }
 
+#if ENABLE_DEBUG_VIEW
+    Current.v0 = Current.v0 & 0x7fffffff;
+    Current.v1 = Current.v1 & 0x7fffffff;
+    Current.v2 = Current.v2 & 0x7fffffff;
 
-    
-    /*
     Segment Line1 = (Segment)0;
-    EXPORTVertex V0 = VertexBuffer[CurrentFace.v0];
-    EXPORTVertex V1 = VertexBuffer[CurrentFace.v1];
-    ToSegmentLine(V0.Position, V1.Position, Line1);
-    Line1.Color = float4(1.0f, 0.0f, 0.0f, 0.0f);
+    EXPORTVertex V0 = VertexBuffer[Current.v0];
+    EXPORTVertex V1 = VertexBuffer[Current.v1];
+    Line1.NDCPositionForDebug[0] = WorldToNDCSpace(V0.Position);
+    Line1.NDCPositionForDebug[1] = WorldToNDCSpace(V1.Position);
+    Line1.NDCPosition[0] = Line1.NDCPositionForDebug[0].xy;
+    Line1.NDCPosition[1] = Line1.NDCPositionForDebug[1].xy;
+    Line1.Type = SET_LINE_DEBUG_TYPE;
 
-    V0 = VertexBuffer[CurrentFace.v1];
-    V1 = VertexBuffer[CurrentFace.v2];
+    V0 = VertexBuffer[Current.v1];
+    V1 = VertexBuffer[Current.v2];
     Segment Line2 = (Segment)0;
-    ToSegmentLine(V0.Position, V1.Position, Line2);
-    Line2.Color = float4(1.0f, 0.0f, 0.0f, 0.0f);
+    Line2.NDCPositionForDebug[0] = WorldToNDCSpace(V0.Position);
+    Line2.NDCPositionForDebug[1] = WorldToNDCSpace(V1.Position);
+    Line2.NDCPosition[0] = Line2.NDCPositionForDebug[0].xy;
+    Line2.NDCPosition[1] = Line2.NDCPositionForDebug[1].xy;
+    Line2.Type = SET_LINE_DEBUG_TYPE;
 
-    V0 = VertexBuffer[CurrentFace.v2];
-    V1 = VertexBuffer[CurrentFace.v0];
+    V0 = VertexBuffer[Current.v2];
+    V1 = VertexBuffer[Current.v0];
     Segment Line3 = (Segment)0;
-    ToSegmentLine(V0.Position, V1.Position, Line3);
-    Line3.Color = float4(1.0f, 0.0f, 0.0f, 0.0f);
+    Line3.NDCPositionForDebug[0] = WorldToNDCSpace(V0.Position);
+    Line3.NDCPositionForDebug[1] = WorldToNDCSpace(V1.Position);
+    Line3.NDCPosition[0] = Line3.NDCPositionForDebug[0].xy;
+    Line3.NDCPosition[1] = Line3.NDCPositionForDebug[1].xy;
+    Line3.Type = SET_LINE_DEBUG_TYPE;
     
-    AddSegmentBuffer(Line1);
-    AddSegmentBuffer(Line2);
-    AddSegmentBuffer(Line3);
-    */
+    AddAllSegmentBuffer(Line1);
+    AddAllSegmentBuffer(Line2);
+    AddAllSegmentBuffer(Line3);
+#endif
+
 }

@@ -26,13 +26,13 @@ public class LineMaterial : MonoBehaviour
     public Material LineRenderMaterialForDebug;
 
 
-    [Tooltip("The width of line")]
+/*    [Tooltip("The width of line")]
     [Range(0.0f, 10.0f)]
     public float LineWidth = 1.0f;
 
     [Tooltip("Offset the line along the edge")]
     [Range(-0.5f, 0.5f)]
-    public float LineCenterOffset = 0.0f;
+    public float LineCenterOffset = 0.0f;*/
 
     /// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -64,8 +64,7 @@ public class LineMaterial : MonoBehaviour
 
     [TitleGroup("Silhouette Edge")]
     [InfoBox("Draw edges that base on the angle between view vector and surface normal.")]
-
-    public bool SilhouetteEnable = true;
+    public bool ContourEnable = true;
 
     [Tooltip("Draw edges around each object only(Contour Only).")]
     public bool OutineOnly = false;
@@ -74,10 +73,9 @@ public class LineMaterial : MonoBehaviour
 
     [TitleGroup("Crease Edge")]
     [InfoBox("Draw edges that base on the angle between adjacent faces.")]
-
     public bool CreaseEnable = true;
 
-    [Range(0, 175)]
+    [Range(0, 180)]
     [LabelWidth(200)]
     public float CreaseAngleDegreeThreshold = 45.0f;
 

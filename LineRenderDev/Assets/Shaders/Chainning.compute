@@ -1,231 +1,73 @@
 // Each #kernel tells which function to compile; you can have many kernels
-#pragma kernel Generate
+#pragma kernel Chainning
+
 
 #include "Common.cginc"
 
-#define VISIBLE_LINE_SIZE VisibleLineArgBuffer[0]
-StructuredBuffer<uint> VisibleLineArgBuffer;
-StructuredBuffer<PlainLine> VisibleLines;
-StructuredBuffer<LineSegment> Segments;
 
-RWStructuredBuffer<RunTimeVertexState> RunTimeVertexBuffer;
-RWStructuredBuffer<uint> LineMeshArgBuffer;
+StructuredBuffer<uint> RArgBuffer;
+StructuredBuffer<uint> RArgBuffer2;
+StructuredBuffer<LineHead> LineHeadBuffer;
 RWStructuredBuffer<LineMesh> LineMeshBuffer;
 
-uniform float LineExtractWidth;
-uniform float LineCenterOffset;
-uniform float3 ObjectScale;
-uniform float4  ScreenScaledResolution;
+#define LINEHEAD_SIZE RArgBuffer[CHAINNING_PASS_LINEHEAD_COUNT]
 
 
-struct LineAttributes
+inline bool IsConnected(uint LinkId)
 {
-    float Curvature[2];
-    uint MeshletId;
-};
-
-
-
-float GetCurvature(float2 a, float2 b)
-{
-    return dot(a, b) * 0.5f + 0.5f;
+	return (LinkId != 0xffffffff);
 }
 
 
-float4 GetNormalOfLine(float2 a, float2 b)
+#define MAX_LOOP_NUM 2048
+
+[numthreads(CHAINNING_PASS_PER_THREAD_ELEMENT_NUM, 1, 1)]
+void Chainning (uint3 id : SV_DispatchThreadID)
 {
-    float dx = b.x - a.x;
-    float dy = b.y - a.y;
+	if (id.x >= LINEHEAD_SIZE) return;
 
-    return float4(normalize(float2( -dy, dx)), normalize(float2(dy, -dx)));
-}
+	LineHead CurrentHead = LineHeadBuffer[id.x];
 
-uint AddLineMeshCounter()
-{
-    uint Id = 0;
-    InterlockedAdd(LineMeshArgBuffer[1], 2, Id);
+	uint LoopNum = 0;
+	uint NextLink = CurrentHead.Data;
 
-    return Id * 0.5;
-}
+	
+	const uint MeshletLayer = 0;
+	
+	uint LineMeshId = GET_LINEHEAD_INDEX(NextLink);
+	uint StartDirection = GET_LINEHEAD_DIRECTION(NextLink);
+	uint StartPoint = StartDirection;
 
+	LineMesh FirstLineMesh = LineMeshBuffer[LineMeshId];
+	uint PrevMeshletIndex = FirstLineMesh.MeshletData[0];
+	uint GroupId = GET_ANCHOR_INDEX(FirstLineMesh.Anchor[0]) + GET_ANCHOR_INDEX(FirstLineMesh.Anchor[1]);
 
+	do
+	{
+		LineMeshId = GET_LINEHEAD_INDEX(NextLink);
+		StartPoint = 1 - GET_LINEHEAD_DIRECTION(NextLink);
 
+		LineMesh CurrentLineMesh = LineMeshBuffer[LineMeshId];
+		NextLink = CurrentLineMesh.LinkId[StartPoint];
+		
+		//if (PrevMeshletIndex != CurrentLineMesh.MeshletData[MeshletLayer])
+		//	break;
 
-void ExtractTriangleMesh(in PlainLine Current, in LineAttributes Attributes)
-{
-    float ExtractWidth = LineExtractWidth;
-    float InnerSideWidth = ExtractWidth * (LineCenterOffset + 0.5f);
-    float OuterSideWidth = ExtractWidth * (0.5f - LineCenterOffset);
+		if(GET_ANCHOR_TYPE(CurrentLineMesh.Anchor[StartPoint]) == 1)
+			LoopNum++;
 
-    float ScreenScaledFactor = ScreenScaledResolution.x * ScreenScaledResolution.w;
-    float4 CurrentNormal = GetNormalOfLine(Current.NDCPosition[0].xy, Current.NDCPosition[1].xy);
-    CurrentNormal.y *= ScreenScaledFactor;
-    CurrentNormal.w *= ScreenScaledFactor;
-
-    float2 ExtractedV0_1 = Current.NDCPosition[0].xy + CurrentNormal.xy * InnerSideWidth;
-    float2 ExtractedV0_2 = Current.NDCPosition[0].xy + CurrentNormal.zw * OuterSideWidth;
-    float2 ExtractedV1_1 = Current.NDCPosition[1].xy + CurrentNormal.xy * InnerSideWidth;
-    float2 ExtractedV1_2 = Current.NDCPosition[1].xy + CurrentNormal.zw * OuterSideWidth;
-
-    uint Id = AddLineMeshCounter();
-    LineMesh NewMesh = (LineMesh)0;
-    NewMesh.Position[0] = ExtractedV0_2;
-    NewMesh.Position[1] = ExtractedV0_1;
-    NewMesh.Position[2] = ExtractedV1_2;
-    NewMesh.Position[3] = ExtractedV1_1;
-    NewMesh.UV[0] = float2(0.0f, 0.0f);
-    NewMesh.UV[1] = float2(0.0f, 0.0f);
-    NewMesh.UV[2] = float2(0.0f, 0.0f);
-    NewMesh.UV[3] = float2(0.0f, 0.0f);
-    NewMesh.Curvature[0] = Interpolate(Attributes.Curvature[0], Attributes.Curvature[1], Current.PixelPosition[0]);
-    NewMesh.Curvature[1] = Interpolate(Attributes.Curvature[0], Attributes.Curvature[1], Current.PixelPosition[1]);
-    NewMesh.Id = Attributes.MeshletId;
-    LineMeshBuffer[Id] = NewMesh;
-}
+		/////////////////////
 
 
 
-void SyncAdjacency(RunTimeVertexState RumTimeVertex, uint VertexIndex, int LinkState, uint PlainLineId, int LineSegmentId)
-{
-    if (LinkState == 0) {
-        if (RumTimeVertex.Left == LineSegmentId && RumTimeVertex.Left != -1)
-        {
-            RunTimeVertexBuffer[VertexIndex].Left = PlainLineId;
-        }
-        else if (RumTimeVertex.Right == LineSegmentId && RumTimeVertex.Right != -1)
-        {
-            RunTimeVertexBuffer[VertexIndex].Right = PlainLineId;
-        }
-    }
+		//LineMeshBuffer[LineMeshId].GroupId[1] = 1;
 
-}
+		
 
+		////////////////////
+		PrevMeshletIndex = CurrentLineMesh.MeshletData[MeshletLayer];
 
-void CalculateCurvature(in float2 CurrentDirection, in float2 AdjSegmentDirOnV0, in float2 AdjSegmentDirOnV1, bool V0IsLineHead, bool V1IsLineHead, inout LineAttributes Attributes)
-{
-    float Curvature0 = GetCurvature( CurrentDirection, AdjSegmentDirOnV0);
-    float Curvature1 = GetCurvature(-CurrentDirection, AdjSegmentDirOnV1);
+	} while (IsConnected(NextLink) && LoopNum < MAX_LOOP_NUM);
 
-    float V0Curvature = (V0IsLineHead && V1IsLineHead) ? 0.0f : (V0IsLineHead ? Curvature1 : Curvature0);
-    float V1Curvature = (V0IsLineHead && V1IsLineHead) ? 0.0f : (V1IsLineHead ? Curvature0 : Curvature1);
-
-    Attributes.Curvature[0] = pow(saturate(V0Curvature*20.0), 2.0);
-    Attributes.Curvature[1] = pow(saturate(V1Curvature*20.0), 2.0);
-
-}
-
-
-
-
-[numthreads(GENERATE_PASS_PER_THREAD_ELEMENT_NUM,1,1)]
-void Generate(uint3 id : SV_DispatchThreadID)
-{
-    uint CurrentId = id.x;
-
-    if (CurrentId >= VISIBLE_LINE_SIZE) return;
-
-    PlainLine Current = VisibleLines[CurrentId];
-    LineAttributes Attributes = (LineAttributes)0;
-
-    uint V0RunTimeIndex = Current.RunTimeVertexIndex[0];
-    uint V1RunTimeIndex = Current.RunTimeVertexIndex[1];
-    RunTimeVertexState RumTimeVertex0 = RunTimeVertexBuffer[V0RunTimeIndex];
-    RunTimeVertexState RumTimeVertex1 = RunTimeVertexBuffer[V1RunTimeIndex];
-
-    bool V0IsLineHead = RumTimeVertex0.AdjNum != 2 ? true : false;
-    bool V1IsLineHead = RumTimeVertex1.AdjNum != 2 ? true : false;
-
-    int AdjSegmentOnV0Id = (RumTimeVertex0.Left == Current.LineSegmentId) ? RumTimeVertex0.Right : RumTimeVertex0.Left;
-    int AdjSegmentOnV1Id = (RumTimeVertex1.Left == Current.LineSegmentId) ? RumTimeVertex1.Right : RumTimeVertex1.Left;
-    LineSegment AdjSegmentOnV0 = Segments[AdjSegmentOnV0Id];
-    LineSegment AdjSegmentOnV1 = Segments[AdjSegmentOnV1Id];
-    LineSegment CurrentSegment = Segments[Current.LineSegmentId];
-
-    bool t0 = false;
-    float2 CurrrentDirOnV0 = CurrentSegment.Direction;
-    float2 AdjSegmentDirOnV0 = float2(0.0f, 0.0f);
-    if (V0RunTimeIndex == AdjSegmentOnV0.RunTimeVertexIndex[0])
-    {
-        AdjSegmentDirOnV0 = AdjSegmentOnV0.Direction;
-    }
-    else if (V0RunTimeIndex == AdjSegmentOnV0.RunTimeVertexIndex[1])
-    {
-        AdjSegmentDirOnV0 = -AdjSegmentOnV0.Direction;
-    }
-    else
-    {
-        t0 = true;
-    }
-    float2 CurrrentDirOnV1 = CurrentSegment.Direction;
-    float2 AdjSegmentDirOnV1 = float2(0.0f, 0.0f);
-    if (V1RunTimeIndex == AdjSegmentOnV1.RunTimeVertexIndex[0])
-    {
-        AdjSegmentDirOnV1 = AdjSegmentOnV1.Direction;
-        CurrrentDirOnV1 = -CurrrentDirOnV1;
-    }
-    else if (V1RunTimeIndex == AdjSegmentOnV1.RunTimeVertexIndex[1])
-    {
-        AdjSegmentDirOnV1 = -AdjSegmentOnV1.Direction;
-        CurrrentDirOnV1 = -CurrrentDirOnV1;
-    }
-    else
-    {
-        t0 = true;
-    }
-    CalculateCurvature(CurrentSegment.Direction, AdjSegmentDirOnV0, AdjSegmentDirOnV1, V0IsLineHead, V1IsLineHead, Attributes);
-
-
-
- 
-    Attributes.MeshletId = AdjSegmentOnV1.MeshletIndex[0];
-
-    float Angle0 = GetCurvature(CurrrentDirOnV0, AdjSegmentDirOnV0);
-    float Angle1 = GetCurvature(CurrrentDirOnV1, AdjSegmentDirOnV1);
-    if (Angle0 > 0.5f) V0IsLineHead = true;
-    if (Angle1 > 0.5f) V1IsLineHead = true;
-
-    float Curvature0 = 0.0f;
-    float Curvature1 = 0.0f;
-    if (V0IsLineHead && !V1IsLineHead) {
-        
-        Curvature1 = Angle1;
-        Curvature0 = Curvature1;
-    }
-    if (V1IsLineHead && !V0IsLineHead) {
-        Curvature0 = Angle0;
-        Curvature1 = Curvature0; 
-    }
-    if (!V0IsLineHead && !V1IsLineHead) {
-        Curvature0 = Angle0;
-        Curvature1 = Angle1;
-    }
-
-    if (V0IsLineHead && V1IsLineHead)
-    {
-        Curvature0 = 0.0f;
-        Curvature1 = 0.0f;
-
-    }
-    
-
-
-    Attributes.Curvature[0] =  pow(saturate(Curvature0 * 20.0), 1.0);
-    Attributes.Curvature[1] =  pow(saturate(Curvature1 * 20.0), 1.0);
-
-
-
-
-
-
-    //SyncAdjacency(RumTimeVertex0, V0RunTimeIndex, Current.LinkState[0], Current.Id, Current.LineSegmentId);
-    //SyncAdjacency(RumTimeVertex1, V1RunTimeIndex, Current.LinkState[1], Current.Id, Current.LineSegmentId);
-
-
-
-
-
-
-    ////Gernerate Mesh
-    ExtractTriangleMesh(Current, Attributes);
 
 }
