@@ -53,7 +53,7 @@ groupshared ELEMENT_TYPE##2 Bucket[SLICE_PASS_PER_THREAD_ELEMENT_NUM];
 void ResetAnchorSliceBuffer(uint Index)
 {
 	AnchorSlice NewAnchor;
-	NewAnchor.AllType = uint2(0xffffffff, 0xffffffff);
+	NewAnchor.AllType = uint2(UNDEFINED_VALUE, UNDEFINED_VALUE);
 
 	AnchorSliceBuffer[Index] = NewAnchor;
 }
@@ -64,10 +64,6 @@ inline void AppendToBuffer(uint Id, in Slice ToAdd)
 	ResetAnchorSliceBuffer(Id + 1);;
 
 	ToAdd.Id = Id;
-	//ToAdd.HeadTailSegment[0] = (SliceMetaData)0;
-	//ToAdd.HeadTailSegment[1] = (SliceMetaData)0;
-	//ToAdd.HeadTailSegment[0].SegmentMetaDataId = 0xffffffff;
-	//ToAdd.HeadTailSegment[1].SegmentMetaDataId = 0xffffffff;
 
 	SliceBuffer[Id] = ToAdd;
 

@@ -183,23 +183,23 @@ uint AddAllSegmentBuffer2(Segment CurrentSegment)
 
 void WriteSegmentIndexToAnchorCache(uint CacheIndex, uint LineType, uint SegmentId)
 {
-    uint Original = 0xffffffff;
+    uint Original = UNDEFINED_VALUE;
     if (LineType == CONTOUR_FACE_TYPE) {
-        InterlockedCompareExchange(AnchorEdgeBuffer[CacheIndex].ContourType.y, 0xffffffff, SegmentId, Original);
-        if (Original != 0xffffffff)
-            InterlockedCompareExchange(AnchorEdgeBuffer[CacheIndex].ContourType.z, 0xffffffff, SegmentId, Original);
+        InterlockedCompareExchange(AnchorEdgeBuffer[CacheIndex].ContourType.y, UNDEFINED_VALUE, SegmentId, Original);
+        if (Original != UNDEFINED_VALUE)
+            InterlockedCompareExchange(AnchorEdgeBuffer[CacheIndex].ContourType.z, UNDEFINED_VALUE, SegmentId, Original);
     }
     else if (LineType == CONTOUR_EDGE_TYPE)
     {
-        InterlockedCompareExchange(AnchorVertexBuffer[CacheIndex].ContourType.y, 0xffffffff, SegmentId, Original);
-        if (Original != 0xffffffff)
-            InterlockedCompareExchange(AnchorVertexBuffer[CacheIndex].ContourType.z, 0xffffffff, SegmentId, Original);
+        InterlockedCompareExchange(AnchorVertexBuffer[CacheIndex].ContourType.y, UNDEFINED_VALUE, SegmentId, Original);
+        if (Original != UNDEFINED_VALUE)
+            InterlockedCompareExchange(AnchorVertexBuffer[CacheIndex].ContourType.z, UNDEFINED_VALUE, SegmentId, Original);
     }
     else if (LineType == CREASE_EDGE_TYPE)
     {
-        InterlockedCompareExchange(AnchorVertexBuffer[CacheIndex].CreaseType.y, 0xffffffff, SegmentId, Original);
-        if (Original != 0xffffffff)
-            InterlockedCompareExchange(AnchorVertexBuffer[CacheIndex].CreaseType.z, 0xffffffff, SegmentId, Original);
+        InterlockedCompareExchange(AnchorVertexBuffer[CacheIndex].CreaseType.y, UNDEFINED_VALUE, SegmentId, Original);
+        if (Original != UNDEFINED_VALUE)
+            InterlockedCompareExchange(AnchorVertexBuffer[CacheIndex].CreaseType.z, UNDEFINED_VALUE, SegmentId, Original);
     }
 
 }
@@ -327,6 +327,8 @@ void Contourize(uint3 id : SV_DispatchThreadID)
 
             VisibleLine.NDCPosition[0] = float4(ClippedNDC0.xy, ClippedPos0.zw);
             VisibleLine.NDCPosition[1] = float4(ClippedNDC1.xy, ClippedPos1.zw);
+            VisibleLine.LocalPositionUnclipped[0] = LineVertex0.xyz;
+            VisibleLine.LocalPositionUnclipped[1] = LineVertex1.xyz;
 #if ENABLE_DEBUG_VIEW
             VisibleLine.NDCPositionForDebug[0] = ClippedNDC0;
             VisibleLine.NDCPositionForDebug[1] = ClippedNDC1;

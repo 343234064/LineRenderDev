@@ -31,8 +31,13 @@ struct LineVertex
 	//Normal of this vertex
 	float2 Normal;
 
-	//Id of this line
-	float Id;
+
+	//////////////////////////
+	//Group Data
+
+	//GroupId of this line
+	uint GroupId[2];
+
 };
 
 
@@ -47,6 +52,7 @@ struct LineVertex
 
 
 StructuredBuffer<LineMesh> LineMeshBuffer;
+StructuredBuffer<LineGroup> GroupBuffer;
 #if ENABLE_DEBUG_VIEW
 float4x4 WorldViewProjectionForDebugCamera;
 float4x4 InvWorldViewProjectionForRenderCamera;
@@ -113,20 +119,102 @@ LineVertex PostProcessing(uint InInstanceId, uint InVertexId, float ExtractWidth
 
 #endif
 
-
-
-
-
-
-
-
 	LineVertex NewVertex = (LineVertex)0;
 	NewVertex.Position = Position;
 	NewVertex.Type = GET_LINE_TYPE(CurrentLine.Type);
 	NewVertex.Visible = GET_LINE_IS_VISIBLE(CurrentLine.Type);
 	NewVertex.BackFacing = GET_LINE_IS_BACKFACING(CurrentLine.Type);
 	NewVertex.Normal = ExtractDirection.zw;
-	NewVertex.Id = CurrentLine.PixelPosition[0] + CurrentLine.PixelPosition[1];// GET_ANCHOR_INDEX(CurrentLine.Anchor[0]) + GET_ANCHOR_INDEX(CurrentLine.Anchor[1]);
+
+
+	//Extract group data
+	uint Layer1AttachedLineGroupIdDir0 = CurrentLine.PathData[0].AttachedLineGroupId[0];
+	if (Layer1AttachedLineGroupIdDir0 != UNDEFINED_VALUE)
+	{
+		LineGroup Layer1GroupData = GroupBuffer[Layer1AttachedLineGroupIdDir0];
+		LineMesh Layer1HeadLine = LineMeshBuffer[GET_LINKID_INDEX(Layer1GroupData.Head)];
+
+		uint Layer2AttachedLineGroupId = Layer1HeadLine.PathData[1].AttachedLineGroupId[GET_LINKID_DIRECTION(Layer1GroupData.Head)];
+		if (Layer2AttachedLineGroupId != UNDEFINED_VALUE)
+		{
+			LineGroup Layer2GroupData = GroupBuffer[Layer2AttachedLineGroupId];
+			LineMesh Layer2HeadLine = LineMeshBuffer[GET_LINKID_INDEX(Layer2GroupData.Head)];
+
+			uint Layer3AttachedLineGroupId = Layer2HeadLine.PathData[2].AttachedLineGroupId[GET_LINKID_DIRECTION(Layer2GroupData.Head)];
+			if (Layer3AttachedLineGroupId != UNDEFINED_VALUE)
+			{
+				LineGroup Layer3GroupData = GroupBuffer[Layer3AttachedLineGroupId];
+				uint Direction = Layer3GroupData.DirectionMap;
+				if (Direction == 0)
+					NewVertex.GroupId[0] = Layer3GroupData.GroupId;
+				else
+					NewVertex.GroupId[1] = Layer3GroupData.GroupId;
+
+			}
+			else {
+				uint Direction = Layer2GroupData.DirectionMap;
+				if (Direction == 0)
+					NewVertex.GroupId[0] = Layer2GroupData.GroupId;
+				else
+					NewVertex.GroupId[1] = Layer2GroupData.GroupId;
+			}
+		}
+		else
+		{
+
+			uint Direction = Layer1GroupData.DirectionMap;
+			if (Direction == 0)
+				NewVertex.GroupId[0] = Layer1GroupData.GroupId;
+			else
+				NewVertex.GroupId[1] = Layer1GroupData.GroupId;
+		}
+	}
+
+	uint Layer1AttachedLineGroupIdDir1 = CurrentLine.PathData[0].AttachedLineGroupId[1];
+	if (Layer1AttachedLineGroupIdDir1 != UNDEFINED_VALUE)
+	{
+		LineGroup Layer1GroupData = GroupBuffer[Layer1AttachedLineGroupIdDir1];
+		LineMesh Layer1HeadLine = LineMeshBuffer[GET_LINKID_INDEX(Layer1GroupData.Head)];
+
+		uint Layer2AttachedLineGroupId = Layer1HeadLine.PathData[1].AttachedLineGroupId[GET_LINKID_DIRECTION(Layer1GroupData.Head)];
+		if (Layer2AttachedLineGroupId != UNDEFINED_VALUE)
+		{
+			LineGroup Layer2GroupData = GroupBuffer[Layer2AttachedLineGroupId];
+			LineMesh Layer2HeadLine = LineMeshBuffer[GET_LINKID_INDEX(Layer2GroupData.Head)];
+
+			uint Layer3AttachedLineGroupId = Layer2HeadLine.PathData[2].AttachedLineGroupId[GET_LINKID_DIRECTION(Layer2GroupData.Head)];
+			if (Layer3AttachedLineGroupId != UNDEFINED_VALUE)
+			{
+				LineGroup Layer3GroupData = GroupBuffer[Layer3AttachedLineGroupId];
+				uint Direction = Layer3GroupData.DirectionMap;
+				if (Direction == 0)
+					NewVertex.GroupId[0] = Layer3GroupData.GroupId;
+				else
+					NewVertex.GroupId[1] = Layer3GroupData.GroupId;
+
+			}
+			else {
+				uint Direction = Layer2GroupData.DirectionMap;
+				if (Direction == 0)
+					NewVertex.GroupId[0] = Layer2GroupData.GroupId;
+				else
+					NewVertex.GroupId[1] = Layer2GroupData.GroupId;
+			}
+		}
+		else
+		{
+			uint Direction = Layer1GroupData.DirectionMap;
+
+			if (Direction == 0)
+				NewVertex.GroupId[0] = Layer1GroupData.GroupId;
+			else
+				NewVertex.GroupId[1] = Layer1GroupData.GroupId;
+		}
+	}
+
+	//NewVertex.GroupId[0] = 0;
+	//NewVertex.GroupId[1] = 0;
+	//NewVertex.GroupId[0] = CurrentLine.PathData[2].AttachedLineGroupId[0];
 
 	return NewVertex;
 }
@@ -162,7 +250,8 @@ float3 DebugColor(LineVertex InVertex)
 	//TestAttr = CurrentLine.GroupId[1];
 	//Color.rgb = Hash31(TestAttr); saturate(TestAttr);
 	//Color.rgb = CurrentLine.GroupId.x==0?1:0;
-
+	Color.rgb = Hash31(InVertex.GroupId[0]);
+	//Color.rgb = InVertex.test;
 #endif
 
 	return Color;

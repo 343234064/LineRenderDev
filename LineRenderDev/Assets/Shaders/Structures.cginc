@@ -13,9 +13,6 @@ cbuffer Constants
     uint ContourEnable;
     uint CreaseEnable;
     uint BorderEnable;
-    uint HideVisibleEdge;
-    uint HideBackFaceEdge;
-    uint HideOccludedEdge;
 };
 
 
@@ -48,7 +45,7 @@ struct EXPORTFace
     uint3 PackNormalData0;
     uint3 PackNormalData1;
 
-    uint2 MeshletData;
+    uint3 MeshletData;
 };
 
 struct EXPORTMeshlet
@@ -87,7 +84,7 @@ struct Face
     float3 V1Normal;
     float3 V2Normal;
 
-    uint2 MeshletData;
+    uint3 MeshletData;
 };
 
 
@@ -118,17 +115,19 @@ struct Contour
     // 1~ 32 bit : Anchor Index 
     uint Anchor[2];
 
-    // 0 : meshlet layer1 index
-    // 1 : meshlet layer2 index
-    uint MeshletData[2];
+    // 0 : meshlet layer0 index
+    // 1 : meshlet layer1 index
+    // 2 : meshlet layer2 index
+    uint MeshletData[3];
 };
 
 
 
 struct SegmentMetaData
 {
-    // xy : Clipped NDC.xy  zw : ClipSpace.zw 
+    // xy : Clipped NDC.xy zw : ClipSpace.zw 
     float4 NDCPosition[2];
+    float3 LocalPositionUnclipped[2];
 #if ENABLE_DEBUG_VIEW
     float4 NDCPositionForDebug[2];
 #endif
@@ -155,7 +154,8 @@ struct SegmentMetaData
 
     // 0 : meshlet layer1 index
     // 1 : meshlet layer2 index
-    uint MeshletData[2];
+    // 2 : meshlet layer2 index
+    uint MeshletData[3];
 };
 
 
@@ -163,6 +163,7 @@ struct Segment
 {
     // xy : NDC.xy
     float2 NDCPosition[2];
+    float3 LocalPositionUnclipped[2];
 #if ENABLE_DEBUG_VIEW
     float4 NDCPositionForDebug[2];
 #endif
@@ -181,7 +182,7 @@ struct Segment
     uint SliceId;
     
     // SegmentMetaData Id
-    // 0xffffffff : unexist
+    // UNDEFINED_VALUE : unexist
     uint SegmentMetaDataId;
 
     // 0 : Head 1 : Tail
@@ -193,25 +194,11 @@ struct Segment
 
     // 0 : meshlet layer1 index
     // 1 : meshlet layer2 index
-    uint MeshletData[2];
+    // 2 : meshlet layer2 index
+    uint MeshletData[3];
 };
 
 
-
-/*
-struct SliceMetaData
-{
-    uint Type;
-    uint SegmentMetaDataId;
-    uint Anchor;
-    uint SegmentId;
-    uint SliceId;
-    float2 NDCPosition;
-    float PixelPosition;
-#if ENABLE_DEBUG_VIEW
-    float4 DebugPosition;
-#endif
-};*/
 
 struct Slice
 {
@@ -227,14 +214,6 @@ struct Slice
 
 
 
-struct LineHead
-{
-    // 1~31bit : LineMeshId
-    // the 32 bit: start point  
-    // 0->v0 1->v1
-    uint Data;
-};
-
 
 //
 // x : adj edge num
@@ -243,7 +222,7 @@ struct LineHead
 // 32bit : 
 // 0->connect to adjacent contour's v0
 // 1->connect to adjacent contour's v1
-//0xffffffff : unexist
+//UNDEFINED_VALUE : unexist
 struct AnchorEdge
 {
     uint3 ContourType;
@@ -261,10 +240,25 @@ struct AnchorSlice
 
 
 
+
+struct ChainningMetaData
+{
+    //array index for difference direction
+
+    // for data readwrite
+    // UNDEFINED_VALUE : unexisit
+    uint AttachedLineGroupId[2];
+
+    // linkId of layer
+    uint LayeredLinkId[2];
+};
+
 struct LineMesh
 {
     // mesh vertex NDC position
     float2 NDCPosition[2];
+    float3 LocalPositionUnclipped[2];
+
 #if ENABLE_DEBUG_VIEW
     float4 NDCPositionForDebug[2];
 
@@ -283,13 +277,17 @@ struct LineMesh
     // the 5th bit : Visibility
     uint Type;
 
-    // 1~31bit:
-    //  0->v0 adjacent contour index 
-    //  1->v1 adjacent contour index
+    // 1~29bit:
+    //  LinkId[0]->v0 adjacent contour index 
+    //  LinkId[1]->v1 adjacent contour index
+    // 30bit : 
+    // if this is meshlet layer 2 border
+    // 31bit : 
+    // if this is meshlet layer 1 border
     // 32bit : 
     // 0->connect to adjacent contour's v0
     // 1->connect to adjacent contour's v1
-    // 0xffffffff: unexist
+    // UNDEFINED_VALUE: unexist
     uint LinkId[2];
 
     // 0 : Head 1 : Tail
@@ -299,17 +297,31 @@ struct LineMesh
     //                     2 -> slice
     uint Anchor[2];
 
-    // 0 : meshlet layer1 index
-    // 1 : meshlet layer2 index
-    uint MeshletData[2];
-
-    // id of the whole line which this LineMesh belong to
-    // xy : two direction, forward or backward
-    float GroupId[2];
+    // 0 : chainning layer1
+    // 1 : chainning layer2
+    // 2 : chainning layer3
+    ChainningMetaData PathData[3];
 
 
 };
 
+
+
+
+struct LineGroup
+{
+    // line head of this group 
+    uint Head;
+
+    // if this line group data should set to slot 0 or slot 1 in LineVertex
+    uint DirectionMap;
+
+    uint GroupId;
+};
+
+
+
+#define UNDEFINED_VALUE 0xffffffff
 
 #define CONTOUR_FACE_TYPE 0
 #define CONTOUR_EDGE_TYPE 1
@@ -325,28 +337,20 @@ struct LineMesh
 #define SET_LINE_IS_BACKFACING(Dest, Value)  ((Value) ? (Dest | 0x8) : (Dest & ~0x8))
 #define SET_LINE_IS_VISIBLE(Dest, Value) ((Value) ? (Dest | 0x10) : (Dest & ~0x10))
 
-#define SET_LINE_DEBUG_TYPE 0xffffffff
+#define SET_LINE_DEBUG_TYPE UNDEFINED_VALUE
 
-/*
-#define GET_SLICE_ID(Dest) (Dest & 0x3fffffff)
-#define GET_IS_SLICE_HEAD(Dest) ((Dest & 0x40000000) > 0)
-#define GET_IS_SLICE_TAIL(Dest) ((Dest & 0x80000000) > 0)
-#define SET_SLICE_ID(Dest, Value) ((Dest & ~0x3fffffff) | ((Value) & 0x3fffffff))
-#define SET_IS_SLICE_HEAD(Dest, Value) ((Value) ? (Dest | 0x40000000) : (Dest & ~0x40000000))
-#define SET_IS_SLICE_TAIL(Dest, Value) ((Value) ? (Dest | 0x80000000) : (Dest & ~0x80000000))
-*/
 
 #define GET_ANCHOR_INDEX(Dest) (Dest & 0x3fffffff)
 #define GET_ANCHOR_TYPE(Dest) (Dest >> 30)
 #define SET_ANCHOR_INDEX(Dest, Value) ((Dest & ~0x3fffffff) | ((Value) & 0x3fffffff))
 #define SET_ANCHOR_TYPE(Dest, Value) ((Dest & 0x3fffffff) | ((Value) << 30))
 
-#define GET_ADJACENT_INDEX(Dest) (Dest & 0x7fffffff)
-#define GET_ADJACENT_DIRECTION(Dest) ((Dest & 0x80000000) > 0 ? 1 : 0)
-#define SET_ADJACENT_INDEX(Dest, Value)  ((Dest & ~0x7fffffff) | ((Value) & 0x7fffffff))
-#define SET_ADJACENT_DIRECTION(Dest, Value) ((Value) ? (Dest | 0x80000000) : (Dest & ~0x80000000))
+#define GET_LINKID_INDEX(Dest) (Dest & 0x1fffffff)
+#define GET_LINKID_MESHLETBORDER2(Dest) ((Dest & 0x20000000) > 0 ? 1 : 0)
+#define GET_LINKID_MESHLETBORDER1(Dest) ((Dest & 0x40000000) > 0 ? 1 : 0)
+#define GET_LINKID_DIRECTION(Dest) ((Dest & 0x80000000) > 0 ? 1 : 0)
+#define SET_LINKID_INDEX(Dest, Value)  ((Dest & ~0x1fffffff) | ((Value) & 0x1fffffff))
+#define SET_LINKID_MESHLETBORDER2(Dest, Value) ((Value) ? (Dest | 0x20000000) : (Dest & ~0x20000000))
+#define SET_LINKID_MESHLETBORDER1(Dest, Value) ((Value) ? (Dest | 0x40000000) : (Dest & ~0x40000000))
+#define SET_LINKID_DIRECTION(Dest, Value) ((Value) ? (Dest | 0x80000000) : (Dest & ~0x80000000)) 
 
-#define GET_LINEHEAD_INDEX(Dest) (Dest & 0x7fffffff)
-#define GET_LINEHEAD_DIRECTION(Dest) ((Dest & 0x80000000) > 0 ? 1 : 0)
-#define SET_LINEHEAD_INDEX(Dest, Value)  ((Dest & ~0x7fffffff) | ((Value) & 0x7fffffff))
-#define SET_LINEHEAD_DIRECTION(Dest, Value) ((Value) ? (Dest | 0x80000000) : (Dest & ~0x80000000))

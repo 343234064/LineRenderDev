@@ -1,73 +1,297 @@
 // Each #kernel tells which function to compile; you can have many kernels
-#pragma kernel Chainning
-
+#pragma kernel ChainningLayer1
+#pragma kernel ChainningLayer2
+#pragma kernel ChainningLayer3
 
 #include "Common.cginc"
 
 
 StructuredBuffer<uint> RArgBuffer;
-StructuredBuffer<uint> RArgBuffer2;
-StructuredBuffer<LineHead> LineHeadBuffer;
+RWStructuredBuffer<uint> WArgBuffer;
+RWStructuredBuffer<uint> HeadBuffer;
 RWStructuredBuffer<LineMesh> LineMeshBuffer;
+RWStructuredBuffer<LineGroup> GroupBuffer;
 
-#define LINEHEAD_SIZE RArgBuffer[CHAINNING_PASS_LINEHEAD_COUNT]
+#define CURRENTLAYER_LINEHEAD_SIZE(OFFSET) RArgBuffer[CHAINNING_PASS_LINEHEAD_COUNT + OFFSET]
 
 
-inline bool IsConnected(uint LinkId)
+inline bool IsLayer1Border(uint LinkId)
 {
-	return (LinkId != 0xffffffff);
+	return (LinkId != UNDEFINED_VALUE) && (GET_LINKID_MESHLETBORDER1(LinkId) != 0);
+}
+inline bool IsLayer2Border(uint LinkId)
+{
+	return (LinkId != UNDEFINED_VALUE) && (GET_LINKID_MESHLETBORDER2(LinkId) != 0);
+}
+
+inline bool IsConnected(uint LinkId, uint StartMeshId)
+{
+	return (LinkId != UNDEFINED_VALUE) && (GET_LINKID_INDEX(LinkId) != StartMeshId);
 }
 
 
-#define MAX_LOOP_NUM 2048
+inline uint CalculateDirectionMap(float3 A, float3 B)
+{
+	if (A.x != B.x) return A.x > B.x ? 0 : 1;
+	else if (A.y != B.y) return A.y > B.y ? 0 : 1;
+	else if (A.z != B.z) return A.z > B.z ? 0 : 1;
+	else return 0;
+}
+
+
+uint AddGroupBuffer()
+{
+	uint Original = 0;
+	InterlockedAdd(GroupBuffer[0].Head, 1, Original); //GroupBuffer[0].Head is counter
+
+	return Original + 1;
+}
+
+uint AddHeadBuffer(uint Head, uint Offset)
+{
+
+	uint Original = 0;
+	InterlockedAdd(WArgBuffer[CHAINNING_PASS_LINEHEAD_COUNT + Offset], 1, Original);
+
+	uint Original2 = 0;
+	bool AddThreadCount = ((Original + 1) % CHAINNING_PASS_PER_THREAD_ELEMENT_NUM == 0);
+	InterlockedAdd(WArgBuffer[CHAINNING_PASS_DISPATCH_COUNT + Offset], AddThreadCount ? 1 : 0, Original2);
+
+	Original = 0;
+	InterlockedAdd(HeadBuffer[0], 1, Original);
+	Original += 1;
+	HeadBuffer[Original] = Head;
+
+	return Original;
+
+}
+
+
+
+#define MAX_LOOP_NUM 1024
 
 [numthreads(CHAINNING_PASS_PER_THREAD_ELEMENT_NUM, 1, 1)]
-void Chainning (uint3 id : SV_DispatchThreadID)
+void ChainningLayer1(uint3 id : SV_DispatchThreadID)
 {
-	if (id.x >= LINEHEAD_SIZE) return;
-
-	LineHead CurrentHead = LineHeadBuffer[id.x];
+	if (id.x >= CURRENTLAYER_LINEHEAD_SIZE(CHAINNING_PASS_LAYER1_OFFSET)) return;
 
 	uint LoopNum = 0;
-	uint NextLink = CurrentHead.Data;
-
+	uint Head = HeadBuffer[id.x+1]; //HeadBuffer[0] is counter
 	
-	const uint MeshletLayer = 0;
-	
-	uint LineMeshId = GET_LINEHEAD_INDEX(NextLink);
-	uint StartDirection = GET_LINEHEAD_DIRECTION(NextLink);
-	uint StartPoint = StartDirection;
+	uint StartMeshId = GET_LINKID_INDEX(Head);
+	uint LinkDirection = GET_LINKID_DIRECTION(Head);
 
-	LineMesh FirstLineMesh = LineMeshBuffer[LineMeshId];
-	uint PrevMeshletIndex = FirstLineMesh.MeshletData[0];
-	uint GroupId = GET_ANCHOR_INDEX(FirstLineMesh.Anchor[0]) + GET_ANCHOR_INDEX(FirstLineMesh.Anchor[1]);
+	LineMesh FirstLineMesh = LineMeshBuffer[StartMeshId];
+	LineMesh LastLineMesh = (LineMesh)0;
 
+	uint HeadLinkId = FirstLineMesh.LinkId[LinkDirection];
+	uint TailLinkId = UNDEFINED_VALUE;
+	float3 HeadLocalPositionUnclipped = FirstLineMesh.LocalPositionUnclipped[LinkDirection];
+	float3 TailLocalPositionUnclipped = float3(0.0, 0.0, 0.0);
+
+
+	LineGroup NewGroup = (LineGroup)UNDEFINED_VALUE;
+	uint NewGroupId = AddGroupBuffer();
+
+	uint NextLink = Head;
+	uint LineMeshId = UNDEFINED_VALUE;
 	do
 	{
-		LineMeshId = GET_LINEHEAD_INDEX(NextLink);
-		StartPoint = 1 - GET_LINEHEAD_DIRECTION(NextLink);
+		TailLinkId = NextLink;
 
-		LineMesh CurrentLineMesh = LineMeshBuffer[LineMeshId];
-		NextLink = CurrentLineMesh.LinkId[StartPoint];
+		uint EntranceDirection = GET_LINKID_DIRECTION(NextLink);
+		LineMeshId = GET_LINKID_INDEX(NextLink);
+		LastLineMesh = LineMeshBuffer[LineMeshId];
 		
-		//if (PrevMeshletIndex != CurrentLineMesh.MeshletData[MeshletLayer])
-		//	break;
-
-		if(GET_ANCHOR_TYPE(CurrentLineMesh.Anchor[StartPoint]) == 1)
-			LoopNum++;
-
 		/////////////////////
-
-
-
-		//LineMeshBuffer[LineMeshId].GroupId[1] = 1;
+		LineMeshBuffer[LineMeshId].PathData[0].AttachedLineGroupId[EntranceDirection] = NewGroupId;
+		//LineMeshBuffer[LineMeshId].PathData[Pos].GroupId = GroupId;
 
 		
 
 		////////////////////
-		PrevMeshletIndex = CurrentLineMesh.MeshletData[MeshletLayer];
 
-	} while (IsConnected(NextLink) && LoopNum < MAX_LOOP_NUM);
+		LinkDirection = 1 - GET_LINKID_DIRECTION(NextLink);
+		NextLink = LastLineMesh.LinkId[LinkDirection];
+		TailLocalPositionUnclipped = LastLineMesh.LocalPositionUnclipped[LinkDirection];
+
+		uint AnchorType = GET_ANCHOR_TYPE(LastLineMesh.Anchor[LinkDirection]);
+		if (AnchorType != 2)
+			LoopNum++;
+
+	} while (IsConnected(NextLink, StartMeshId) && !IsLayer1Border(NextLink) && LoopNum < MAX_LOOP_NUM);
+
+	NewGroup.Head = Head;
+	NewGroup.DirectionMap = CalculateDirectionMap(HeadLocalPositionUnclipped, TailLocalPositionUnclipped);
+	NewGroup.GroupId = GET_ANCHOR_INDEX(FirstLineMesh.Anchor[0]) + GET_ANCHOR_INDEX(FirstLineMesh.Anchor[1]) + FirstLineMesh.Type * 10;
+	GroupBuffer[NewGroupId] = NewGroup;
+	
+	// Write layer1 linkid 
+	LineMeshBuffer[StartMeshId].PathData[0].LayeredLinkId[GET_LINKID_DIRECTION(Head)] = TailLinkId;
+	
+	//Add Head To Next layer 
+	if (IsLayer1Border(NextLink))
+	{
+		if (HeadLinkId == UNDEFINED_VALUE || IsLayer2Border(HeadLinkId))
+		{
+			AddHeadBuffer(Head, CHAINNING_PASS_LAYER2_OFFSET);
+		}
+	}
+	
+}
+
+
+
+
+
+
+[numthreads(CHAINNING_PASS_PER_THREAD_ELEMENT_NUM, 1, 1)]
+void ChainningLayer2(uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= CURRENTLAYER_LINEHEAD_SIZE(CHAINNING_PASS_LAYER2_OFFSET)) return;
+
+	uint Layer1HeadCount = WArgBuffer[CHAINNING_PASS_LINEHEAD_COUNT + CHAINNING_PASS_LAYER1_OFFSET];
+
+	uint LoopNum = 0;
+	uint Head = HeadBuffer[Layer1HeadCount + id.x + 1]; //HeadBuffer[0] is counter
+	
+	uint StartMeshId = GET_LINKID_INDEX(Head);
+	uint LinkDirection = GET_LINKID_DIRECTION(Head);
+
+	LineMesh FirstLineMesh = LineMeshBuffer[StartMeshId];
+	LineMesh LastLineMesh = FirstLineMesh;
+
+	uint HeadLinkId = FirstLineMesh.LinkId[LinkDirection];
+	uint TailLinkId = UNDEFINED_VALUE;
+	float3 HeadLocalPositionUnclipped = FirstLineMesh.LocalPositionUnclipped[LinkDirection];
+	float3 TailLocalPositionUnclipped = float3(0.0, 0.0, 0.0);
+
+	LineGroup NewGroup = (LineGroup)UNDEFINED_VALUE;
+	uint NewGroupId = AddGroupBuffer();
+
+	uint NextLink = Head;
+	uint LineMeshId = UNDEFINED_VALUE;
+	do
+	{
+		uint EntranceDirection = GET_LINKID_DIRECTION(NextLink);
+		LineMeshId = GET_LINKID_INDEX(NextLink); 
+		LastLineMesh = LineMeshBuffer[LineMeshId];
+		
+		NextLink = LastLineMesh.PathData[0].LayeredLinkId[EntranceDirection];
+		if (NextLink == UNDEFINED_VALUE) break;
+		LastLineMesh = LineMeshBuffer[GET_LINKID_INDEX(NextLink)];
+
+		TailLinkId = NextLink;
+
+		/////////////////////
+		LineMeshBuffer[LineMeshId].PathData[1].AttachedLineGroupId[EntranceDirection] = NewGroupId;
+		//LineMeshBuffer[LineMeshId].PathData[Pos].GroupId = GroupId;
+
+		
+
+		////////////////////
+
+		LinkDirection = 1 - GET_LINKID_DIRECTION(NextLink);
+		NextLink = LastLineMesh.LinkId[LinkDirection];
+		TailLocalPositionUnclipped = LastLineMesh.LocalPositionUnclipped[LinkDirection];
+
+		uint AnchorType = GET_ANCHOR_TYPE(LastLineMesh.Anchor[LinkDirection]);
+		if (AnchorType != 2)
+			LoopNum++;
+
+	} while (IsConnected(NextLink, StartMeshId) && !IsLayer2Border(NextLink) && LoopNum < MAX_LOOP_NUM);
+	
+
+	NewGroup.Head = Head;
+	NewGroup.DirectionMap = CalculateDirectionMap(HeadLocalPositionUnclipped, TailLocalPositionUnclipped);
+	NewGroup.GroupId = GET_ANCHOR_INDEX(FirstLineMesh.Anchor[0]) + GET_ANCHOR_INDEX(FirstLineMesh.Anchor[1]) + FirstLineMesh.Type * 10;
+	GroupBuffer[NewGroupId] = NewGroup;
+	
+	// Write layer2 linkid 
+	LineMeshBuffer[StartMeshId].PathData[1].LayeredLinkId[GET_LINKID_DIRECTION(Head)] = TailLinkId;
+
+	//Add Head To Next layer 
+	if (IsLayer2Border(NextLink))
+	{
+		if (HeadLinkId == UNDEFINED_VALUE)
+		{
+			AddHeadBuffer(Head, CHAINNING_PASS_LAYER3_OFFSET);
+		}
+	}
+
+}
+
+
+
+
+
+
+[numthreads(CHAINNING_PASS_PER_THREAD_ELEMENT_NUM, 1, 1)]
+void ChainningLayer3(uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= CURRENTLAYER_LINEHEAD_SIZE(CHAINNING_PASS_LAYER3_OFFSET)) return;
+
+	uint Layer1HeadCount = RArgBuffer[CHAINNING_PASS_LINEHEAD_COUNT + CHAINNING_PASS_LAYER1_OFFSET];
+	uint Layer2HeadCount = WArgBuffer[CHAINNING_PASS_LINEHEAD_COUNT + CHAINNING_PASS_LAYER2_OFFSET];
+
+	uint LoopNum = 0;
+	uint Head = HeadBuffer[Layer1HeadCount + Layer2HeadCount + id.x + 1]; //HeadBuffer[0] is counter
+
+	uint StartMeshId = GET_LINKID_INDEX(Head);
+	uint LinkDirection = GET_LINKID_DIRECTION(Head);
+
+	LineMesh FirstLineMesh = LineMeshBuffer[StartMeshId];
+	LineMesh LastLineMesh = FirstLineMesh;
+
+	uint HeadLinkId = FirstLineMesh.LinkId[LinkDirection];
+	uint TailLinkId = UNDEFINED_VALUE;
+	float3 HeadLocalPositionUnclipped = FirstLineMesh.LocalPositionUnclipped[LinkDirection];
+	float3 TailLocalPositionUnclipped = float3(0.0, 0.0, 0.0);
+
+	LineGroup NewGroup = (LineGroup)UNDEFINED_VALUE;
+	uint NewGroupId = AddGroupBuffer();
+
+	uint NextLink = Head;
+	uint LineMeshId = UNDEFINED_VALUE;
+	do
+	{
+		uint EntranceDirection = GET_LINKID_DIRECTION(NextLink);
+		LineMeshId = GET_LINKID_INDEX(NextLink);
+		LastLineMesh = LineMeshBuffer[LineMeshId];
+
+		NextLink = LastLineMesh.PathData[1].LayeredLinkId[EntranceDirection];
+		if (NextLink == UNDEFINED_VALUE) break;
+		LastLineMesh = LineMeshBuffer[GET_LINKID_INDEX(NextLink)];
+
+		TailLinkId = NextLink;
+
+		/////////////////////
+		LineMeshBuffer[LineMeshId].PathData[2].AttachedLineGroupId[EntranceDirection] = NewGroupId;
+		//LineMeshBuffer[LineMeshId].PathData[Pos].GroupId = GroupId;
+
+		LineMeshBuffer[LineMeshId].PathData[2].AttachedLineGroupId[0] = 1;
+		LineMeshBuffer[LineMeshId].PathData[2].AttachedLineGroupId[1] = 1;
+		LineMeshBuffer[GET_LINKID_INDEX(NextLink)].PathData[2].AttachedLineGroupId[0] = 5;
+		LineMeshBuffer[GET_LINKID_INDEX(NextLink)].PathData[2].AttachedLineGroupId[1] = 5;
+
+		////////////////////
+
+		LinkDirection = 1 - GET_LINKID_DIRECTION(NextLink);
+		NextLink = LastLineMesh.LinkId[LinkDirection];
+		TailLocalPositionUnclipped = LastLineMesh.LocalPositionUnclipped[LinkDirection];
+
+		uint AnchorType = GET_ANCHOR_TYPE(LastLineMesh.Anchor[LinkDirection]);
+		if (AnchorType != 2)
+			LoopNum++;
+
+	} while (IsConnected(NextLink, StartMeshId) && LoopNum < MAX_LOOP_NUM);
+
+
+	NewGroup.Head = Head;
+	NewGroup.DirectionMap = CalculateDirectionMap(HeadLocalPositionUnclipped, TailLocalPositionUnclipped);
+	NewGroup.GroupId = GET_ANCHOR_INDEX(FirstLineMesh.Anchor[0]) + GET_ANCHOR_INDEX(FirstLineMesh.Anchor[1]) + FirstLineMesh.Type * 10;
+	GroupBuffer[NewGroupId] = NewGroup;
+
 
 
 }

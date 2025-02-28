@@ -291,6 +291,12 @@ public class LinesRenderer : MonoBehaviour
                 //Debug.Log("Render: "+Current.Name);
                 Renderer.ClearFrame();
 
+                Renderer.EveryFrameParams.VisibilityFlag = 0;
+                Renderer.EveryFrameParams.VisibilityFlag = Renderer.EveryFrameParams.VisibilityFlag | (uint)(Current.Context.LineMaterialSetting.HideVisibleEdge ? 1 : 0);
+                Renderer.EveryFrameParams.VisibilityFlag = Renderer.EveryFrameParams.VisibilityFlag | (uint)(Current.Context.LineMaterialSetting.HideBackFaceEdge ? 2 : 0);
+                Renderer.EveryFrameParams.VisibilityFlag = Renderer.EveryFrameParams.VisibilityFlag | (uint)(Current.Context.LineMaterialSetting.HideOccludedEdge ? 4 : 0);
+                Renderer.EveryFrameParams.VisibilityFlag = Renderer.EveryFrameParams.VisibilityFlag | (uint)(Current.Context.LineMaterialSetting.LinkUnvisibleAndVisibleEdge ? 8 : 0);
+
                 Renderer.EveryFrameParams.WorldCameraPosition = Camera.main.transform.position;
                 Renderer.EveryFrameParams.LocalCameraPosition = Current.Context.RumtimeTransform.InverseTransformPoint(Camera.main.transform.position);
                 Renderer.EveryFrameParams.LocalCameraForward = Current.Context.RumtimeTransform.InverseTransformDirection(Camera.main.transform.forward);
@@ -301,6 +307,8 @@ public class LinesRenderer : MonoBehaviour
                 Renderer.EveryFrameParams.ScreenScaledResolution = new Vector4(camera.scaledPixelWidth, camera.scaledPixelHeight, 1.0f / camera.scaledPixelWidth, 1.0f / camera.scaledPixelHeight);
                 Renderer.EveryFrameParams.LineWidthScale = LineWidthScale;
                 Renderer.EveryFrameParams.ObjectScale = Current.Context.RumtimeTransform.lossyScale;
+                Renderer.EveryFrameParams.ChainningAngleThreshold = (Current.Context.LineMaterialSetting.UnlinkedEdgeAngleThreshold) * (0.017453292519943294f);
+                
 
                 if (RenderAsDebugCamera)
                 {

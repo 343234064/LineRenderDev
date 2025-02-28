@@ -49,7 +49,7 @@ Shader "LineRender/LineShader"{
 
 				Output output = (Output)0;
 
-				float RanID = InVertex.Id;
+				float RanID = InVertex.GroupId[0];
 				float Ran = Hash31(RanID).x;
 				InVertex.Position.xy += (Ran * RandomOffset + PositionOffset.xy);
 

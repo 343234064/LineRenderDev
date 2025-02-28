@@ -45,7 +45,10 @@ StructuredBuffer<AnchorEdge> AnchorEdgeBuffer;
 StructuredBuffer<AnchorSlice> AnchorSliceBuffer;
 RWStructuredBuffer<uint> WArgBuffer;
 RWStructuredBuffer<LineMesh> LineMeshBuffer;
-RWStructuredBuffer<LineHead> LineHeadBuffer;
+RWStructuredBuffer<uint> HeadBuffer;
+
+uniform float ChainningAngleThreshold;
+
 
 #define SEGMENT_SIZE RArgBuffer[INDIRECT_DRAW_TRIANGLE_COUNT]*0.5 // !! TRIANGLE_COUNT = 2 * SEGMENT_COUNT
 #define SLICE_SIZE WArgBuffer[VISIBILITY_PASS_SLICE_COUNT]
@@ -67,13 +70,8 @@ uint AddLineMeshBuffer(uint Index, LineMesh CurrentSegment)
     return Index;
 }
 
-uint AddLineHeadBuffer(uint LineMeshId, uint StartPoint)
+uint AddHeadBuffer(uint Head)
 {
-
-    LineHead NewHead = (LineHead)0;
-    NewHead.Data = SET_LINEHEAD_INDEX(0, LineMeshId);
-    NewHead.Data = SET_LINEHEAD_DIRECTION(NewHead.Data, StartPoint);
-
     uint Original = 0;
     InterlockedAdd(WArgBuffer[CHAINNING_PASS_LINEHEAD_COUNT], 1, Original);
 
@@ -81,18 +79,29 @@ uint AddLineHeadBuffer(uint LineMeshId, uint StartPoint)
     bool AddThreadCount = ((Original + 1) % CHAINNING_PASS_PER_THREAD_ELEMENT_NUM == 0);
     InterlockedAdd(WArgBuffer[CHAINNING_PASS_DISPATCH_COUNT], AddThreadCount ? 1 : 0, Original2);
 
-    LineHeadBuffer[Original] = NewHead;
+    Original = 0;
+    InterlockedAdd(HeadBuffer[0], 1, Original);
+    Original += 1;
+    HeadBuffer[Original] = Head;
 
     return Original;
 
 }
 
+inline bool CheckUnlinkSetting(float3 LineA, uint LineAType, float3 LineB, uint LineBType)
+{
+    /// a dot b / (|a| * |b|) = cos(theta)
+    bool AngleCheck = step(cos(ChainningAngleThreshold) - 0.00001f, dot(normalize(LineA), normalize(LineB)));
+    bool TypeCheck = (LineAType != LineBType);
 
+    return AngleCheck || TypeCheck;
+
+}
 
 
 uint3 ReadAnchorCache(uint AnchorType, uint AnchorIndex, uint LineType)
 {
-    uint3 Result = uint3(0xffffffff, 0xffffffff, 0xffffffff);
+    uint3 Result = uint3(UNDEFINED_VALUE, UNDEFINED_VALUE, UNDEFINED_VALUE);
     if (AnchorType == 1) {
         if (LineType == CONTOUR_FACE_TYPE) {
             Result = AnchorEdgeBuffer[AnchorIndex].ContourType;
@@ -115,19 +124,17 @@ uint3 ReadAnchorCache(uint AnchorType, uint AnchorIndex, uint LineType)
 
 uint GetLinkId(uint CurrentIndex, uint3 LinkData)
 {
-    uint V = 0xffffffff;
+    uint V = UNDEFINED_VALUE;
     if (LinkData.x == 2)
     {
-        uint VyIndex = GET_LINEHEAD_INDEX(LinkData.y);
-        uint VzIndex = GET_LINEHEAD_INDEX(LinkData.z);
+        uint VyIndex = GET_LINKID_INDEX(LinkData.y);
+        uint VzIndex = GET_LINKID_INDEX(LinkData.z);
         if ((VyIndex == CurrentIndex) && (VzIndex != CurrentIndex))
             V = LinkData.z;
         else if ((VyIndex != CurrentIndex) && (VzIndex == CurrentIndex))
             V = LinkData.y;
-        else
-            V = 0x00ffffff;
     }
-    //uint V1 = (LinkV1.x == 2) ? (((LinkV1.y & 0x7fffffff == CurrentIndex) ? LinkV1.z : ((LinkV1.z & 0x7fffffff == CurrentIndex) ? LinkV1.y : (0xffffffff))) : 0xffffffff);
+    //uint V1 = (LinkV1.x == 2) ? (((LinkV1.y & 0x7fffffff == CurrentIndex) ? LinkV1.z : ((LinkV1.z & 0x7fffffff == CurrentIndex) ? LinkV1.y : (UNDEFINED_VALUE))) : UNDEFINED_VALUE);
 
     return V;
 }
@@ -168,6 +175,8 @@ uint ExtractTriangleMesh(uint SegmentId, uint V0LinkId, uint V1LinkId, Segment C
 
     NewMesh.NDCPosition[0] = CurrentSegment.NDCPosition[0].xy;
     NewMesh.NDCPosition[1] = CurrentSegment.NDCPosition[1].xy;
+    NewMesh.LocalPositionUnclipped[0] = CurrentSegment.LocalPositionUnclipped[0];
+    NewMesh.LocalPositionUnclipped[1] = CurrentSegment.LocalPositionUnclipped[1];
 
     NewMesh.Type = CurrentSegment.Type;
 
@@ -176,18 +185,23 @@ uint ExtractTriangleMesh(uint SegmentId, uint V0LinkId, uint V1LinkId, Segment C
 
     NewMesh.Anchor = CurrentSegment.Anchor;
 
-    NewMesh.MeshletData = CurrentSegment.MeshletData;
-
     NewMesh.PixelPosition = CurrentSegment.PixelPosition;
 
-    NewMesh.GroupId[0] = test.x;// Interpolate(test.x, test.y, CurrentSegment.PixelPosition[0]);
-    NewMesh.GroupId[1] = test.y;// Interpolate(test.x, test.y, CurrentSegment.PixelPosition[1]);
+    //NewMesh.MeshletData = CurrentSegment.MeshletData;
+
+    NewMesh.PixelPosition[0] = CurrentSegment.PixelPosition[0];// Interpolate(test.x, test.y, CurrentSegment.PixelPosition[0]);
+    NewMesh.PixelPosition[1] = CurrentSegment.PixelPosition[1];// Interpolate(test.x, test.y, CurrentSegment.PixelPosition[1]);
 
 #if ENABLE_DEBUG_VIEW
     NewMesh.NDCPositionForDebug[0] = CurrentSegment.NDCPositionForDebug[0];
     NewMesh.NDCPositionForDebug[1] = CurrentSegment.NDCPositionForDebug[1];
     NewMesh.SliceId = CurrentSegment.SliceId;
 #endif
+
+    NewMesh.PathData[0] = (ChainningMetaData)UNDEFINED_VALUE;
+    NewMesh.PathData[1] = (ChainningMetaData)UNDEFINED_VALUE;
+    NewMesh.PathData[2] = (ChainningMetaData)UNDEFINED_VALUE;
+
 
     return AddLineMeshBuffer(SegmentId, NewMesh);
 
@@ -209,9 +223,9 @@ void Generate(uint3 id : SV_DispatchThreadID)
     Segment CurrentSegment = AllSegmentBuffer[SegmentId];
 
     uint2 test = uint2(0, 0);
-    uint LinkId[2] = { 0xffffffff, 0xffffffff };
-    uint3 LinkCacheV0 = uint3(0xffffffff, 0xffffffff, 0xffffffff);
-    uint3 LinkCacheV1 = uint3(0xffffffff, 0xffffffff, 0xffffffff);
+    uint LinkId[2] = { UNDEFINED_VALUE, UNDEFINED_VALUE };
+    uint3 LinkCacheV0 = uint3(UNDEFINED_VALUE, UNDEFINED_VALUE, UNDEFINED_VALUE);
+    uint3 LinkCacheV1 = uint3(UNDEFINED_VALUE, UNDEFINED_VALUE, UNDEFINED_VALUE);
 
     uint Type = GET_LINE_TYPE(CurrentSegment.Type);
     uint V0AnchorIndex = GET_ANCHOR_INDEX(CurrentSegment.Anchor[0]);
@@ -220,7 +234,7 @@ void Generate(uint3 id : SV_DispatchThreadID)
     uint V1AnchorType = GET_ANCHOR_TYPE(CurrentSegment.Anchor[1]);
 
     V0AnchorIndex = (V0AnchorType == 2) ? CurrentSegment.SliceId : V0AnchorIndex;
-    V1AnchorIndex = (V1AnchorType == 2) ? (CurrentSegment.SliceId+1) : V1AnchorIndex;
+    V1AnchorIndex = (V1AnchorType == 2) ? (CurrentSegment.SliceId + 1) : V1AnchorIndex;
 
     if (V0AnchorType != 0)
     {
@@ -233,37 +247,65 @@ void Generate(uint3 id : SV_DispatchThreadID)
         LinkId[1] = GetLinkId(SegmentId, LinkCacheV1);
     }
     
-    
     bool V0IsMeshletBorderLayer1 = false;
-    if (LinkId[0] != 0xffffffff)
+    if (LinkId[0] != UNDEFINED_VALUE)
     {
-        uint AdjSegmentId = GET_ADJACENT_INDEX(LinkId[0]);
+        uint AdjSegmentId = GET_LINKID_INDEX(LinkId[0]);
+        uint AdjDirection = GET_LINKID_DIRECTION(LinkId[0]);
+
         Segment AdjSegment = AllSegmentBuffer[AdjSegmentId];
-        V0IsMeshletBorderLayer1 = (CurrentSegment.MeshletData[0] != AdjSegment.MeshletData[0]);
-        if (AdjSegment.Type != CurrentSegment.Type) LinkId[0] == 0xffffffff;
+        V0IsMeshletBorderLayer1 = (CurrentSegment.MeshletData[1] != AdjSegment.MeshletData[1]);
+        LinkId[0] = SET_LINKID_MESHLETBORDER1(LinkId[0], V0IsMeshletBorderLayer1);
+        LinkId[0] = SET_LINKID_MESHLETBORDER2(LinkId[0], (CurrentSegment.MeshletData[2] != AdjSegment.MeshletData[2]));
+
+        float3 LineA = CurrentSegment.LocalPositionUnclipped[1].xyz - CurrentSegment.LocalPositionUnclipped[0].xyz;
+        float3 LineB = AdjSegment.LocalPositionUnclipped[1 - AdjDirection].xyz - AdjSegment.LocalPositionUnclipped[AdjDirection].xyz;
+        if (Type == CONTOUR_FACE_TYPE)
+        {
+            LineA = float3(CurrentSegment.NDCPosition[1].xy, 0.0) - float3(CurrentSegment.NDCPosition[0].xy, 0.0);
+            LineB = float3(AdjSegment.NDCPosition[1 - AdjDirection].xy, 0.0) - float3(AdjSegment.NDCPosition[AdjDirection].xy, 0.0);
+        }
+
+        if (CheckUnlinkSetting(LineA, CurrentSegment.Type, LineB, AdjSegment.Type))
+            LinkId[0] = UNDEFINED_VALUE;
     }
 
     bool V1IsMeshletBorderLayer1 = false;
-    if (LinkId[1] != 0xffffffff)
+    if (LinkId[1] != UNDEFINED_VALUE)
     {
-        uint AdjSegmentId = GET_ADJACENT_INDEX(LinkId[1]);
+        uint AdjSegmentId = GET_LINKID_INDEX(LinkId[1]);
+        uint AdjDirection = GET_LINKID_DIRECTION(LinkId[1]);
+
         Segment AdjSegment = AllSegmentBuffer[AdjSegmentId];
-        V1IsMeshletBorderLayer1 = (CurrentSegment.MeshletData[0] != AdjSegment.MeshletData[0]);
-        if (AdjSegment.Type != CurrentSegment.Type) LinkId[1] == 0xffffffff;
+        V1IsMeshletBorderLayer1 = (CurrentSegment.MeshletData[1] != AdjSegment.MeshletData[1]);
+        LinkId[1] = SET_LINKID_MESHLETBORDER1(LinkId[1], V1IsMeshletBorderLayer1);
+        LinkId[1] = SET_LINKID_MESHLETBORDER2(LinkId[1], (CurrentSegment.MeshletData[2] != AdjSegment.MeshletData[2]));
+
+        float3 LineA = CurrentSegment.LocalPositionUnclipped[0].xyz - CurrentSegment.LocalPositionUnclipped[1].xyz;
+        float3 LineB = AdjSegment.LocalPositionUnclipped[1 - AdjDirection].xyz - AdjSegment.LocalPositionUnclipped[AdjDirection].xyz;
+        if (Type == CONTOUR_FACE_TYPE)
+        {
+            LineA = float3(CurrentSegment.NDCPosition[0].xy, 0.0) - float3(CurrentSegment.NDCPosition[1].xy, 0.0);
+            LineB = float3(AdjSegment.NDCPosition[1 - AdjDirection].xy, 0.0) - float3(AdjSegment.NDCPosition[AdjDirection].xy, 0.0);
+        }
+
+        if (CheckUnlinkSetting(LineA, CurrentSegment.Type, LineB, AdjSegment.Type))
+            LinkId[1] = UNDEFINED_VALUE;
     }
 
 
-    if (LinkId[0] == 0xffffffff)// || V0IsMeshletBorderLayer1)
+    if (LinkId[0] == UNDEFINED_VALUE || V0IsMeshletBorderLayer1)
     {
-        AddLineHeadBuffer(SegmentId, 0);
-        
+        uint Head = SET_LINKID_INDEX(0, SegmentId);
+        Head = SET_LINKID_DIRECTION(Head, 0);
+        AddHeadBuffer(Head);
     }
-    if (LinkId[1] == 0xffffffff)// || V1IsMeshletBorderLayer1)
+    if (LinkId[1] == UNDEFINED_VALUE || V1IsMeshletBorderLayer1)
     {
-        AddLineHeadBuffer(SegmentId, 1);
-       
+        uint Head = SET_LINKID_INDEX(0, SegmentId);
+        Head = SET_LINKID_DIRECTION(Head, 1);
+        AddHeadBuffer(Head);
     }
-    test.y = 1;
 
     ExtractTriangleMesh(SegmentId, LinkId[0], LinkId[1], CurrentSegment, test);
 }

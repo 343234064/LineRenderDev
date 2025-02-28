@@ -68,13 +68,15 @@ public class ArgBufferLayout
     {
         uint VertexCount = 3;
         if (EnableDebug) VertexCount = 2;
-        Buffer = new uint[4 * 6] {
+        Buffer = new uint[4 * 8] {
             VertexCount, 0, 0, 0, // indirect draw : vertex count, instance count, start vertex, start instance
             1, 1, 1, 0, // contourize pass : contour count / thread count, 1, 1, contour count
             1, 1, 1, 0, // slice pass : visible contour count / thread count, 1, 1, visible contour count
             0, 1, 1, 0, // visiblity pass : slice count, 1, 1, 0
             1, 1, 1, 0, // generate pass : segment count / thread count, 1, 1, 0
-            1, 1, 1, 0, // chainning pass : head count / thread count, 1, 1, head count
+            1, 1, 1, 0, // chainning pass1 : head count / thread count, 1, 1, current pass head count
+            1, 1, 1, 0, // chainning pass2 : head count / thread count, 1, 1, current pass head count
+            1, 1, 1, 0, // chainning pass3 : head count / thread count, 1, 1, current pass head count
         };
     }
     public uint[] Buffer;
@@ -97,10 +99,17 @@ public class ArgBufferLayout
     public int GeneratePassDispatchCount() { return GeneratePassStart(); }
     public int GeneratePassSegmentCount() { return GeneratePassStart() + StrideSize() * 3; }
 
-    public int ChainningPassStart() { return StrideSize() * 20; }
-    public int ChainningPassDispatchCount() { return ChainningPassStart(); }
-    public int ChainningPassLineHeadCount() { return ChainningPassStart() + StrideSize() * 3; }
+    public int ChainningPass1Start() { return StrideSize() * 20; }
+    public int ChainningPass1DispatchCount() { return ChainningPass1Start(); }
+    public int ChainningPass1LineHeadCount() { return ChainningPass1Start() + StrideSize() * 3; }
 
+    public int ChainningPass2Start() { return StrideSize() * 24; }
+    public int ChainningPass2DispatchCount() { return ChainningPass2Start(); }
+    public int ChainningPass2LineHeadCount() { return ChainningPass2Start() + StrideSize() * 3; }
+
+    public int ChainningPass3Start() { return StrideSize() * 28; }
+    public int ChainningPass3DispatchCount() { return ChainningPass3Start(); }
+    public int ChainningPass3LineHeadCount() { return ChainningPass3Start() + StrideSize() * 3; }
 
     public int StrideSize()
     {
@@ -109,7 +118,7 @@ public class ArgBufferLayout
 
     public int Count()
     {
-        return 4 * 6;
+        return Buffer.Length;
     }
 }
 
@@ -119,15 +128,7 @@ public struct Contour
 {
     public static int Size()
     {
-        return sizeof(uint) * 1 + sizeof(uint) * 3 + sizeof(float) * 3 * 3 + sizeof(uint) * 2 + sizeof(uint) * 2;
-    }
-}
-
-public struct Segment
-{
-    public static int Size(bool EnableDebug)
-    {
-        return sizeof(float) * 2 * 2 + (EnableDebug ? sizeof(float) * 4 * 2 : 0) + sizeof(float) * 2 + sizeof(uint) * 1 + sizeof(uint) * 1 + sizeof(uint) * 1 + sizeof(uint) * 2 + sizeof(uint) * 2;
+        return sizeof(uint) * 1 + sizeof(uint) * 3 + sizeof(float) * 3 * 3 + sizeof(uint) * 2 + sizeof(uint) * 3;
     }
 }
 
@@ -151,16 +152,16 @@ public struct SegmentMetaData
 {
     public static int Size(bool EnableDebug)
     {
-        return sizeof(float) * 4 * 2 + (EnableDebug ? sizeof(float) * 4 * 2 : 0) + sizeof(uint) * 3 + sizeof(uint) * 1 + sizeof(uint) * 1 + sizeof(float) * 1 + sizeof(uint) * 2 + sizeof(uint) * 2;
+        return sizeof(float) * 4 * 2 + sizeof(float) * 3 * 2 + (EnableDebug ? sizeof(float) * 4 * 2 : 0) + sizeof(uint) * 3 + sizeof(uint) * 1 + sizeof(uint) * 1 + sizeof(float) * 1 + sizeof(uint) * 2 + sizeof(uint) * 3;
     }
 }
 
 
-public struct LineHead
+public struct Segment
 {
-    public static int Size()
+    public static int Size(bool EnableDebug)
     {
-        return sizeof(uint) * 1;
+        return sizeof(float) * 2 * 2 + sizeof(float) * 3 * 2 + (EnableDebug ? sizeof(float) * 4 * 2 : 0) + sizeof(float) * 2 + sizeof(uint) * 1 + sizeof(uint) * 1 + sizeof(uint) * 1 + sizeof(uint) * 2 + sizeof(uint) * 3;
     }
 }
 
@@ -187,10 +188,27 @@ public struct AnchorSlice
     }
 }
 
+
+public struct ChainningMetaData
+{
+    public static int Size()
+    {
+        return sizeof(uint) * 2 + sizeof(uint) * 2;
+    }
+}
 public struct LineMesh
 {
     public static int Size(bool EnableDebug)
     {
-        return sizeof(float) * 2 * 2 + (EnableDebug ? (sizeof(float) * 4 * 2 + sizeof(uint)) : 0) + sizeof(float) * 2 + sizeof(uint) * 1 + sizeof(uint) * 2 + sizeof(uint) * 2 + sizeof(uint) * 2 + sizeof(float) * 2;
+        return sizeof(float) * 2 * 2 + sizeof(float) * 3 * 2 + (EnableDebug ? (sizeof(float) * 4 * 2 + sizeof(uint)) : 0) + sizeof(float) * 2 + sizeof(uint) * 1 + sizeof(uint) * 2 + sizeof(uint) * 2 + ChainningMetaData.Size() * 3;
+    }
+}
+
+
+public struct LineGroup
+{
+    public static int Size()
+    {
+        return sizeof(uint) * 1 + sizeof(uint) * 1 + sizeof(uint) * 1;
     }
 }

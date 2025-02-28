@@ -18,7 +18,9 @@ public class PackedLineData
     public uint FaceStructSize;
     public uint EdgeNum;
     public uint EdgeStructSize;
-    public uint MeshletNum;
+    public uint MeshletLayer0Num;
+    public uint MeshletLayer1Num;
+    public uint MeshletLayer2Num;
     public uint MeshletStructSize;
 
     public Byte[] RepeatedVertexList;
@@ -175,11 +177,15 @@ public class AdjacencyDataPool
 
     private void ImportMeshletData(PackedLineData LineData, BinaryReader Reader, uint ByteSizeFloat, uint ByteSizeUInt)
     {
-        LineData.MeshletNum = Reader.ReadUInt32();
+        LineData.MeshletLayer0Num = Reader.ReadUInt32();
+        LineData.MeshletLayer1Num = Reader.ReadUInt32();
+        LineData.MeshletLayer2Num = Reader.ReadUInt32();
         LineData.MeshletStructSize = Reader.ReadUInt32();
-        LineData.MeshletList = Reader.ReadBytes((int)(LineData.MeshletNum * LineData.MeshletStructSize));
+        LineData.MeshletList = Reader.ReadBytes((int)(LineData.MeshletLayer0Num * LineData.MeshletStructSize));
 
-        Debug.Log("Total Meshlet Num & Per Struct Size: " + LineData.MeshletNum + ", " + LineData.MeshletStructSize);
+        Debug.Log("Total Meshlet Layer 0 Num & Per Struct Size: " + LineData.MeshletLayer0Num + ", " + LineData.MeshletStructSize);
+        Debug.Log("Total Meshlet Layer 1 Num : " + LineData.MeshletLayer1Num);
+        Debug.Log("Total Meshlet Layer 2 Num : " + LineData.MeshletLayer2Num);
     }
 
     private bool DoLoad(string Path, Guid ID)

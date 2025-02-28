@@ -248,7 +248,7 @@ MonoBehaviour:
   LineRenderMaterialForDebug: {fileID: 0}
   HideVisibleEdge: 0
   HideBackFaceEdge: 0
-  HideOccludedEdge: 1
+  HideOccludedEdge: 0
   LinkUnvisibleAndVisibleEdge: 0
   UnlinkedEdgeAngleThreshold: 90
   ContourEnable: 0
@@ -543,7 +543,7 @@ MonoBehaviour:
   HideBackFaceEdge: 1
   HideOccludedEdge: 1
   LinkUnvisibleAndVisibleEdge: 0
-  UnlinkedEdgeAngleThreshold: 90
+  UnlinkedEdgeAngleThreshold: 171
   ContourEnable: 0
   OutineOnly: 0
   CreaseEnable: 1
@@ -571,14 +571,14 @@ MonoBehaviour:
   SubMeshIndex: -1
   LineRenderMaterial: {fileID: 2100000, guid: 81a5711070871f0458f68ffb139d47c9, type: 2}
   LineRenderMaterialForDebug: {fileID: 0}
-  HideVisibleEdge: 1
+  HideVisibleEdge: 0
   HideBackFaceEdge: 0
   HideOccludedEdge: 0
   LinkUnvisibleAndVisibleEdge: 0
   UnlinkedEdgeAngleThreshold: 90
   ContourEnable: 1
   OutineOnly: 0
-  CreaseEnable: 1
+  CreaseEnable: 0
   CreaseAngleDegreeThreshold: 45
   BorderEnable: 1
   MarkedEdgeEnable: 1
@@ -991,14 +991,14 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 723381315}
-  m_LocalRotation: {x: 0.2662164, y: 0.14131773, z: -0.032044597, w: 0.95295924}
-  m_LocalPosition: {x: -5.04358, y: 2.008724, z: -4.635514}
+  m_LocalRotation: {x: 0.13005105, y: 0.20118675, z: -0.018725233, w: 0.9707008}
+  m_LocalPosition: {x: -7.062636, y: 4.79458, z: -6.862363}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
   m_RootOrder: 0
-  m_LocalEulerAnglesHint: {x: 31.094, y: 17.134, z: 0.948}
+  m_LocalEulerAnglesHint: {x: 15.071, y: 23.544, z: 0.948}
 --- !u!114 &723381320
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1119,7 +1119,6 @@ MonoBehaviour:
   VisiblePassShader: {fileID: 7200000, guid: 2fbc58ccd536cc64287e0069b75f7de1, type: 3}
   GeneratePassShader: {fileID: 7200000, guid: 0ce63d1a4e14d944497386fdc01334d8, type: 3}
   ChainningPassShader: {fileID: 7200000, guid: f3562be55319bb741b08adc1d5d18962, type: 3}
-  TestPassShader: {fileID: 7200000, guid: 78abcf0e8c764ae48834bb64b1d1ff51, type: 3}
   MeshInfoListForOnlyDisplay: []
   RenderAsDebugCamera: 0
   MainViewCameraInDebugView: {fileID: 0}
@@ -1919,7 +1918,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: d3225e1bf00327942bb9801169f9a8ec, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 3858834875630972043, guid: d3225e1bf00327942bb9801169f9a8ec, type: 3}
       propertyPath: m_Materials.Array.data[0]
@@ -2005,7 +2004,7 @@ MonoBehaviour:
   HideBackFaceEdge: 0
   HideOccludedEdge: 1
   LinkUnvisibleAndVisibleEdge: 0
-  UnlinkedEdgeAngleThreshold: 89
+  UnlinkedEdgeAngleThreshold: 90
   ContourEnable: 1
   OutineOnly: 1
   CreaseEnable: 0
@@ -2108,7 +2107,6 @@ MonoBehaviour:
   VisiblePassShader: {fileID: 7200000, guid: 2fbc58ccd536cc64287e0069b75f7de1, type: 3}
   GeneratePassShader: {fileID: 7200000, guid: 0ce63d1a4e14d944497386fdc01334d8, type: 3}
   ChainningPassShader: {fileID: 7200000, guid: f3562be55319bb741b08adc1d5d18962, type: 3}
-  TestPassShader: {fileID: 0}
   MeshInfoListForOnlyDisplay: []
   RenderAsDebugCamera: 1
   MainViewCameraInDebugView: {fileID: 723381318}
@@ -2244,6 +2242,10 @@ PrefabInstance:
       propertyPath: m_Materials.Array.data[0]
       value: 
       objectReference: {fileID: 2100000, guid: 5723abc534e0ffd4abf25b12dda6f7f2, type: 2}
+    - target: {fileID: -1658812058286047673, guid: c85fac795e22b984096c291961adffa8, type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: c85fac795e22b984096c291961adffa8, type: 3}
       propertyPath: m_Name
       value: MeetMat
@@ -2256,6 +2258,10 @@ PrefabInstance:
       propertyPath: m_Materials.Array.data[0]
       value: 
       objectReference: {fileID: 2100000, guid: 5723abc534e0ffd4abf25b12dda6f7f2, type: 2}
+    - target: {fileID: 7180280400624970166, guid: c85fac795e22b984096c291961adffa8, type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: c85fac795e22b984096c291961adffa8, type: 3}
 --- !u!1 &1927976318 stripped

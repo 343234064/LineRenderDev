@@ -22,7 +22,8 @@ RWStructuredBuffer<AnchorSlice> AnchorSliceBuffer;
 Texture2D<float> SceneDepthTexture;
 SamplerState LinearClampSampler;
 
-uniform float4  ScreenScaledResolution;
+uniform float4  ScreenScaledResolution; 
+uniform int VisibilityFlag;
 
 /*
 * Groupshared memory is limited to 16KB per group.
@@ -256,33 +257,33 @@ uint AddAllSegmentBuffer(Segment CurrentSegment)
 
 
 
-void WriteSegmentIndexToAnchorCache(uint AnchorType, uint AnchorIndex, uint LineType, uint SegmentId)
+void WriteLinkIdToAnchorCache(uint AnchorType, uint AnchorIndex, uint LineType, uint LinkId)
 {
-    uint Original = 0xffffffff;
+    uint Original = UNDEFINED_VALUE;
     if (AnchorType == 2)
     {
-        InterlockedCompareExchange(AnchorSliceBuffer[AnchorIndex].AllType.x, 0xffffffff, SegmentId, Original);
-        if (Original != 0xffffffff)
-            InterlockedCompareExchange(AnchorSliceBuffer[AnchorIndex].AllType.y, 0xffffffff, SegmentId, Original);
+        InterlockedCompareExchange(AnchorSliceBuffer[AnchorIndex].AllType.x, UNDEFINED_VALUE, LinkId, Original);
+        if (Original != UNDEFINED_VALUE)
+            InterlockedCompareExchange(AnchorSliceBuffer[AnchorIndex].AllType.y, UNDEFINED_VALUE, LinkId, Original);
     }
     else if (AnchorType == 1)
     {
         if (LineType == CONTOUR_FACE_TYPE) {
-            InterlockedCompareExchange(AnchorEdgeBuffer[AnchorIndex].ContourType.y, 0xffffffff, SegmentId, Original);
-            if (Original != 0xffffffff)
-                InterlockedCompareExchange(AnchorEdgeBuffer[AnchorIndex].ContourType.z, 0xffffffff, SegmentId, Original);
+            InterlockedCompareExchange(AnchorEdgeBuffer[AnchorIndex].ContourType.y, UNDEFINED_VALUE, LinkId, Original);
+            if (Original != UNDEFINED_VALUE)
+                InterlockedCompareExchange(AnchorEdgeBuffer[AnchorIndex].ContourType.z, UNDEFINED_VALUE, LinkId, Original);
         }
         else if (LineType == CONTOUR_EDGE_TYPE)
         {
-            InterlockedCompareExchange(AnchorVertexBuffer[AnchorIndex].ContourType.y, 0xffffffff, SegmentId, Original);
-            if (Original != 0xffffffff)
-                InterlockedCompareExchange(AnchorVertexBuffer[AnchorIndex].ContourType.z, 0xffffffff, SegmentId, Original);
+            InterlockedCompareExchange(AnchorVertexBuffer[AnchorIndex].ContourType.y, UNDEFINED_VALUE, LinkId, Original);
+            if (Original != UNDEFINED_VALUE)
+                InterlockedCompareExchange(AnchorVertexBuffer[AnchorIndex].ContourType.z, UNDEFINED_VALUE, LinkId, Original);
         }
         else if (LineType == CREASE_EDGE_TYPE)
         {
-            InterlockedCompareExchange(AnchorVertexBuffer[AnchorIndex].CreaseType.y, 0xffffffff, SegmentId, Original);
-            if (Original != 0xffffffff)
-                InterlockedCompareExchange(AnchorVertexBuffer[AnchorIndex].CreaseType.z, 0xffffffff, SegmentId, Original);
+            InterlockedCompareExchange(AnchorVertexBuffer[AnchorIndex].CreaseType.y, UNDEFINED_VALUE, LinkId, Original);
+            if (Original != UNDEFINED_VALUE)
+                InterlockedCompareExchange(AnchorVertexBuffer[AnchorIndex].CreaseType.z, UNDEFINED_VALUE, LinkId, Original);
         }
     }
 }
@@ -377,10 +378,11 @@ void Visibility(uint3 gid : SV_GroupID, uint gi : SV_GroupIndex)
     float InvertW = 1.0f / SamplePositionUnProject.w;
     float SamplePositionProjectedZ = GetUnifyNDCZ(SamplePositionUnProject.z * InvertW);
     float SceneDepth = SampleSceneDepth(SamplePositionProjected.xy);
-
-    bool NeedShowVisible = HideVisibleEdge == 0;
-    bool NeedHideOccludedEdge = HideOccludedEdge > 0;
-    bool NeedHideBackFace = HideBackFaceEdge > 0;
+    
+    bool NeedShowVisible = (VisibilityFlag & 0x1) == 0;
+    bool NeedHideBackFace = (VisibilityFlag & 0x2) > 0; 
+    bool NeedHideOccludedEdge = (VisibilityFlag & 0x4) > 0; 
+    bool ChainningIgnoreVisibility = (VisibilityFlag & 0x8) > 0;
     
     bool NotOccluded = ZTest(SamplePositionProjectedZ, InvertW, SceneDepth);
     bool IsVisible = NotOccluded;// && !IsBackFacing;
@@ -391,6 +393,8 @@ void Visibility(uint3 gid : SV_GroupID, uint gi : SV_GroupIndex)
        ((NeedHideOccludedEdge && !NeedHideBackFace) ? (IsBackFacing ? true : false) : (IsBackFacing ? false : true))
         :
        (NeedHideOccludedEdge ? false : true);
+
+    IsVisible = (ChainningIgnoreVisibility && NeedShowUnvisible && NeedShowVisible) ? true : IsVisible;
 
     float2 SamplePositionProjectedStart = NDCPosition1 + (NDCPosition2 - NDCPosition1) * TProjectedStart;
     float2 SamplePositionProjectedEnd = NDCPosition1 + (NDCPosition2 - NDCPosition1) * TProjectedEnd;
@@ -444,7 +448,8 @@ void Visibility(uint3 gid : SV_GroupID, uint gi : SV_GroupIndex)
 
             NewLine.NDCPosition[0] = Head.xy;
             NewLine.NDCPosition[1] = Tail.zw;
-
+            NewLine.LocalPositionUnclipped[0] = TargetSegment.LocalPositionUnclipped[0];
+            NewLine.LocalPositionUnclipped[1] = TargetSegment.LocalPositionUnclipped[1];
 #if ENABLE_DEBUG_VIEW
             float4 TailDebugPosEnd = LoadDebugPos(TailIndex);
             NewLine.NDCPositionForDebug[0] = DebugPosStart;
@@ -480,17 +485,21 @@ void Visibility(uint3 gid : SV_GroupID, uint gi : SV_GroupIndex)
 
 #if !ENABLE_DEBUG_VIEW
 
-            uint SegmentID = SET_ADJACENT_INDEX(0, Id);
+            uint LinkID = SET_LINKID_INDEX(0, Id);
+            LinkID = SET_LINKID_MESHLETBORDER1(LinkID, false);
+            LinkID = SET_LINKID_MESHLETBORDER2(LinkID, false);
+
             uint LineType = GET_LINE_TYPE(TargetSegment.Type);
-            uint Anchor0 = (AnchorType0 == 1) ? TargetSegment.Anchor[0] : (AnchorType0 == 2 ? CurrentSliceIndex : 0xffffffff);
-            uint Anchor1 = (AnchorType1 == 1) ? TargetSegment.Anchor[1] : (AnchorType1 == 2 ? (CurrentSliceIndex + 1) : 0xffffffff);
+            uint Anchor0 = (AnchorType0 == 1) ? TargetSegment.Anchor[0] : (AnchorType0 == 2 ? CurrentSliceIndex : UNDEFINED_VALUE);
+            uint Anchor1 = (AnchorType1 == 1) ? TargetSegment.Anchor[1] : (AnchorType1 == 2 ? (CurrentSliceIndex + 1) : UNDEFINED_VALUE);
+
             //if (TargetPixelPosition <= 1) {
-                SegmentID = SET_ADJACENT_DIRECTION(SegmentID, 0);
-                WriteSegmentIndexToAnchorCache(AnchorType0, Anchor0, LineType, SegmentID);
+                LinkID = SET_LINKID_DIRECTION(LinkID, 0);
+                WriteLinkIdToAnchorCache(AnchorType0, Anchor0, LineType, LinkID);
             //}
             //if (TailTargetPixelPosition >= TargetSegment.PixelLength) {
-                SegmentID = SET_ADJACENT_DIRECTION(SegmentID, 1);
-                WriteSegmentIndexToAnchorCache(AnchorType1, Anchor1, LineType, SegmentID);
+                LinkID = SET_LINKID_DIRECTION(LinkID, 1);
+                WriteLinkIdToAnchorCache(AnchorType1, Anchor1, LineType, LinkID);
             //}
 
 #endif

@@ -39,8 +39,8 @@ inline bool IsCrease(float3 Face1Normal, float3 Face2Normal, float AngleThreshol
 void ResetAnchorVertexBuffer(uint Index)
 {
     AnchorVertex NewAnchor;
-    NewAnchor.CreaseType = uint3(0, 0xffffffff, 0xffffffff);
-    NewAnchor.ContourType = uint3(0, 0xffffffff, 0xffffffff);
+    NewAnchor.CreaseType = uint3(0, UNDEFINED_VALUE, UNDEFINED_VALUE);
+    NewAnchor.ContourType = uint3(0, UNDEFINED_VALUE, UNDEFINED_VALUE);
 
     AnchorVertexBuffer[Index] = NewAnchor;
 }
@@ -48,7 +48,7 @@ void ResetAnchorVertexBuffer(uint Index)
 void ResetAnchorEdgeBuffer(uint Index)
 {
     AnchorEdge NewAnchor;
-    NewAnchor.ContourType = uint3(0, 0xffffffff, 0xffffffff);
+    NewAnchor.ContourType = uint3(0, UNDEFINED_VALUE, UNDEFINED_VALUE);
 
     AnchorEdgeBuffer[Index] = NewAnchor;
 }
@@ -153,6 +153,7 @@ void Extraction(uint3 gid : SV_GroupID, uint gindex : SV_GroupIndex, uint3 tid :
             // NewEdge must be unique edge
             NewEdge.MeshletData[0] = CurrentFace.MeshletData.x;
             NewEdge.MeshletData[1] = CurrentFace.MeshletData.y;
+            NewEdge.MeshletData[2] = CurrentFace.MeshletData.z;
 
             if (Result01.ExtractContour)
             {
@@ -184,6 +185,7 @@ void Extraction(uint3 gid : SV_GroupID, uint gindex : SV_GroupIndex, uint3 tid :
             // NewEdge must be unique edge
             NewEdge.MeshletData[0] = CurrentFace.MeshletData.x;
             NewEdge.MeshletData[1] = CurrentFace.MeshletData.y;
+            NewEdge.MeshletData[2] = CurrentFace.MeshletData.z;
 
             if (Result12.ExtractContour)
             {
@@ -215,6 +217,7 @@ void Extraction(uint3 gid : SV_GroupID, uint gindex : SV_GroupIndex, uint3 tid :
             // NewEdge must be unique edge
             NewEdge.MeshletData[0] = CurrentFace.MeshletData.x;
             NewEdge.MeshletData[1] = CurrentFace.MeshletData.y;
+            NewEdge.MeshletData[2] = CurrentFace.MeshletData.z;
 
             if (Result20.ExtractContour)
             {
@@ -258,6 +261,7 @@ void Extraction(uint3 gid : SV_GroupID, uint gindex : SV_GroupIndex, uint3 tid :
             NewFace.V2Data = CurrentFace.V2Normal;
             NewFace.MeshletData[0] = CurrentFace.MeshletData.x;
             NewFace.MeshletData[1] = CurrentFace.MeshletData.y;
+            NewFace.MeshletData[2] = CurrentFace.MeshletData.z;
 
             if ((V2Vis && !V0Vis && !V1Vis) || (!V2Vis && V0Vis && V1Vis)) {
                 ResetAnchorEdgeBuffer(CurrentFace.edge20);
