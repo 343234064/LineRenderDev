@@ -60,10 +60,12 @@ VSOutput VSMain(VSInput input)
 	output.color = lerp(float3(0.2f, 0.2f, 0.3f), float3(0.3f, 0.3f, 0.8f), NdL);
 
 	if(DisplayMode == 1){
-		float3 layer1Color = (input.color.x < 0.0f) ? float3(0.0f,0.0f,0.0f) : Hash31(input.color.x);
+		float3 layer1Color = (input.color.x < 0.0f) ? float3(0.0f,0.0f,0.0f) : Hash31(input.color.x+1);
 		output.color = lerp(output.color, layer1Color, DisplayTransparent0);
-		float3 layer2Color = (input.color.y < 0.0f) ? float3(0.0f,0.0f,0.0f) : Hash31(input.color.y);
+		float3 layer2Color = (input.color.y < 0.0f) ? float3(0.0f,0.0f,0.0f) : Hash31(input.color.y+1);
 		output.color = lerp(output.color, layer2Color, DisplayTransparent1);
+		float3 layer3Color = (input.color.z < 0.0f) ? float3(0.0f, 0.0f, 0.0f) : Hash31(input.color.z + 1);
+		output.color = lerp(output.color, layer3Color, DisplayTransparent2);
 	}
 
 #endif

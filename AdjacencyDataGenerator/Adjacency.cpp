@@ -629,7 +629,9 @@ void* AdjacencyProcesser::RunFunc2(void* SourceData, double* OutProgressPerRun)
 
 
 
-bool AdjacencyProcesser::GetReadyForGenerateMeshletLayer1Data()
+
+
+bool AdjacencyProcesser::GetReadyForGenerateMeshletLayer01Data()
 {
 	if (AsyncProcesser == nullptr || TriangleContextList.size() == 0 || IsWorking())
 	{
@@ -646,13 +648,13 @@ bool AdjacencyProcesser::GetReadyForGenerateMeshletLayer1Data()
 		TriangleContextList[i]->CurrentFacePos = 0;
 		TriangleContextList[i]->CurrentIndexPos = 0;
 
-		TriangleContextList[i]->MeshletLayer1Data.Init(TriangleContextList[i]->VertexData->VertexList.size(), TriangleContextList[i]->FaceList.size(), TriangleContextList[i]->EdgeList.size());
-		
+		TriangleContextList[i]->MeshletLayer0Data.Init(TriangleContextList[i]->VertexData->VertexList.size(), TriangleContextList[i]->FaceList.size());
+		TriangleContextList[i]->MeshletLayer1Data.Init(TriangleContextList[i]->VertexData->VertexList.size(), TriangleContextList[i]->FaceList.size());
 
 		AsyncProcesser->AddData((void*)TriangleContextList[i]);
 	}
 
-	std::function<void* (void*, double*)> Runnable = std::bind(&AdjacencyProcesser::RunGenerateMeshletLayer1Data, this, std::placeholders::_1, std::placeholders::_2);
+	std::function<void* (void*, double*)> Runnable = std::bind(&AdjacencyProcesser::RunGenerateMeshletLayer01Data, this, std::placeholders::_1, std::placeholders::_2);
 	AsyncProcesser->SetRunFunc(Runnable);
 
 	AsyncProcesser->SetIntervalTime(0.0);
@@ -668,11 +670,12 @@ bool AdjacencyProcesser::GetReadyForGenerateMeshletLayer1Data()
 
 
 
-void* AdjacencyProcesser::RunGenerateMeshletLayer1Data(void* SourceData, double* OutProgressPerRun)
+void* AdjacencyProcesser::RunGenerateMeshletLayer01Data(void* SourceData, double* OutProgressPerRun)
 {
 	SourceContext* Src = (SourceContext*)SourceData;
 	VertexContext* VertexData = Src->VertexData;
-	MeshOpt& CurrentMeshletData = Src->MeshletLayer1Data;
+	MeshOpt& CurrentMeshletData0 = Src->MeshletLayer0Data;
+	MeshOpt& CurrentMeshletData1 = Src->MeshletLayer1Data;
 
 	Face& CurrentFace = Src->FaceList[Src->CurrentFacePos];
 
@@ -689,7 +692,11 @@ void* AdjacencyProcesser::RunGenerateMeshletLayer1Data(void* SourceData, double*
 	Float3 Normal = Cross(V10, V20);
 	float Area = Length(Normal) * 0.5f;
 
-	MeshOptTriangle NewCell = MeshOptTriangle(CurrentFace.center, CurrentFace.normal, Area, CurrentFace.x.value, CurrentFace.y.value, CurrentFace.z.value, CurrentFace.xy, CurrentFace.yz, CurrentFace.zx);
+	std::set<unsigned int> indexes;
+	indexes.insert(CurrentFace.x.value);
+	indexes.insert(CurrentFace.y.value);
+	indexes.insert(CurrentFace.z.value);
+	MeshOptTriangle NewCell = MeshOptTriangle(CurrentFace.center, CurrentFace.normal, Area, &indexes);
 
 	//find adjacency triangle
 	std::unordered_map<uint, std::set<uint>>::iterator it = Src->AdjacencyVertexFaceMap.find(CurrentFace.x.value);
@@ -698,9 +705,11 @@ void* AdjacencyProcesser::RunGenerateMeshletLayer1Data(void* SourceData, double*
 		std::set<uint>& AdjFaceList = it->second;
 		for (std::set<uint>::iterator i = AdjFaceList.begin(); i != AdjFaceList.end(); i++)
 		{
-			CurrentMeshletData.vertices[CurrentFace.x.value].neighborTriangles.insert(*i);
+			CurrentMeshletData0.vertices[CurrentFace.x.value].neighborTriangles.insert(*i);
+			CurrentMeshletData1.vertices[CurrentFace.x.value].neighborTriangles.insert(*i);
 		}
-		CurrentMeshletData.live_triangles[CurrentFace.x.value] = AdjFaceList.size();
+		CurrentMeshletData0.live_triangles[CurrentFace.x.value] = AdjFaceList.size();
+		CurrentMeshletData1.live_triangles[CurrentFace.x.value] = AdjFaceList.size();
 	}
 	else
 	{
@@ -713,9 +722,11 @@ void* AdjacencyProcesser::RunGenerateMeshletLayer1Data(void* SourceData, double*
 		std::set<uint>& AdjFaceList = it->second;
 		for (std::set<uint>::iterator i = AdjFaceList.begin(); i != AdjFaceList.end(); i++)
 		{
-			CurrentMeshletData.vertices[CurrentFace.y.value].neighborTriangles.insert(*i);
+			CurrentMeshletData0.vertices[CurrentFace.y.value].neighborTriangles.insert(*i);
+			CurrentMeshletData1.vertices[CurrentFace.y.value].neighborTriangles.insert(*i);
 		}
-		CurrentMeshletData.live_triangles[CurrentFace.y.value] = AdjFaceList.size();;
+		CurrentMeshletData0.live_triangles[CurrentFace.y.value] = AdjFaceList.size();;
+		CurrentMeshletData1.live_triangles[CurrentFace.y.value] = AdjFaceList.size();;
 	}
 	else
 	{
@@ -728,18 +739,24 @@ void* AdjacencyProcesser::RunGenerateMeshletLayer1Data(void* SourceData, double*
 		std::set<uint>& AdjFaceList = it->second;
 		for (std::set<uint>::iterator i = AdjFaceList.begin(); i != AdjFaceList.end(); i++)
 		{
-			CurrentMeshletData.vertices[CurrentFace.z.value].neighborTriangles.insert(*i);
+			CurrentMeshletData0.vertices[CurrentFace.z.value].neighborTriangles.insert(*i);
+			CurrentMeshletData1.vertices[CurrentFace.z.value].neighborTriangles.insert(*i);
 		}
-		CurrentMeshletData.live_triangles[CurrentFace.z.value] = AdjFaceList.size();
+		CurrentMeshletData0.live_triangles[CurrentFace.z.value] = AdjFaceList.size();
+		CurrentMeshletData1.live_triangles[CurrentFace.z.value] = AdjFaceList.size();
 	}
 	else
 	{
 		ErrorString += "Cannot find vertex in AdjacencyVertexFaceMap. Current Vertex: " + std::to_string(CurrentFace.z.value) + "\n";
 	}
 
-	CurrentMeshletData.mesh_area = CurrentMeshletData.mesh_area + NewCell.Area;
-	CurrentMeshletData.triangles.push_back(NewCell);
-	CurrentMeshletData.kdindices[Src->CurrentFacePos] = unsigned int(Src->CurrentFacePos);
+	CurrentMeshletData0.mesh_area = CurrentMeshletData0.mesh_area + NewCell.Area;
+	CurrentMeshletData0.triangles.push_back(NewCell);
+	CurrentMeshletData0.kdindices[Src->CurrentFacePos] = unsigned int(Src->CurrentFacePos);
+
+	CurrentMeshletData1.mesh_area = CurrentMeshletData1.mesh_area + NewCell.Area;
+	CurrentMeshletData1.triangles.push_back(NewCell);
+	CurrentMeshletData1.kdindices[Src->CurrentFacePos] = unsigned int(Src->CurrentFacePos);
 
 	Src->CurrentFacePos++;
 
@@ -753,7 +770,8 @@ void* AdjacencyProcesser::RunGenerateMeshletLayer1Data(void* SourceData, double*
 }
 
 
-bool AdjacencyProcesser::GetReadyGenerateMeshlet()
+
+bool AdjacencyProcesser::GetReadyGenerateMeshletLayer0()
 {
 	if (AsyncProcesser == nullptr || TriangleContextList.size() == 0 || IsWorking())
 	{
@@ -770,17 +788,17 @@ bool AdjacencyProcesser::GetReadyGenerateMeshlet()
 		TriangleContextList[i]->CurrentFacePos = 0;
 		TriangleContextList[i]->CurrentIndexPos = 0;
 
-		size_t MaxTrianglesNumInMeshlet = 256;
-		TriangleContextList[i]->MeshletLayer1Data.GetReady(MaxTrianglesNumInMeshlet, TriangleContextList[i]->FaceList.size(), TriangleContextList[i]->VertexData->VertexList.size(), MeshletNormalWeight);
+		size_t MaxTrianglesNumInMeshlet = MeshletLayer1MaxCellNum;
+		TriangleContextList[i]->MeshletLayer0Data.GetReady(MaxTrianglesNumInMeshlet, TriangleContextList[i]->FaceList.size(), TriangleContextList[i]->VertexData->VertexList.size(), MeshletNormalWeight);
 
-		WRITE_MESSAGE_DIGIT("Max Face Num In Meshlet: ", MaxTrianglesNumInMeshlet);
-		WRITE_MESSAGE_DIGIT("Current Triangle Num: ", TriangleContextList[i]->MeshletLayer1Data.triangles.size());
-		WRITE_MESSAGE_DIGIT("ExpectedRadius: ", TriangleContextList[i]->MeshletLayer1Data.meshlet_expected_radius);
+		WRITE_MESSAGE_DIGIT("Max Cell Num In Meshlet: ", MaxTrianglesNumInMeshlet);
+		WRITE_MESSAGE_DIGIT("Current Cell Num: ", TriangleContextList[i]->MeshletLayer0Data.triangles.size());
+		WRITE_MESSAGE_DIGIT("ExpectedRadius: ", TriangleContextList[i]->MeshletLayer0Data.meshlet_expected_radius);
 
 		AsyncProcesser->AddData((void*)TriangleContextList[i]);
 	}
 
-	std::function<void* (void*, double*)> Runnable = std::bind(&AdjacencyProcesser::RunGenerateMeshlet, this, std::placeholders::_1, std::placeholders::_2);
+	std::function<void* (void*, double*)> Runnable = std::bind(&AdjacencyProcesser::RunGenerateMeshletLayer0, this, std::placeholders::_1, std::placeholders::_2);
 	AsyncProcesser->SetRunFunc(Runnable);
 
 	AsyncProcesser->SetIntervalTime(0.0);
@@ -794,11 +812,147 @@ bool AdjacencyProcesser::GetReadyGenerateMeshlet()
 	return true;
 }
 
-void* AdjacencyProcesser::RunGenerateMeshlet(void* SourceData, double* OutProgressPerRun)
+void* AdjacencyProcesser::RunGenerateMeshletLayer0(void* SourceData, double* OutProgressPerRun)
 {
 	SourceContext* Src = (SourceContext*)SourceData;
 
-	if (Src->MeshletLayer1Data.RunStep(OutProgressPerRun)) {
+	if (Src->MeshletLayer0Data.RunStep(OutProgressPerRun, false)) {
+		return (void*)Src;
+	}
+	else {
+		return nullptr;
+	}
+
+}
+
+
+
+bool AdjacencyProcesser::GetReadyForSerializeMeshletLayer0()
+{
+	if (AsyncProcesser == nullptr || TriangleContextList.size() == 0 || IsWorking())
+	{
+		ErrorString += "Gerneration has not run yet or is still working.\n";
+		return false;
+	}
+	AsyncProcesser->Clear();
+
+	ErrorString = "";
+	MessageString = "";
+
+	for (uint i = 0; i < TriangleContextList.size(); i++)
+	{
+		TriangleContextList[i]->CurrentFacePos = 0;
+		TriangleContextList[i]->CurrentIndexPos = 0;
+
+		WRITE_MESSAGE("Mesh Name : ", TriangleContextList[i]->Name);
+		WRITE_MESSAGE_DIGIT("Layer 0 Meshlet Num: ", TriangleContextList[i]->MeshletLayer0Data.GetMeshletSize());
+
+		//for (uint j = 0; j < TriangleContextList[i]->MeshletLayer0Data.GetMeshletSize(); j++)
+		//{
+		//	std::cout << TriangleContextList[i]->MeshletLayer0Data.meshlets_list[j].triangle_offset << std::endl;
+		//	std::cout << TriangleContextList[i]->MeshletLayer0Data.meshlets_list[j].triangle_count << std::endl;
+		//	std::cout << "---------------------------------------------------------------" << std::endl;
+		//}
+
+		AsyncProcesser->AddData((void*)TriangleContextList[i]);
+	}
+
+	std::function<void* (void*, double*)> Runnable = std::bind(&AdjacencyProcesser::RunFuncForSerializeMeshletLayer0, this, std::placeholders::_1, std::placeholders::_2);
+	AsyncProcesser->SetRunFunc(Runnable);
+
+	AsyncProcesser->SetIntervalTime(0.0);
+
+	if (!AsyncProcesser->Kick())
+	{
+		ErrorString += "Start async request failed.\n";
+		return false;
+	}
+
+	return true;
+}
+
+void* AdjacencyProcesser::RunFuncForSerializeMeshletLayer0(void* SourceData, double* OutProgressPerRun)
+{
+	SourceContext* Src = (SourceContext*)SourceData;
+
+	const MeshOpt& MeshletLayer0Data = Src->MeshletLayer0Data;
+	if (MeshletLayer0Data.GetMeshletSize() > Src->CurrentIndexPos) {
+		const meshopt_Meshlet& CurrentMeshlet = MeshletLayer0Data.meshlets_list[Src->CurrentIndexPos];
+		uint CurrentMeshletIndex = Src->CurrentIndexPos;
+
+		if (CurrentMeshlet.triangle_count > Src->CurrentFacePos) {
+			uint CurrentFaceIndex = MeshletLayer0Data.meshlet_triangles[size_t(CurrentMeshlet.triangle_offset) + size_t(Src->CurrentFacePos)];
+
+			Face& DestFace = Src->FaceList[CurrentFaceIndex];
+			if (DestFace.meshletId[0] == -1) DestFace.meshletId[0] = CurrentMeshletIndex;
+
+			*OutProgressPerRun = 0.0;
+			Src->CurrentFacePos++;
+		}
+		else
+		{
+			Src->CurrentIndexPos++;
+			*OutProgressPerRun = 1.0 / MeshletLayer0Data.GetMeshletSize();
+
+			Src->CurrentFacePos = 0;
+		}
+	}
+
+
+	if (Src->CurrentIndexPos >= MeshletLayer0Data.GetMeshletSize())
+		return (void*)Src;
+	else
+		return nullptr;
+
+}
+
+
+bool AdjacencyProcesser::GetReadyGenerateMeshletLayer1()
+{
+	if (AsyncProcesser == nullptr || TriangleContextList.size() == 0 || IsWorking())
+	{
+		ErrorString += "Gerneration has not run yet or is still working.\n";
+		return false;
+	}
+	AsyncProcesser->Clear();
+
+	ErrorString = "";
+	MessageString = "";
+
+	for (uint i = 0; i < TriangleContextList.size(); i++)
+	{
+		TriangleContextList[i]->CurrentFacePos = 0;
+		TriangleContextList[i]->CurrentIndexPos = 0;
+
+		size_t MaxTrianglesNumInMeshlet = MeshletLayer1MaxCellNum;
+		TriangleContextList[i]->MeshletLayer1Data.GetReady(MaxTrianglesNumInMeshlet, TriangleContextList[i]->FaceList.size(), TriangleContextList[i]->VertexData->VertexList.size(), MeshletNormalWeight);
+
+		WRITE_MESSAGE_DIGIT("Max Cell Num In Meshlet: ", MaxTrianglesNumInMeshlet);
+		WRITE_MESSAGE_DIGIT("Current Cell Num: ", TriangleContextList[i]->MeshletLayer1Data.triangles.size());
+		WRITE_MESSAGE_DIGIT("ExpectedRadius: ", TriangleContextList[i]->MeshletLayer1Data.meshlet_expected_radius);
+
+		AsyncProcesser->AddData((void*)TriangleContextList[i]);
+	}
+
+	std::function<void* (void*, double*)> Runnable = std::bind(&AdjacencyProcesser::RunGenerateMeshletLayer1, this, std::placeholders::_1, std::placeholders::_2);
+	AsyncProcesser->SetRunFunc(Runnable);
+
+	AsyncProcesser->SetIntervalTime(0.0);
+
+	if (!AsyncProcesser->Kick())
+	{
+		ErrorString += "Start async request failed.\n";
+		return false;
+	}
+
+	return true;
+}
+
+void* AdjacencyProcesser::RunGenerateMeshletLayer1(void* SourceData, double* OutProgressPerRun)
+{
+	SourceContext* Src = (SourceContext*)SourceData;
+
+	if (Src->MeshletLayer1Data.RunStep(OutProgressPerRun, true)) {
 		return (void*)Src;
 	}
 	else {
@@ -828,13 +982,14 @@ bool AdjacencyProcesser::GetReadyForSerializeMeshletLayer1()
 		WRITE_MESSAGE("Mesh Name : ", TriangleContextList[i]->Name);
 		WRITE_MESSAGE_DIGIT("Layer 1 Meshlet Num: ", TriangleContextList[i]->MeshletLayer1Data.GetMeshletSize());
 
-		//size_t t = 0;
+
 		//for (uint j = 0; j < TriangleContextList[i]->MeshletLayer1Data.GetMeshletSize(); j++)
 		//{
+		//	std::cout << TriangleContextList[i]->MeshletLayer1Data.meshlets_list[j].triangle_offset << std::endl;
 		//	std::cout << TriangleContextList[i]->MeshletLayer1Data.meshlets_list[j].triangle_count << std::endl;
 		//	std::cout << "---------------------------------------------------------------" << std::endl;
 		//}
-		//std::cout << t << " =================================" << std::endl;
+		
 
 		AsyncProcesser->AddData((void*)TriangleContextList[i]);
 	}
@@ -863,10 +1018,10 @@ void* AdjacencyProcesser::RunFuncForSerializeMeshletLayer1(void* SourceData, dou
 		uint CurrentMeshletIndex = Src->CurrentIndexPos;
 
 		if (CurrentMeshlet.triangle_count > Src->CurrentFacePos) {
-			uint CurrentFaceIndex = MeshletLayer1Data.meshlet_triangles[CurrentMeshlet.triangle_offset + Src->CurrentFacePos]; 
+			uint CurrentFaceIndex = MeshletLayer1Data.meshlet_triangles[size_t(CurrentMeshlet.triangle_offset) + size_t(Src->CurrentFacePos)]; 
 
 			Face& DestFace = Src->FaceList[CurrentFaceIndex];
-			if(DestFace.meshletId[0]==-1) DestFace.meshletId[0] = CurrentMeshletIndex;
+			if (DestFace.meshletId[1] == -1) DestFace.meshletId[1] = CurrentMeshletIndex;
 
 			*OutProgressPerRun = 0.0;
 			Src->CurrentFacePos++;
@@ -889,6 +1044,246 @@ void* AdjacencyProcesser::RunFuncForSerializeMeshletLayer1(void* SourceData, dou
 }
 
 
+
+
+
+
+
+
+bool AdjacencyProcesser::GetReadyForGenerateMeshletLayer2Data()
+{
+	if (AsyncProcesser == nullptr || TriangleContextList.size() == 0 || IsWorking())
+	{
+		ErrorString += "Gerneration has not run yet or is still working.\n";
+		return false;
+	}
+	AsyncProcesser->Clear();
+
+	ErrorString = "";
+	MessageString = "";
+
+	for (uint i = 0; i < TriangleContextList.size(); i++)
+	{
+		TriangleContextList[i]->CurrentFacePos = 0;
+		TriangleContextList[i]->CurrentIndexPos = 0;
+
+		TriangleContextList[i]->MeshletLayer2Data.Init(TriangleContextList[i]->VertexData->VertexList.size(), TriangleContextList[i]->MeshletLayer1Data.GetMeshletSize());
+
+
+		AsyncProcesser->AddData((void*)TriangleContextList[i]);
+	}
+
+	std::function<void* (void*, double*)> Runnable = std::bind(&AdjacencyProcesser::RunGenerateMeshletLayer2Data, this, std::placeholders::_1, std::placeholders::_2);
+	AsyncProcesser->SetRunFunc(Runnable);
+
+	AsyncProcesser->SetIntervalTime(0.0);
+
+	if (!AsyncProcesser->Kick())
+	{
+		ErrorString += "Start async request failed.\n";
+		return false;
+	}
+
+	return true;
+}
+
+
+
+void* AdjacencyProcesser::RunGenerateMeshletLayer2Data(void* SourceData, double* OutProgressPerRun)
+{
+	SourceContext* Src = (SourceContext*)SourceData;
+	MeshOpt& Layer2MeshletData = Src->MeshletLayer2Data;
+	
+	const meshopt_Meshlet CurrentFace = Src->MeshletLayer1Data.meshlets_list[Src->CurrentFacePos];
+
+	std::set<unsigned int> indexes;
+	for (int i = 0; i < CurrentFace.vertex_count; i++)
+	{
+		unsigned int index = Src->MeshletLayer1Data.meshlet_vertices[size_t(CurrentFace.vertex_offset) + size_t(i)];
+		if (Src->MeshletLayer1Data.vertex_meshlet_occupy_flag[index] > 1)
+		{
+			indexes.insert(index);
+		}
+	}
+	MeshOptTriangle NewCell = MeshOptTriangle(CurrentFace.Center, CurrentFace.Normal, CurrentFace.Area, &indexes);
+
+	//find adjacency meshlet
+	for (std::set<unsigned int>::iterator it = indexes.begin(); it != indexes.end(); it++)
+	{
+		unsigned int index = *it;
+		std::unordered_map<uint, std::set<uint>>::iterator j = Src->AdjacencyVertexFaceMap.find(index);
+		if (j != Src->AdjacencyVertexFaceMap.end())
+		{
+			std::set<uint>& AdjFaceList = j->second;
+			std::set<uint> MeshletIdList;
+			for (std::set<uint>::iterator i = AdjFaceList.begin(); i != AdjFaceList.end(); i++)
+			{
+				MeshletIdList.insert(Src->FaceList[*i].meshletId[1]);
+			}
+			for (std::set<uint>::iterator i = MeshletIdList.begin(); i != MeshletIdList.end(); i++)
+			{
+				Layer2MeshletData.vertices[index].neighborTriangles.insert(*i);
+			}
+			Layer2MeshletData.live_triangles[index] = MeshletIdList.size();
+		}
+
+	}
+	
+	Layer2MeshletData.mesh_area = Layer2MeshletData.mesh_area + NewCell.Area;
+	Layer2MeshletData.triangles.push_back(NewCell);
+	Layer2MeshletData.kdindices[Src->CurrentFacePos] = unsigned int(Src->CurrentFacePos);
+
+
+	*OutProgressPerRun = 1.0 / Src->MeshletLayer1Data.GetMeshletSize();
+	Src->CurrentFacePos++;
+
+	if (Src->CurrentFacePos >= Src->MeshletLayer1Data.GetMeshletSize()) {
+		return (void*)Src;
+	}
+	else
+		return nullptr;
+}
+
+
+bool AdjacencyProcesser::GetReadyGenerateMeshletLayer2()
+{
+	if (AsyncProcesser == nullptr || TriangleContextList.size() == 0 || IsWorking())
+	{
+		ErrorString += "GetReady5 has not run yet or is still working.\n";
+		return false;
+	}
+	AsyncProcesser->Clear();
+
+	ErrorString = "";
+	MessageString = "";
+
+	for (uint i = 0; i < TriangleContextList.size(); i++)
+	{
+		TriangleContextList[i]->CurrentFacePos = 0;
+		TriangleContextList[i]->CurrentIndexPos = 0;
+
+		size_t MaxTrianglesNumInMeshlet = MeshletLayer2MaxCellNum;
+		TriangleContextList[i]->MeshletLayer2Data.GetReady(MaxTrianglesNumInMeshlet, TriangleContextList[i]->MeshletLayer1Data.GetMeshletSize(), TriangleContextList[i]->VertexData->VertexList.size(), 0.0f);
+
+		WRITE_MESSAGE_DIGIT("Max Cell Num In Meshlet: ", MaxTrianglesNumInMeshlet);
+		WRITE_MESSAGE_DIGIT("Current Cell Num: ", TriangleContextList[i]->MeshletLayer2Data.triangles.size());
+		WRITE_MESSAGE_DIGIT("ExpectedRadius: ", TriangleContextList[i]->MeshletLayer2Data.meshlet_expected_radius);
+
+		AsyncProcesser->AddData((void*)TriangleContextList[i]);
+	}
+
+	std::function<void* (void*, double*)> Runnable = std::bind(&AdjacencyProcesser::RunGenerateMeshletLayer2, this, std::placeholders::_1, std::placeholders::_2);
+	AsyncProcesser->SetRunFunc(Runnable);
+
+	AsyncProcesser->SetIntervalTime(0.0);
+
+	if (!AsyncProcesser->Kick())
+	{
+		ErrorString += "Start async request failed.\n";
+		return false;
+	}
+
+	return true;
+}
+
+
+void* AdjacencyProcesser::RunGenerateMeshletLayer2(void* SourceData, double* OutProgressPerRun)
+{
+	SourceContext* Src = (SourceContext*)SourceData;
+
+	if (Src->MeshletLayer2Data.RunStep(OutProgressPerRun, true)) {
+		return (void*)Src;
+	}
+	else {
+		return nullptr;
+	}
+}
+
+
+bool AdjacencyProcesser::GetReadyForSerializeMeshletLayer2()
+{
+	if (AsyncProcesser == nullptr || TriangleContextList.size() == 0 || IsWorking())
+	{
+		ErrorString += "Gerneration has not run yet or is still working.\n";
+		return false;
+	}
+	AsyncProcesser->Clear();
+
+	ErrorString = "";
+	MessageString = "";
+
+	for (uint i = 0; i < TriangleContextList.size(); i++)
+	{
+		TriangleContextList[i]->CurrentFacePos = 0;
+		TriangleContextList[i]->CurrentIndexPos = 0;
+
+		WRITE_MESSAGE("Mesh Name : ", TriangleContextList[i]->Name);
+		WRITE_MESSAGE_DIGIT("Layer 2 Meshlet Num: ", TriangleContextList[i]->MeshletLayer2Data.GetMeshletSize());
+
+		AsyncProcesser->AddData((void*)TriangleContextList[i]);
+	}
+
+	std::function<void* (void*, double*)> Runnable = std::bind(&AdjacencyProcesser::RunFuncForSerializeMeshletLayer2, this, std::placeholders::_1, std::placeholders::_2);
+	AsyncProcesser->SetRunFunc(Runnable);
+
+	AsyncProcesser->SetIntervalTime(0.0);
+
+	if (!AsyncProcesser->Kick())
+	{
+		ErrorString += "Start async request failed.\n";
+		return false;
+	}
+
+	return true;
+}
+
+
+void* AdjacencyProcesser::RunFuncForSerializeMeshletLayer2(void* SourceData, double* OutProgressPerRun)
+{
+	SourceContext* Src = (SourceContext*)SourceData;
+
+	double Step = 0.0;
+
+	if (Src->MeshletLayer2Data.GetMeshletSize() > Src->CurrentIndexPos) {
+		meshopt_Meshlet& CurrentMeshlet = Src->MeshletLayer2Data.meshlets_list[Src->CurrentIndexPos];
+
+		if (CurrentMeshlet.triangle_count > Src->CurrentFacePos) {
+			unsigned int Index = Src->MeshletLayer2Data.meshlet_triangles[size_t(CurrentMeshlet.triangle_offset) +size_t(Src->CurrentFacePos)];
+			meshopt_Meshlet& CurrentCell = Src->MeshletLayer1Data.meshlets_list[Index];
+
+			for (int i = 0; i < CurrentCell.triangle_count; i++)
+			{
+				unsigned int FaceIndex = Src->MeshletLayer1Data.meshlet_triangles[size_t(CurrentCell.triangle_offset)+ size_t(i)];
+				if (Src->FaceList[FaceIndex].meshletId[2] == -1)
+					Src->FaceList[FaceIndex].meshletId[2] = Src->CurrentIndexPos;
+				
+			}
+
+			Src->CurrentFacePos++;
+		}
+		else
+		{
+			Src->CurrentIndexPos++;
+			Src->CurrentFacePos = 0;
+			Step = 1.0 / Src->MeshletLayer2Data.GetMeshletSize();
+		}
+	}
+
+
+	*OutProgressPerRun = Step;
+
+	if (Src->CurrentIndexPos >= Src->MeshletLayer2Data.GetMeshletSize())
+		return (void*)Src;
+	else
+		return nullptr;
+}
+
+
+
+
+
+
+
 bool AdjacencyProcesser::GetReadyForSerializeExportData()
 {
 	if (AsyncProcesser == nullptr || TriangleContextList.size() == 0 || IsWorking())
@@ -909,7 +1304,7 @@ bool AdjacencyProcesser::GetReadyForSerializeExportData()
 		TriangleContextList[i]->ClearExportData();
 		
 		TriangleContextList[i]->EXPORTFaceList.resize(TriangleContextList[i]->FaceList.size());
-		TriangleContextList[i]->MeshletVertexMap.resize(TriangleContextList[i]->MeshletLayer1Data.GetMeshletSize());
+		TriangleContextList[i]->MeshletVertexMap.resize(TriangleContextList[i]->MeshletLayer0Data.GetMeshletSize());
 
 		WRITE_MESSAGE("Serializing: ", TriangleContextList[i]->Name);
 
@@ -935,9 +1330,9 @@ void* AdjacencyProcesser::RunFuncSerializeExportData(void* SourceData, double* O
 {
 	SourceContext* Src = (SourceContext*)SourceData;
 
-	const MeshOpt& MeshletLayer1Data = Src->MeshletLayer1Data;
-	if (MeshletLayer1Data.GetMeshletSize() > Src->CurrentIndexPos) {
-		meshopt_Meshlet& CurrentMeshlet = MeshletLayer1Data.meshlets_list[Src->CurrentIndexPos];
+	MeshOpt& MeshletLayer0Data = Src->MeshletLayer0Data;
+	if (MeshletLayer0Data.GetMeshletSize() > Src->CurrentIndexPos) {
+		meshopt_Meshlet& CurrentMeshlet = MeshletLayer0Data.meshlets_list[Src->CurrentIndexPos];
 
 		if (Src->CurrentFacePos == 0) {
 			CurrentMeshlet.vertex_offset = Src->EXPORTRepeatedVertexList.size();
@@ -945,7 +1340,7 @@ void* AdjacencyProcesser::RunFuncSerializeExportData(void* SourceData, double* O
 		}
 
 		if (CurrentMeshlet.triangle_count > Src->CurrentFacePos) {
-			uint  CurrentFaceIndex = MeshletLayer1Data.meshlet_triangles[CurrentMeshlet.triangle_offset + Src->CurrentFacePos];
+			uint  CurrentFaceIndex = MeshletLayer0Data.meshlet_triangles[CurrentMeshlet.triangle_offset + Src->CurrentFacePos];
 
 			const Face& DestFace = Src->FaceList[CurrentFaceIndex];
 			const Vertex3& V1 = Src->VertexData->VertexList[DestFace.x.value];
@@ -999,9 +1394,9 @@ void* AdjacencyProcesser::RunFuncSerializeExportData(void* SourceData, double* O
 			V1Index -= CurrentMeshlet.vertex_offset;
 			V2Index -= CurrentMeshlet.vertex_offset;
 			V3Index -= CurrentMeshlet.vertex_offset;
-			assert(V1Index < MeshletLayer1Data.max_triangles * 3 && V1Index >= 0);
-			assert(V2Index < MeshletLayer1Data.max_triangles * 3 && V2Index >= 0);
-			assert(V3Index < MeshletLayer1Data.max_triangles * 3 && V3Index >= 0);
+			assert(V1Index < MeshletLayer0Data.max_triangles * 3 && V1Index >= 0);
+			assert(V2Index < MeshletLayer0Data.max_triangles * 3 && V2Index >= 0);
+			assert(V3Index < MeshletLayer0Data.max_triangles * 3 && V3Index >= 0);
 
 			uint ExFaceIndex = CurrentMeshlet.triangle_offset + Src->CurrentFacePos;
 			EXPORTFace ExFace;
@@ -1039,13 +1434,13 @@ void* AdjacencyProcesser::RunFuncSerializeExportData(void* SourceData, double* O
 		else
 		{
 			Src->CurrentIndexPos++;
-			*OutProgressPerRun = 1.0 / MeshletLayer1Data.GetMeshletSize();
+			*OutProgressPerRun = 1.0 / MeshletLayer0Data.GetMeshletSize();
 
 			Src->CurrentFacePos = 0;
 		}
 	}
 
-	if (Src->CurrentIndexPos >= MeshletLayer1Data.GetMeshletSize())
+	if (Src->CurrentIndexPos >= MeshletLayer0Data.GetMeshletSize())
 		return (void*)Src;
 	else
 		return nullptr;
@@ -1091,12 +1486,12 @@ void* AdjacencyProcesser::RunFuncSerializeExportData2(void* SourceData, double* 
 {
 	SourceContext* Src = (SourceContext*)SourceData;
 
-	const MeshOpt& MeshletLayer1Data = Src->MeshletLayer1Data;
-	if (MeshletLayer1Data.GetMeshletSize() > Src->CurrentIndexPos) {
-		const meshopt_Meshlet& CurrentMeshlet = MeshletLayer1Data.meshlets_list[Src->CurrentIndexPos];
+	const MeshOpt& MeshletLayer0Data = Src->MeshletLayer0Data;
+	if (MeshletLayer0Data.GetMeshletSize() > Src->CurrentIndexPos) {
+		const meshopt_Meshlet& CurrentMeshlet = MeshletLayer0Data.meshlets_list[Src->CurrentIndexPos];
 
 		if (CurrentMeshlet.triangle_count > Src->CurrentFacePos) {
-			uint  CurrentFaceIndex = MeshletLayer1Data.meshlet_triangles[CurrentMeshlet.triangle_offset + Src->CurrentFacePos];
+			uint  CurrentFaceIndex = MeshletLayer0Data.meshlet_triangles[CurrentMeshlet.triangle_offset + Src->CurrentFacePos];
 
 			EXPORTFace& DestExportFace = Src->EXPORTFaceList[Src->MeshletFaceMap[CurrentFaceIndex]];
 			const Face& DestFace = Src->FaceList[CurrentFaceIndex];
@@ -1110,6 +1505,7 @@ void* AdjacencyProcesser::RunFuncSerializeExportData2(void* SourceData, double* 
 
 			DestExportFace.MeshletData[0] = DestFace.meshletId[0];
 			DestExportFace.MeshletData[1] = DestFace.meshletId[1];
+			DestExportFace.MeshletData[2] = DestFace.meshletId[2];
 
 			bool IsE1Unique = true;
 			if (Src->EdgeUsedMap.find(DestFace.xy) != Src->EdgeUsedMap.end())
@@ -1188,13 +1584,13 @@ void* AdjacencyProcesser::RunFuncSerializeExportData2(void* SourceData, double* 
 			Src->EXPORTMeshletList.push_back(EXPORTMeshlet(CurrentMeshlet.triangle_offset, CurrentMeshlet.triangle_count, CurrentMeshlet.vertex_offset, CurrentMeshlet.vertex_count));
 
 			Src->CurrentIndexPos++;
-			*OutProgressPerRun = 1.0 / MeshletLayer1Data.GetMeshletSize();
+			*OutProgressPerRun = 1.0 / MeshletLayer0Data.GetMeshletSize();
 
 			Src->CurrentFacePos = 0;
 		}
 	}
 
-	if (Src->CurrentIndexPos >= MeshletLayer1Data.GetMeshletSize())
+	if (Src->CurrentIndexPos >= MeshletLayer0Data.GetMeshletSize())
 		return (void*)Src;
 	else
 		return nullptr;
@@ -1278,7 +1674,13 @@ void* AdjacencyProcesser::RunFuncGenerateRenderData(void* SourceData, double* Ou
 	float Alpha = 0.0f;
 
 	Color.x = float(CurrentFace.meshletId[0]);
-	if (Color.x == -1) std::cout << "Some Face Is Not Belong To Any Meshlet" << std::endl;
+	if (Color.x == -1) std::cout << "Some Face Is Not Belong To Any Meshlet Layer 0" << std::endl;
+
+	Color.y = float(CurrentFace.meshletId[1]);
+	if (Color.y == -1) std::cout << "Some Face Is Not Belong To Any Meshlet Layer 1" << std::endl;
+
+	Color.z = float(CurrentFace.meshletId[2]);
+	if (Color.z == -1) std::cout << "Some Face Is Not Belong To Any Meshlet Layer 2" << std::endl;
 
 	//Edge& E1 = Src->EdgeList[CurrentFace.xy];
 	//if (E1.meshletId[0] == -1) std::cout << "Some Edge Is Not Belong To Any Meshlet" << std::endl;
@@ -1390,7 +1792,9 @@ void AdjacencyProcesser::Export(std::filesystem::path& FilePath)
 		TotalBytesLength += 0;
 
 		// meshlet data begin
-		TotalBytesLength += sizeof(uint);// meshlet num
+		TotalBytesLength += sizeof(uint);// layer 0 meshlet num
+		TotalBytesLength += sizeof(uint);// layer 1 meshlet num
+		TotalBytesLength += sizeof(uint);// layer 2 meshlet num
 		TotalBytesLength += sizeof(uint);// struct size
 		TotalBytesLength += TriangleContextList[i]->GetExportMeshletDataByteSize();
 	}
@@ -1424,6 +1828,8 @@ void AdjacencyProcesser::Export(std::filesystem::path& FilePath)
 		WRITE_MESSAGE_DIGIT("Export Edge Struct Size : ", 0);
 		TriangleContextList[i]->ExportEdgeData(Buffer, &BytesOffset);
 		WRITE_MESSAGE_DIGIT("Export Meshlet List Num : ", TriangleContextList[i]->EXPORTMeshletList.size());
+		WRITE_MESSAGE_DIGIT("Export Meshlet Layer1 Num : ", TriangleContextList[i]->MeshletLayer1Data.GetMeshletSize());
+		WRITE_MESSAGE_DIGIT("Export Meshlet Layer2 Num : ", TriangleContextList[i]->MeshletLayer2Data.GetMeshletSize());
 		WRITE_MESSAGE_DIGIT("Export Meshlet Struct Size : ", EXPORTMeshlet::ByteSize());
 		TriangleContextList[i]->ExportMeshletData(Buffer, &BytesOffset);
 	}
@@ -1474,6 +1880,7 @@ void SourceContext::ExportFaceData(Byte* Buffer, size_t* BytesOffset)
 		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.PackNormalData1.z);
 		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.MeshletData[0]);
 		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.MeshletData[1]);
+		WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, Curr.MeshletData[2]);
 	}
 }
 
@@ -1486,6 +1893,8 @@ void SourceContext::ExportEdgeData(Byte* Buffer, size_t* BytesOffset)
 void SourceContext::ExportMeshletData(Byte* Buffer, size_t* BytesOffset)
 {
 	WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, EXPORTMeshletList.size());
+	WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, MeshletLayer1Data.GetMeshletSize());
+	WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, MeshletLayer2Data.GetMeshletSize());
 	WriteUnsignedIntegerToBytesLittleEndian(Buffer, BytesOffset, EXPORTMeshlet::ByteSize());
 
 	for (int j = 0; j < EXPORTMeshletList.size(); j++)
@@ -1569,37 +1978,73 @@ bool PassGenerateVertexNormal(AdjacencyProcesser* Processer, std::string& FilePa
 
 }
 
-bool PassGenerateMeshletLayer1Data(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
+
+bool PassGenerateMeshletLayer01Data(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
 {
 	bool Success = false;
 
 	std::cout << LINE_STRING << std::endl;
-	std::cout << "Begin Generating Meshlet Layer 1 Data..." << std::endl;
-	Success = Processer->GetReadyForGenerateMeshletLayer1Data();
+	std::cout << "Begin Generating Meshlet Layer 0&1 Data..." << std::endl;
+	Success = Processer->GetReadyForGenerateMeshletLayer01Data();
 
 	std::cout << LINE_STRING << std::endl;
 	std::cout << Processer->GetMessageString() << std::endl;
 	std::cout << LINE_STRING << std::endl;
 
 	if (Success)
-		State = "Generating Meshlet Layer 1 Data....... ";
+		State = "Generating Meshlet Layer 0&1 Data....... ";
 
 	return Success;
 }
 
 
-bool PassGenerateMeshlet(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
+bool PassGenerateMeshletLayer0(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
 {
 	bool Success = false;
 
 	std::filesystem::path TriangleFilePath = FilePath;
-	Success = Processer->GetReadyGenerateMeshlet();
+	Success = Processer->GetReadyGenerateMeshletLayer0();
 	std::cout << LINE_STRING << std::endl;
 	std::cout << Processer->GetMessageString() << std::endl;
 	std::cout << LINE_STRING << std::endl;
 
 	if (Success)
-		State = "Generate Meshlet....... ";
+		State = "Generate Meshlet Layer 0....... ";
+
+	return Success;
+
+}
+
+
+bool PassSerializeMeshLayer0Data(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
+{
+	bool Success = false;
+
+	std::filesystem::path TriangleFilePath = FilePath;
+	Success = Processer->GetReadyForSerializeMeshletLayer0();
+	std::cout << LINE_STRING << std::endl;
+	std::cout << Processer->GetMessageString() << std::endl;
+	std::cout << LINE_STRING << std::endl;
+
+	if (Success)
+		State = "Serializing Meshlet Layer 0....... ";
+
+	return Success;
+
+}
+
+bool PassGenerateMeshletLayer1(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
+{
+	bool Success = false;
+
+	std::filesystem::path TriangleFilePath = FilePath;
+	Success = Processer->GetReadyGenerateMeshletLayer1();
+	std::cout << LINE_STRING << std::endl;
+	std::cout << Processer->GetMessageString() << std::endl;
+	std::cout << LINE_STRING << std::endl;
+
+	if (Success)
+		State = "Generate Meshlet Layer 1....... ";
 
 	return Success;
 
@@ -1617,7 +2062,63 @@ bool PassSerializeMeshLayer1Data(AdjacencyProcesser* Processer, std::string& Fil
 	std::cout << LINE_STRING << std::endl;
 
 	if (Success)
-		State = "Serializing Meshlet Layer1....... ";
+		State = "Serializing Meshlet Layer 1....... ";
+
+	return Success;
+
+}
+
+
+
+bool PassGenerateMeshletLayer2Data(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
+{
+	bool Success = false;
+
+	std::cout << LINE_STRING << std::endl;
+	std::cout << "Begin Generating Meshlet Layer 2 Data..." << std::endl;
+	Success = Processer->GetReadyForGenerateMeshletLayer2Data();
+
+	std::cout << LINE_STRING << std::endl;
+	std::cout << Processer->GetMessageString() << std::endl;
+	std::cout << LINE_STRING << std::endl;
+
+	if (Success)
+		State = "Generating Meshlet Layer 2 Data....... ";
+
+	return Success;
+}
+
+
+bool PassGenerateMeshletLayer2(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
+{
+	bool Success = false;
+
+	std::filesystem::path TriangleFilePath = FilePath;
+	Success = Processer->GetReadyGenerateMeshletLayer2();
+	std::cout << LINE_STRING << std::endl;
+	std::cout << Processer->GetMessageString() << std::endl;
+	std::cout << LINE_STRING << std::endl;
+
+	if (Success)
+		State = "Generate Meshlet....... ";
+
+	return Success;
+
+}
+
+
+bool PassSerializeMeshLayer2Data(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State)
+{
+	bool Success = false;
+
+	std::filesystem::path TriangleFilePath = FilePath;
+	Success = Processer->GetReadyForSerializeMeshletLayer2();
+	std::cout << LINE_STRING << std::endl;
+	std::cout << Processer->GetMessageString() << std::endl;
+	std::cout << LINE_STRING << std::endl;
+
+	if (Success)
+		State = "Serializing Meshlet Layer 2....... ";
 
 	return Success;
 

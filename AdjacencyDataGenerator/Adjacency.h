@@ -22,9 +22,14 @@ class AdjacencyProcesser;
 bool PassGenerateVertexMap(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
 bool PassGenerateFaceAndEdgeData(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
 bool PassGenerateVertexNormal(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
-bool PassGenerateMeshletLayer1Data(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
-bool PassGenerateMeshlet(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State); 
+bool PassGenerateMeshletLayer01Data(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
+bool PassGenerateMeshletLayer0(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
+bool PassSerializeMeshLayer0Data(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
+bool PassGenerateMeshletLayer1(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
 bool PassSerializeMeshLayer1Data(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
+bool PassGenerateMeshletLayer2Data(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
+bool PassGenerateMeshletLayer2(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
+bool PassSerializeMeshLayer2Data(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
 bool PassSerializeExportData(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
 bool PassSerializeExportData2(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
 bool PassGenerateRenderData(AdjacencyProcesser* Processer, std::string& FilePath, std::string& State);
@@ -210,6 +215,7 @@ public:
 	{
 		meshletId[0] = -1;
 		meshletId[1] = -1;
+		meshletId[2] = -1;
 	}
 
 	//vertex index
@@ -227,7 +233,7 @@ public:
 	Float3 center;
 	
 	//meshlet
-	int meshletId[2];
+	int meshletId[3];
 
 public:
 
@@ -441,6 +447,7 @@ struct EXPORTFace
 	{
 		MeshletData[0] = 0;
 		MeshletData[1] = 0;
+		MeshletData[2] = 0;
 	}
 	// every 10 bit for 1 vertex index in meshlet[range : 0 ~ 1023]
 	uint v012;
@@ -470,13 +477,14 @@ struct EXPORTFace
 	Uint3 PackNormalData0;
 	Uint3 PackNormalData1;
 
-	// 0: meshlet layer1 index
-	// 1: meshlet layer2 index
-	uint MeshletData[2];
+	// 0: meshlet layer0 index
+	// 1: meshlet layer1 index
+	// 2: meshlet layer2 index
+	uint MeshletData[3];
 
 	static uint ByteSize()
 	{
-		return 1 * sizeof(uint) + 3 * sizeof(uint) + 3 * sizeof(uint) + 2 * sizeof(Uint3) + 2 * sizeof(uint);
+		return 1 * sizeof(uint) + 3 * sizeof(uint) + 3 * sizeof(uint) + 2 * sizeof(Uint3) + 3 * sizeof(uint);
 	}
 };
 
@@ -638,7 +646,9 @@ public:
 	std::vector<FaceNormal> FaceNormalMap; // face -> 3 normal for 3 vertex on face
 
 	//meshlet
-	MeshOpt MeshletLayer1Data;
+	MeshOpt MeshletLayer0Data;//for extract dispatch
+	MeshOpt MeshletLayer1Data;//for link pass
+	MeshOpt MeshletLayer2Data;//for link pass
 
 	// for debug rendering
 	DrawRawIndex* DrawIndexList;
@@ -738,7 +748,9 @@ public:
 		VertexBytesData(nullptr),
 		TotalVertexBytesNum(0),
 		AllHardEdge(false),
-		MeshletNormalWeight(0.1f)
+		MeshletNormalWeight(0.1f),
+		MeshletLayer1MaxCellNum(256),
+		MeshletLayer2MaxCellNum(256)
 	{}
 	~AdjacencyProcesser()
 	{
@@ -785,17 +797,38 @@ public:
 	bool GetReady2();
 	void* RunFunc2(void* SourceData, double* OutProgressPerRun);
 
-	//Pass 3 Preparing Meshlet Layer1 Data
-	bool GetReadyForGenerateMeshletLayer1Data();
-	void* RunGenerateMeshletLayer1Data(void* SourceData, double* OutProgressPerRun);
+	//Pass Preparing Meshlet Layer 0&1 Data
+	bool GetReadyForGenerateMeshletLayer01Data();
+	void* RunGenerateMeshletLayer01Data(void* SourceData, double* OutProgressPerRun);
 
-	//Pass 4 Gernerate Meshlet
-	bool GetReadyGenerateMeshlet();
-	void* RunGenerateMeshlet(void* SourceData, double* OutProgressPerRun);
+	//Pass Gernerate Meshlet Layer0
+	bool GetReadyGenerateMeshletLayer0();
+	void* RunGenerateMeshletLayer0(void* SourceData, double* OutProgressPerRun);
 
-	//Pass 5 Serialize Meshlet Layer1
+	//Pass Serialize Meshlet Layer0
+	bool GetReadyForSerializeMeshletLayer0();
+	void* RunFuncForSerializeMeshletLayer0(void* SourceData, double* OutProgressPerRun);
+
+	//Pass Gernerate Meshlet Layer1
+	bool GetReadyGenerateMeshletLayer1();
+	void* RunGenerateMeshletLayer1(void* SourceData, double* OutProgressPerRun);
+
+	//Pass Serialize Meshlet Layer1
 	bool GetReadyForSerializeMeshletLayer1();
 	void* RunFuncForSerializeMeshletLayer1(void* SourceData, double* OutProgressPerRun);
+
+	//Pass Preparing Meshlet Layer2 Data
+	bool GetReadyForGenerateMeshletLayer2Data();
+	void* RunGenerateMeshletLayer2Data(void* SourceData, double* OutProgressPerRun);
+
+	//Pass Gernerate Meshlet Layer2
+	bool GetReadyGenerateMeshletLayer2();
+	void* RunGenerateMeshletLayer2(void* SourceData, double* OutProgressPerRun);
+
+	//Pass Serialize Meshlet Layer2
+	bool GetReadyForSerializeMeshletLayer2();
+	void* RunFuncForSerializeMeshletLayer2(void* SourceData, double* OutProgressPerRun);
+
 
 	//Pass Generate Render Data
 	bool GetReadyForSerializeExportData();
@@ -898,6 +931,8 @@ public:
 	//Parameters For Generation
 	bool AllHardEdge;
 	float MeshletNormalWeight;
+	int MeshletLayer1MaxCellNum;
+	int MeshletLayer2MaxCellNum;
 
 
 private:

@@ -104,6 +104,12 @@ void Editor::Render(ID3D12GraphicsCommandList* CommandList)
         ImGui::Checkbox("All Hard Edge", &Processer->AllHardEdge);
         ImGui::SetNextItemWidth(200.0f);
         ImGui::SliderFloat("Meshlet Normal Weight", &Processer->MeshletNormalWeight, 0.0f, 1.0f);
+        ImGui::SetNextItemWidth(200.0f);
+        ImGui::InputInt("Meshlet Layer 1 Max Cell Num Per Meshlet", &Processer->MeshletLayer1MaxCellNum);
+        ImGui::SetNextItemWidth(200.0f);
+        ImGui::InputInt("Meshlet Layer 2 Max Cell Num Per Meshlet", &Processer->MeshletLayer2MaxCellNum);
+        Processer->MeshletLayer1MaxCellNum = MAX(1, MIN(512, Processer->MeshletLayer1MaxCellNum));
+        Processer->MeshletLayer2MaxCellNum = MAX(1, MIN(512, Processer->MeshletLayer2MaxCellNum));
         ImGui::Separator();
         ImGui::Separator();
         if (ImGui::Button("Generate") || PreLoad)
@@ -295,21 +301,14 @@ bool Editor::KickGenerateMission()
 
         PassPool.push(PassType(PassGenerateFaceAndEdgeData));
         PassPool.push(PassType(PassGenerateVertexNormal));
-        PassPool.push(PassType(PassGenerateMeshletLayer1Data));
-        PassPool.push(PassType(PassGenerateMeshlet));
+        PassPool.push(PassType(PassGenerateMeshletLayer01Data));
+        PassPool.push(PassType(PassGenerateMeshletLayer0));
+        PassPool.push(PassType(PassGenerateMeshletLayer1));
+        PassPool.push(PassType(PassSerializeMeshLayer0Data));
         PassPool.push(PassType(PassSerializeMeshLayer1Data));
-        //legacy
-        //PassPool.push(PassType(PassGenerateAdjacencyData));
-        //PassPool.push(PassType(PassShrinkAdjacencyData));
-        //PassPool.push(PassType(PassGenerateAdjacencyVertexMap));
-        //PassPool.push(PassType(PassSerializeAdjacencyVertexMap));
-        //PassPool.push(PassType(PassGenerateMeshletLayer1Data));
-        //PassPool.push(PassType(PassGenerateMeshletLayer1));
-        //PassPool.push(PassType(PassGenerateMeshletLayer2Data));
-        //PassPool.push(PassType(PassGenerateMeshletLayer2));
-        //PassPool.push(PassType(PassSerializeMeshletLayer2));
-        //PassPool.push(PassType(PassSerializeMeshletLayer1));
-        //PassPool.push(PassType(PassSerializeMeshletToEdge));
+        PassPool.push(PassType(PassGenerateMeshletLayer2Data));
+        PassPool.push(PassType(PassGenerateMeshletLayer2));
+        PassPool.push(PassType(PassSerializeMeshLayer2Data));
         PassPool.push(PassType(PassSerializeExportData));
         PassPool.push(PassType(PassSerializeExportData2));
         PassPool.push(PassType(PassGenerateRenderData));
@@ -390,9 +389,9 @@ void MeshRenderer::ShowViewerSettingUI(bool ModelIsLoaded, bool GeneratorIsWorki
     ImGui::RadioButton("Show Meshlet Layer ", &Val, 1);
     if (ImGui::TreeNodeEx("==========", ImGuiTreeNodeFlags_Leaf))
     {
-        ImGui::SliderFloat("Layer 1 Alpha", &MeshletLayerTransparent[0], 0.0f, 1.0f);
-        ImGui::SliderFloat("Layer 2 Alpha", &MeshletLayerTransparent[1], 0.0f, 1.0f);
-        ImGui::SliderFloat("Layer 3 Alpha", &MeshletLayerTransparent[2], 0.0f, 1.0f);
+        ImGui::SliderFloat("Layer 0 Alpha", &MeshletLayerTransparent[0], 0.0f, 1.0f);
+        ImGui::SliderFloat("Layer 1 Alpha", &MeshletLayerTransparent[1], 0.0f, 1.0f);
+        ImGui::SliderFloat("Layer 2 Alpha", &MeshletLayerTransparent[2], 0.0f, 1.0f);
 
         ImGui::TreePop();
     }
@@ -1037,7 +1036,7 @@ void MeshRenderer::UpdateEveryFrameState(const Float3& DisplaySize)
     MaterialParams.DisplayMode = ShowMeshletLayer ? 1 : 0;
     MaterialParams.DisplayTransparent0 = MeshletLayerTransparent[0];
     MaterialParams.DisplayTransparent1 = MeshletLayerTransparent[1];
-    MaterialParams.DisplayTransparent2 = 0.0f;
+    MaterialParams.DisplayTransparent2 = MeshletLayerTransparent[2];
     MaterialParams.DisplayTransparent3 = 0.0f;
 }
 

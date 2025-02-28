@@ -20,7 +20,7 @@ public:
 		Center(0.0f), Normal(0.0f), Area(0.0f),
 		BorderFreeNum(-2)
 	{}
-	Cell(int _Index, Float3& _Center, Float3& _Normal, float _Area) :
+	Cell(int _Index, const Float3& _Center, const Float3& _Normal, float _Area) :
 		Index(_Index), MeshletIndex(-1), IsFree(true),
 		Center(_Center), Normal(_Normal), Area(_Area),
 		BorderFreeNum(-2)
@@ -259,31 +259,21 @@ public:
 	MeshOptTriangle() :
 		Center(0.0f), Normal(0.0f), Area(0.0f)
 	{
-		index[0] = 0;
-		index[1] = 0;
-		index[2] = 0;
-		edge[0] = 0;
-		edge[1] = 0;
-		edge[2] = 0;
 	}
-	MeshOptTriangle(Float3& _Center, Float3& _Normal, float _Area, unsigned int index1, unsigned int index2, unsigned int index3, unsigned int edge1, unsigned int edge2, unsigned int edge3) :
+	MeshOptTriangle(const Float3& _Center, const Float3& _Normal, const float _Area, std::set<unsigned int>* _indexes) :
 		Center(_Center), Normal(_Normal), Area(_Area)
 	{
-		index[0] = index1;
-		index[1] = index2;
-		index[2] = index3;
-		edge[0] = edge1;
-		edge[1] = edge2;
-		edge[2] = edge3;
+		indexes = *_indexes;
 	}
 
 	Float3 Center;
 	Float3 Normal;
 	float Area;
 
-	unsigned int index[3];
-	unsigned int edge[3];
+	std::set<unsigned int> indexes;
+
 };
+
 struct MeshOptVertex
 {
 	MeshOptVertex()
@@ -298,6 +288,7 @@ struct Cone
 {
 	float px, py, pz;
 	float nx, ny, nz;
+	float area;
 
 	void Clear()
 	{
@@ -307,6 +298,7 @@ struct Cone
 		nx = 0;
 		ny = 0;
 		nz = 0;
+		area = 0.0f;
 	}
 };
 
@@ -324,6 +316,14 @@ public:
 		triangle_offset = 0;
 		vertex_count = 0;
 		triangle_count = 0;
+		ClearLayerData();
+	}
+
+	void ClearLayerData()
+	{
+		Center = 0.0f;
+		Normal = 0.0f;
+		Area = 0.0f;
 	}
 
 public:
@@ -335,6 +335,10 @@ public:
 	unsigned int vertex_count;
 	unsigned int triangle_count;
 
+	//for calculating meshlet layer
+	Float3 Center;
+	Float3 Normal;
+	float Area;
 };
 
 class MeshOpt
@@ -346,7 +350,7 @@ public:
 		meshlet_expected_radius(0.0),
 		cone_weight(0.0),
 		max_triangles(0.0),
-		max_meshlets(0.0),
+		//max_meshlets(0.0),
 		step_per_run(0.0),
 		meshlet_offset(0.0),
 		emitted_flags(nullptr),
@@ -354,9 +358,7 @@ public:
 		live_triangles(nullptr),
 		kdindices(nullptr),
 		nodes(nullptr),
-		meshlets_list(nullptr),
-		meshlet_vertices(nullptr),
-		meshlet_triangles(nullptr)
+		vertex_meshlet_occupy_flag(nullptr)
 	{
 		meshlet_cone_acc = {};
 		meshlet = {};
@@ -388,18 +390,16 @@ public:
 		nodes = nullptr;
 
 
-		if (meshlets_list != nullptr)
-			delete[] meshlets_list;
-		meshlets_list = nullptr;
+		meshlets_list.clear();
 		meshlet_offset = 0.0;
 
-		if (meshlet_vertices != nullptr)
-			delete[] meshlet_vertices;
-		meshlet_vertices = nullptr;
+		meshlet_vertices.clear();
+		meshlet_triangles.clear();
 
-		if (meshlet_triangles != nullptr)
-			delete[] meshlet_triangles;
-		meshlet_triangles = nullptr;
+
+		if (vertex_meshlet_occupy_flag != nullptr)
+			delete[] vertex_meshlet_occupy_flag;
+		vertex_meshlet_occupy_flag = nullptr;
 
 		triangles.clear();
 		vertices.clear();
@@ -409,27 +409,28 @@ public:
 
 	}
 
-	void Init(unsigned int vertex_count, unsigned int face_count, unsigned int edge_count);
+	void Init(unsigned int vertex_count, unsigned int face_count);
 	void GetReady(size_t max_triangles_per_meshlet, unsigned int face_count, unsigned int vertex_count, float normal_weight);
-	bool RunStep(double* OutStep);
+	bool RunStep(double* OutStep, bool NeedForceFinish);
 
-	size_t GetMeshletSize() const { return meshlet_offset; }
+
+	size_t GetMeshletSize() const { return meshlets_list.size(); }
 
 public:
 	float mesh_area;
 	float meshlet_expected_radius;
 	float cone_weight;
 	size_t max_triangles;
-	size_t max_meshlets;
+	//size_t max_meshlets;
 
 	std::vector<MeshOptTriangle> triangles;
 	std::vector<MeshOptVertex> vertices;
 
 public:
 	double step_per_run;
-	meshopt_Meshlet* meshlets_list;
-	unsigned int* meshlet_vertices;
-	unsigned int* meshlet_triangles;
+	std::vector<meshopt_Meshlet> meshlets_list;
+	std::vector<unsigned int> meshlet_vertices;
+	std::vector<unsigned int> meshlet_triangles;
 	size_t meshlet_offset;
 
 public:
@@ -441,7 +442,6 @@ public:
 	unsigned int* live_triangles;
 	unsigned int* kdindices;
 	KDNode* nodes;
-	bool* used_edges;
 
-
+	unsigned int* vertex_meshlet_occupy_flag;
 };
